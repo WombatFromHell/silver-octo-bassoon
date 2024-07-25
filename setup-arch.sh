@@ -45,12 +45,12 @@ update_grub_cmdline() {
 echo "Install some common packages and tweaks (like Steam)?"
 if confirm_action; then
   sudo pacman -R --noconfirm cachyos-browser &&
-    sudo pacman -Syu --noconfirm \
+    sudo pacman -Sy --noconfirm \
       fd zoxide ripgrep bat fzf fish zsh python-pip \
-      curl wget firefox steam lib32-gamemode gamemode openrgb rsync gnupg git
+      curl wget firefox steam lib32-gamemode gamemode openrgb rsync gnupg git earlyoom
 
   sudo pacman -R --noconfirm nvidia &&
-    sudo pacman -Syu --noconfirm \
+    sudo pacman -Sy --noconfirm \
       nvidia-open-dkms nvidia-settings nvidia-utils lib32-nvidia-utils libva-nvidia-driver
 
   # install some common aliases
@@ -69,6 +69,13 @@ if confirm_action; then
   if update_grub_cmdline "$rgb_grub_arg"; then
     sudo grub-mkconfig -o /boot/grub/grub.cfg
   fi
+
+  # enable scx_rusty and set as default on boot (assuming CachyOS)
+  sudo pacman -Sy --noconfirm scx-scheds &&
+    sudo systemctl enable --now scx
+  # enable earlyoom for safety when under memory stress
+  sudo pacman -Sy earlyoom &&
+    sudo systemctl enable --now earlyoom
 else
   echo "Aborted..."
 fi
@@ -177,7 +184,7 @@ fi
 #
 echo "Perform assembly and customization of Distrobox containers?"
 if confirm_action; then
-  sudo pacman -Syu --noconfirm podman distrobox
+  sudo pacman -Sy --noconfirm podman distrobox
   chmod +x distrobox-setup-*.sh
   distrobox assemble create --file ./distrobox-assemble.ini
   # ARCHLINUX (misc container)
@@ -210,7 +217,7 @@ fi
 # provide a way to pre-install libvirt/qemu
 echo "Setup libvirt/qemu with vfio passthrough support?"
 if confirm_action; then
-  sudo pacman -Syu --noconfirm libvirt
+  sudo pacman -Sy --noconfirm libvirt
 
   # add qemu specific kargs for passthrough if they don't already exist
   vm_grub_arg="kvm.ignore_msrs=1 kvm.report_ignored_msrs=0 amd_iommu=on iommy=pt rd.driver.pre=vfio_pci vfio_pci.disable_vga=1"
