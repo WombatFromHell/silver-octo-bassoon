@@ -46,7 +46,8 @@ echo "Install some common packages and tweaks (like Steam)?"
 if confirm_action; then
   sudo pacman -R --noconfirm cachyos-browser &&
     sudo pacman -Syu --noconfirm \
-      fd zoxide ripgrep bat fzf fish zsh python-pip curl wget firefox steam openrgb rsync gnupg git
+      fd zoxide ripgrep bat fzf fish zsh python-pip \
+      curl wget firefox steam lib32-gamemode gamemode openrgb rsync gnupg git
 
   sudo pacman -R --noconfirm nvidia &&
     sudo pacman -Syu --noconfirm \
