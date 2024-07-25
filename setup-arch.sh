@@ -52,7 +52,7 @@ fi
 
 echo "Install some common packages and tweaks (like Steam)?"
 if confirm_action; then
-  sudo pacman -R --noconfirm cachyos-browser &&
+  sudo pacman -R --noconfirm cachy-browser &&
     sudo pacman -Sy --noconfirm \
       fd zoxide ripgrep bat fzf fish zsh python-pip \
       curl wget firefox steam lib32-gamemode gamemode \
