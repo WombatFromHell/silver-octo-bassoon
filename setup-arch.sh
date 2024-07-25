@@ -75,13 +75,12 @@ if [ "$ROOT_FS_TYPE" = "btrfs" ]; then
     if [ "$HOME_FS_TYPE" = "btrfs" ]; then
       echo "Detected /home running on a btrfs subvolume, should we setup snapper for it?"
       if confirm_action; then
+        sudo snapper -c home create-config /home &&
+          sudo btrfs sub del /home/.snapshots
+
         sudo btrfs sub cr "$btrfs_mount"/@snapshots/home &&
           sudo mkdir "$btrfs_mount"/@home/.snapshots
         echo "UUID=$ROOT_FS_UUID /home/.snapshots btrfs subvol=/@snapshots/home,defaults,noatime,compress=zstd,commit=120 0 0" | sudo tee -a /etc/fstab
-
-        sudo snapper -c home create-config /home &&
-          sudo btrfs sub del /home/.snapshots &&
-          sudo mkdir "$btrfs_mount"/@home/.snapshots
 
         snapper_home_conf="/etc/snapper/configs/home"
         sudo cp -f ./etc-snapper-configs/home "$snapper_home_conf" &&
