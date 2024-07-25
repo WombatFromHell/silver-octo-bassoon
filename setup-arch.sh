@@ -42,6 +42,63 @@ update_grub_cmdline() {
   sudo sed -i "s/^$variable_name=\"\(.*\)\"/$variable_name=\"\1 $text_to_add\"/" "$target_file"
 }
 
+ROOT_FS_TYPE=$(df -T / | awk 'NR==2 {print $2}')
+ROOT_FS_DEV=$(df -T / | awk 'NR==2 {print $1}')
+ROOT_FS_UUID=$(sudo blkid -s UUID -o value "$ROOT_FS_DEV")
+HOME_FS_TYPE=$(df -T /home | awk 'NR==2 {print $2}')
+
+if [ "$ROOT_FS_TYPE" = "btrfs" ]; then
+  echo "Install grub-btrfsd and snapper (with dnf plugin)?"
+  echo "IMPORTANT: Root (/) and Home (/home) must be mounted on @ and @home respectively!"
+  echo "!! Ensure you have a root (subvolid=5) subvol for @var, @var_tmp, and @var_log before continuing !!"
+  btrfs_mount="/mnt/btrfs"
+
+  if confirm_action; then
+    sudo mkdir -p "$btrfs_mount" &&
+      sudo mount -o subvolid=5,noatime "$ROOT_FS_DEV" "$btrfs_mount" &&
+      sudo btrfs sub cr "$btrfs_mount"/@snapshots &&
+      sudo btrfs sub cr "$btrfs_mount"/@snapshots/root
+    echo "UUID=$ROOT_FS_UUID /.snapshots btrfs subvol=/@snapshots/root,defaults,noatime,compress=zstd,commit=120 0 0" | sudo tee -a /etc/fstab
+
+    sudo pacman -Sy --noconfirm snapper snap-pac inotify-tools
+    paru -Sy --noconfirm grub-btrfs
+
+    sudo snapper -c root create-config /
+    sudo btrfs sub del "$btrfs_mount"/@/.snapshots/*/snapshot &&
+      sudo btrfs sub del "$btrfs_mount"/@/.snapshots &&
+      sudo mkdir "$btrfs_mount"/@/.snapshots
+
+    $CP ./etc-snapper-configs/root /etc/snapper/configs/root
+
+    if [ "$HOME_FS_TYPE" = "btrfs" ]; then
+      echo "Detected /home running on a btrfs subvolume, should we setup snapper for it?"
+      if confirm_action; then
+        sudo btrfs sub cr "$btrfs_mount"/@snapshots/home &&
+          sudo mkdir "$btrfs_mount"/@home/.snapshots
+        echo "UUID=$HOME_FS_UUID /home/.snapshots btrfs subvol=/@snapshots/home,defaults,noatime,compress=zstd,commit=120 0 0" | sudo tee -a /etc/fstab
+
+        sudo snapper -c home create-config /home
+        sudo btrfs sub del "$btrfs_mount"/@home/.snapshots/*/snapshot &&
+          sudo btrfs sub del "$btrfs_mount"/@home/.snapshots &&
+          sudo mkdir "$btrfs_mount"/@home/.snapshots
+
+        $CP ./etc-snapper-configs/home /etc/snapper/configs/home
+      else
+        echo "Aborted..."
+      fi
+    fi
+
+    sudo systemctl daemon-reload &&
+      sudo systemctl enable --now snapperd.service &&
+      sudo systemctl enable --now snapper-{cleanup,boot,timeline}.timer
+
+    # regenerate grub-btrfs snapshots
+    sudo grub-mkconfig -o /boot/grub/grub.cfg
+  else
+    echo "Aborted..."
+  fi
+fi
+
 echo "Install Nvidia drivers?"
 if confirm_action; then
   sudo pacman -Sy --noconfirm \
