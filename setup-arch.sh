@@ -39,7 +39,7 @@ update_grub_cmdline() {
     return 1
   fi
 
-  sed -i "s/^$variable_name=\"\(.*\)\"/$variable_name=\"\1 $text_to_add\"/" "$target_file"
+  sudo sed -i "s/^$variable_name=\"\(.*\)\"/$variable_name=\"\1 $text_to_add\"/" "$target_file"
 }
 
 echo "Install some common packages and tweaks (like Steam)?"
@@ -76,7 +76,8 @@ if confirm_action; then
   sudo pacman -Sy earlyoom &&
     sudo systemctl enable --now earlyoom
   # make sure gamemoded is enabled for our user
-  systemctl --user enable --now gamemoded
+  systemctl --user daemon-reload &&
+    systemctl --user enable --now gamemoded.service
 else
   echo "Aborted..."
 fi
@@ -189,7 +190,7 @@ if confirm_action; then
   chmod +x distrobox-setup-*.sh
   distrobox assemble create --file ./distrobox-assemble.ini
   # ARCHLINUX (misc container)
-  distrobox-enter -n arch-cli -- bash -c ./distrobox-setup-archcli.sh
+  #distrobox-enter -n arch-cli -- bash -c ./distrobox-setup-archcli.sh
   # DEBIAN (dev container)
   distrobox-enter -n debian-dev -- bash -c ./distrobox-setup-dev.sh
   # FEDORA (browser container)
@@ -201,6 +202,7 @@ fi
 # pre-install common Flatpaks
 echo "Setup Flatpak repo and add common apps?"
 if confirm_action; then
+  sudo pacman -Sy --noconfirm flatpak
   flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
   flatpak install --user --noninteractive \
     runtime/org.gtk.Gtk3theme.adw-gtk3/x86_64/3.22 \
@@ -218,7 +220,7 @@ fi
 # provide a way to pre-install libvirt/qemu
 echo "Setup libvirt/qemu with vfio passthrough support?"
 if confirm_action; then
-  sudo pacman -Sy --noconfirm libvirt
+  sudo pacman -Sy --noconfirm libvirt qemu-desktop swtpm
 
   # add qemu specific kargs for passthrough if they don't already exist
   vm_grub_arg="kvm.ignore_msrs=1 kvm.report_ignored_msrs=0 amd_iommu=on iommy=pt rd.driver.pre=vfio_pci vfio_pci.disable_vga=1"
@@ -230,6 +232,9 @@ if confirm_action; then
   sudo mkdir -p /etc/libvirt/hooks &&
     sudo tar -xvzf "$SUPPORT"/vfio-hooks.tar.gz -C /etc/libvirt/hooks &&
     sudo systemctl restart libvirtd
+
+  # add current user to libvirt group
+  sudo usermod -aG libvirt "$USER"
 else
   echo "Aborted..."
 fi
