@@ -63,12 +63,14 @@ if [ "$ROOT_FS_TYPE" = "btrfs" ]; then
     sudo pacman -Sy --noconfirm snapper snap-pac inotify-tools
     paru -Sy --noconfirm grub-btrfs
 
-    sudo snapper -c root create-config /
-    sudo btrfs sub del "$btrfs_mount"/@/.snapshots/*/snapshot &&
-      sudo btrfs sub del "$btrfs_mount"/@/.snapshots &&
+    sudo snapper -c root create-config / &&
+      sudo btrfs sub del /.snapshots &&
       sudo mkdir "$btrfs_mount"/@/.snapshots
 
-    $CP ./etc-snapper-configs/root /etc/snapper/configs/root
+    snapper_root_conf="/etc/snapper/configs/root"
+    sudo cp -f ./etc-snapper-configs/root "$snapper_root_conf" &&
+      sudo chown root:root "$snapper_root_conf" &&
+      sudo chmod 0644 "$snapper_root_conf"
 
     if [ "$HOME_FS_TYPE" = "btrfs" ]; then
       echo "Detected /home running on a btrfs subvolume, should we setup snapper for it?"
@@ -77,19 +79,21 @@ if [ "$ROOT_FS_TYPE" = "btrfs" ]; then
           sudo mkdir "$btrfs_mount"/@home/.snapshots
         echo "UUID=$ROOT_FS_UUID /home/.snapshots btrfs subvol=/@snapshots/home,defaults,noatime,compress=zstd,commit=120 0 0" | sudo tee -a /etc/fstab
 
-        sudo snapper -c home create-config /home
-        sudo btrfs sub del "$btrfs_mount"/@home/.snapshots/*/snapshot &&
-          sudo btrfs sub del "$btrfs_mount"/@home/.snapshots &&
+        sudo snapper -c home create-config /home &&
+          sudo btrfs sub del /home/.snapshots &&
           sudo mkdir "$btrfs_mount"/@home/.snapshots
 
-        $CP ./etc-snapper-configs/home /etc/snapper/configs/home
+        snapper_home_conf="/etc/snapper/configs/home"
+        sudo cp -f ./etc-snapper-configs/home "$snapper_home_conf" &&
+          sudo chown root:root "$snapper_home_conf" &&
+          sudo chmod 0644 "$snapper_home_conf"
       else
         echo "Aborted..."
       fi
     fi
 
     sudo systemctl daemon-reload &&
-      sudo systemctl enable --now snapperd.service &&
+      sudo systemctl restart --now snapperd.service &&
       sudo systemctl enable snapper-{cleanup,boot,timeline}.timer
 
     # regenerate grub-btrfs snapshots
