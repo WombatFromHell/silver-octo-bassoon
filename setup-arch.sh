@@ -75,7 +75,7 @@ if [ "$ROOT_FS_TYPE" = "btrfs" ]; then
       if confirm_action; then
         sudo btrfs sub cr "$btrfs_mount"/@snapshots/home &&
           sudo mkdir "$btrfs_mount"/@home/.snapshots
-        echo "UUID=$HOME_FS_UUID /home/.snapshots btrfs subvol=/@snapshots/home,defaults,noatime,compress=zstd,commit=120 0 0" | sudo tee -a /etc/fstab
+        echo "UUID=$ROOT_FS_UUID /home/.snapshots btrfs subvol=/@snapshots/home,defaults,noatime,compress=zstd,commit=120 0 0" | sudo tee -a /etc/fstab
 
         sudo snapper -c home create-config /home
         sudo btrfs sub del "$btrfs_mount"/@home/.snapshots/*/snapshot &&
