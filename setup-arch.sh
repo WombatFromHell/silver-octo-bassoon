@@ -44,14 +44,13 @@ update_grub_cmdline() {
 
 echo "Install some common packages and tweaks (like Steam)?"
 if confirm_action; then
+  sudo pacman -Sy --noconfirm \
+    nvidia-open-dkms nvidia-settings nvidia-utils lib32-nvidia-utils libva-nvidia-driver
+
   sudo pacman -R --noconfirm cachyos-browser &&
     sudo pacman -Sy --noconfirm \
       fd zoxide ripgrep bat fzf fish zsh python-pip \
       curl wget firefox steam lib32-gamemode gamemode openrgb rsync gnupg git earlyoom
-
-  sudo pacman -R --noconfirm nvidia &&
-    sudo pacman -Sy --noconfirm \
-      nvidia-open-dkms nvidia-settings nvidia-utils lib32-nvidia-utils libva-nvidia-driver
 
   # install some common aliases
   {
@@ -66,7 +65,7 @@ if confirm_action; then
 
   # enable AMD Ryzen Pstate and enable OpenRGB for Gigabyte mobos (on patched kernels)
   rgb_grub_arg="amd_pstate=active acpi_enforce_resources=lax"
-  if update_grub_cmdline "$rgb_grub_arg"; then
+  if update_grub_cmdline "$rgb_grub_arg" -eq 0; then
     sudo grub-mkconfig -o /boot/grub/grub.cfg
   fi
 
@@ -76,6 +75,8 @@ if confirm_action; then
   # enable earlyoom for safety when under memory stress
   sudo pacman -Sy earlyoom &&
     sudo systemctl enable --now earlyoom
+  # make sure gamemoded is enabled for our user
+  systemctl --user enable --now gamemoded
 else
   echo "Aborted..."
 fi
@@ -221,7 +222,7 @@ if confirm_action; then
 
   # add qemu specific kargs for passthrough if they don't already exist
   vm_grub_arg="kvm.ignore_msrs=1 kvm.report_ignored_msrs=0 amd_iommu=on iommy=pt rd.driver.pre=vfio_pci vfio_pci.disable_vga=1"
-  if update_grub_cmdline "$vm_grub_arg"; then
+  if update_grub_cmdline "$vm_grub_arg" -eq 0; then
     sudo grub-mkconfig -o /boot/grub/grub.cfg
   fi
 
