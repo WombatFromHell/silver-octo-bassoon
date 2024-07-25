@@ -144,6 +144,7 @@ if confirm_action; then
     sudo systemctl enable --now fix-wakeups.service &&
     sudo systemctl enable --now nvidia-tdp.service
   # enable optional mounts via systemd-automount
+  $CP ./systemd-automount/*.* /etc/systemd/system/
   $CP "$SUPPORT"/.smb-credentials /etc/ &&
     sudo chown root:root /etc/.smb-credentials &&
     sudo chmod 0400 /etc/.smb-credentials &&
