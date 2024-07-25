@@ -42,15 +42,21 @@ update_grub_cmdline() {
   sudo sed -i "s/^$variable_name=\"\(.*\)\"/$variable_name=\"\1 $text_to_add\"/" "$target_file"
 }
 
-echo "Install some common packages and tweaks (like Steam)?"
+echo "Install Nvidia drivers?"
 if confirm_action; then
   sudo pacman -Sy --noconfirm \
     nvidia-open-dkms nvidia-settings nvidia-utils lib32-nvidia-utils libva-nvidia-driver
+else
+  echo "Aborted..."
+fi
 
+echo "Install some common packages and tweaks (like Steam)?"
+if confirm_action; then
   sudo pacman -R --noconfirm cachyos-browser &&
     sudo pacman -Sy --noconfirm \
       fd zoxide ripgrep bat fzf fish zsh python-pip \
-      curl wget firefox steam lib32-gamemode gamemode openrgb rsync gnupg git earlyoom
+      curl wget firefox steam lib32-gamemode gamemode \
+      openrgb rsync gnupg git earlyoom mangohud lib32-mangohud lib32-pulseaudio
 
   # install some common aliases
   {
