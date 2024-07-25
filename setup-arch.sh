@@ -90,7 +90,7 @@ if [ "$ROOT_FS_TYPE" = "btrfs" ]; then
 
     sudo systemctl daemon-reload &&
       sudo systemctl enable --now snapperd.service &&
-      sudo systemctl enable --now snapper-{cleanup,boot,timeline}.timer
+      sudo systemctl enable snapper-{cleanup,boot,timeline}.timer
 
     # regenerate grub-btrfs snapshots
     sudo grub-mkconfig -o /boot/grub/grub.cfg
@@ -196,10 +196,9 @@ if confirm_action; then
     sudo sysctl --system
 
   $CP ./etc-systemd/system/* /etc/systemd/system/ &&
-    sudo chown root:root /etc/systemd/system/{fix-wakeups.service,nvidia-tdp.*} &&
+    sudo chown root:root /etc/systemd/system/fix-wakeups.service &&
     sudo systemctl daemon-reload &&
-    sudo systemctl enable --now fix-wakeups.service &&
-    sudo systemctl enable --now nvidia-tdp.service
+    sudo systemctl enable --now fix-wakeups.service
   # enable optional mounts via systemd-automount
   $CP ./systemd-automount/*.* /etc/systemd/system/
   $CP "$SUPPORT"/.smb-credentials /etc/ &&
