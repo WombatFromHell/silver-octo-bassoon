@@ -46,6 +46,14 @@ echo "Install Nvidia drivers?"
 if confirm_action; then
   sudo pacman -Sy --noconfirm \
     nvidia-open-dkms nvidia-settings nvidia-utils lib32-nvidia-utils libva-nvidia-driver
+
+  $CP ./etc-X11/Xwrapper.config /etc/X11/ &&
+    $CP ./etc-xorg.conf.d/20-nvidia.conf /etc/X11/xorg.conf.d/
+
+  $CP ./etc-systemd/system/nvidia-tdp.* /etc/systemd/system/ &&
+    sudo chown root:root /etc/systemd/system/nvidia-tdp.* &&
+    sudo systemctl daemon-reload &&
+    sudo systemctl enable --now nvidia-tdp.service
 else
   echo "Aborted..."
 fi
@@ -121,9 +129,6 @@ if confirm_action; then
     sudo chown root:root /etc/udev/rules.d/* &&
     sudo udevadm control --reload-rules &&
     sudo udevadm trigger
-
-  $CP ./etc-X11/Xwrapper.config /etc/X11/ &&
-    $CP ./etc-xorg.conf.d/20-nvidia.conf /etc/X11/xorg.conf.d/
 
   $CP ./usr-local-bin/*.sh /usr/local/bin/ &&
     sudo chown root:root /usr/local/bin/*.sh &&
