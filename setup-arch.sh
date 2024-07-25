@@ -114,6 +114,9 @@ if confirm_action; then
     sudo chown root:root /etc/systemd/system/nvidia-tdp.* &&
     sudo systemctl daemon-reload &&
     sudo systemctl enable --now nvidia-tdp.service
+
+  $CP ./etc-modprobe.d/nvidia.conf /etc/modprobe.d/nvidia.conf &&
+    sudo chown root:root /etc/modprobe.d/nvidia.conf
 else
   echo "Aborted..."
 fi
