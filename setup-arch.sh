@@ -29,7 +29,7 @@ update_grub_cmdline() {
   local variable_name="GRUB_CMDLINE_LINUX_DEFAULT"
 
   # Create a backup of the target file
-  if ! cp "$target_file" "$backup_file"; then
+  if ! sudo cp -f "$target_file" "$backup_file"; then
     echo "Error: Failed to create backup file."
     return 1
   fi
