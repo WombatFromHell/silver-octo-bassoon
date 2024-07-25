@@ -221,7 +221,6 @@ if confirm_action; then
     com.github.tchx84.Flatseal \
     com.github.zocker_160.SyncThingy \
     it.mijorus.gearlever \
-    net.davidotek.pupgui2 \
     org.equeim.Tremotesf \
     io.github.dvlv.boxbuddyrs
 else
