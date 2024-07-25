@@ -121,7 +121,7 @@ if confirm_action; then
     sudo pacman -Sy --noconfirm \
       fd zoxide ripgrep bat fzf fish zsh python-pip \
       curl wget firefox steam lib32-gamemode gamemode \
-      openrgb rsync gnupg git earlyoom mangohud lib32-mangohud lib32-pulseaudio libfuse2
+      openrgb rsync gnupg git earlyoom mangohud lib32-mangohud lib32-pulseaudio fuse2
 
   # install some common aliases
   {
