@@ -1,0 +1,1 @@
+/home/user/mounts /etc/autofs/auto.user --timeout=60 --ghost

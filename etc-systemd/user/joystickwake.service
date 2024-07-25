@@ -1,0 +1,13 @@
+[Unit]
+Description=JoystickWake Service
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/joystickwake --loglevel info
+ExecStop=pkill -9 joystickwake
+Restart=on-failure
+RestartSec=60s
+
+[Install]
+WantedBy=default.target

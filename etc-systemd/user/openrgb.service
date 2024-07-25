@@ -1,0 +1,11 @@
+[Unit]
+Description=OpenRGB lightsout
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/openrgb-load.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target

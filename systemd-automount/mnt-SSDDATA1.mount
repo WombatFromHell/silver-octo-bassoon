@@ -1,0 +1,12 @@
+[Unit]
+Description=NTFS3 SSDDATA1 Disk Mount
+
+[Mount]
+What=/dev/disk/by-uuid/922098CB2098B7A5
+Where=/mnt/SSDDATA1
+Type=ntfs3
+Options=rw,exec,noatime,uid=1000,gid=1000,x-systemd.mount-timeout=5,x-gvfs-show
+DirectoryMode=0777
+
+[Install]
+WantedBy=multi-user.target

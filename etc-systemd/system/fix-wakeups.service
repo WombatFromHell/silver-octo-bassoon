@@ -1,0 +1,10 @@
+[Unit]
+Description=Disable USB wakeup triggers in /proc/acpi/wakeup
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/fix-wakeups.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

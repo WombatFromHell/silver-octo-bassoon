@@ -1,0 +1,9 @@
+[Unit]
+Description=Automount HOMENAS Home Directory Share
+
+[Automount]
+Where=/mnt/home
+TimeoutIdleSec=180
+
+[Install]
+WantedBy=multi-user.target

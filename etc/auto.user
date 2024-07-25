@@ -1,0 +1,4 @@
+FTPRoot -fstype=cifs,rw,credentials=${HOME}/.smb.credentials,uid=${UID},iocharset=utf8 ://192.168.1.153/FTPRoot
+Downloads -fstype=cifs,rw,credentials=${HOME}/.smb.credentials,uid=${UID},iocharset=utf8 ://192.168.1.153/Downloads
+home -fstype=cifs,rw,credentials=${HOME}/.smb.credentials,uid=${UID},iocharset=utf8 ://192.168.1.153/home
+SSDDATA1 -fstype=ntfs-3g,rw,exec,noatime,uid=${UID},gid=${GID} :/dev/disk/by-uuid/922098CB2098B7A5

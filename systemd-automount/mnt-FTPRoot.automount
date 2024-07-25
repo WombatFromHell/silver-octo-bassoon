@@ -1,0 +1,9 @@
+[Unit]
+Description=Automount HOMENAS FTPRoot Share
+
+[Automount]
+Where=/mnt/FTPRoot
+TimeoutIdleSec=180
+
+[Install]
+WantedBy=multi-user.target

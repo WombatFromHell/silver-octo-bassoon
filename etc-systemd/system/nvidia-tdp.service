@@ -1,0 +1,13 @@
+[Unit]
+Description=Set NVIDIA power limit
+Wants=default.service
+After=default.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/nvidia-pm.sh med
+ExecStop=/usr/local/bin/nvidia-pm.sh high
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target
