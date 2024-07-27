@@ -102,10 +102,9 @@ if [ "$ROOT_FS_TYPE" = "btrfs" ]; then
   fi
 fi
 
-echo "Install Nvidia drivers?"
+echo "Install Nvidia driver tweaks?"
 if confirm_action; then
-  sudo pacman -Sy --noconfirm \
-    nvidia-open-dkms nvidia-settings nvidia-utils lib32-nvidia-utils libva-nvidia-driver
+  sudo pacman -Sy nvidia-dkms lib32-nvidia-utils libva-nvidia-driver
 
   $CP ./etc-X11/Xwrapper.config /etc/X11/ &&
     $CP ./etc-xorg.conf.d/20-nvidia.conf /etc/X11/xorg.conf.d/
@@ -127,7 +126,8 @@ if confirm_action; then
     sudo pacman -Sy --noconfirm \
       fd zoxide ripgrep bat fzf fish zsh python-pip \
       curl wget firefox steam lib32-gamemode gamemode \
-      openrgb rsync gnupg git earlyoom mangohud lib32-mangohud lib32-pulseaudio fuse2
+      openrgb rsync gnupg git earlyoom mangohud lib32-mangohud \
+      lib32-pulseaudio fuse2 winetricks protontricks xclip wl-clipboard
 
   # install some common aliases
   {
