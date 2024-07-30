@@ -283,6 +283,7 @@ if confirm_action; then
     runtime/org.gtk.Gtk3theme.adw-gtk3-dark/x86_64/3.22 \
     com.github.tchx84.Flatseal \
     com.github.zocker_160.SyncThingy \
+    dev.vencord.Vesktop \
     it.mijorus.gearlever \
     org.equeim.Tremotesf \
     io.github.dvlv.boxbuddyrs

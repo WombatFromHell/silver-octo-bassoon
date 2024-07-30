@@ -152,14 +152,6 @@ if confirm_action; then
     echo "Aborted..."
   fi
 
-  # install bob and latest stable neovim
-  # unzip ./appimages/bob-linux-x86_64-openssl.zip -d "$HOME/.local/bin/" &&
-  # 	mv "$HOME/.local/bin/bob-linux-x86_64-openssl/bob" "$HOME/.local/bin/"
-  # chmod 0755 "$HOME/.local/bin/bob" &&
-  # 	"$HOME/.local/bin/bob" use stable &&
-  # 	echo "export PATH=$NEW_PATH" >>"$HOME/.bashrc" &&
-  # 	source ~/.bashrc
-
   # install some common appimages
   NVIM_LOCAL="/usr/local/bin/nvim.AppImage"
   $CP "$SUPPORT"/appimages/nvim-0.10.0.AppImage "$NVIM_LOCAL" &&
@@ -202,6 +194,7 @@ if confirm_action; then
   flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
   flatpak install --user --noninteractive \
     com.github.zocker_160.SyncThingy \
+    dev.vencord.Vesktop \
     org.openrgb.OpenRGB org.equeim.Tremotesf
 else
   echo "Aborted..."
