@@ -155,6 +155,11 @@ if confirm_action; then
   # make sure gamemoded is enabled for our user
   systemctl --user daemon-reload &&
     systemctl --user enable --now gamemoded.service
+  # enable scx_lavd
+  if command -v scx_lavd >/dev/null; then
+    $CP ./etc-default/scx /etc/default/scx &&
+      sudo systemctl enable --now scx
+  fi
 else
   echo "Aborted..."
 fi
@@ -205,13 +210,20 @@ if confirm_action; then
     sudo chown root:root /etc/systemd/system/fix-wakeups.service &&
     sudo systemctl daemon-reload &&
     sudo systemctl enable --now fix-wakeups.service
+
+  # modify and copy and any swap file mounts
+  $CP ./systemd-automount/mnt-linuxgames-Games-swapfile.swap /etc/systemd/system/ &&
+    sudo chown root:root /etc/systemd/system/*.swap
+
   # enable optional mounts via systemd-automount
   $CP ./systemd-automount/*.* /etc/systemd/system/
+
   $CP "$SUPPORT"/.smb-credentials /etc/ &&
     sudo chown root:root /etc/.smb-credentials &&
     sudo chmod 0400 /etc/.smb-credentials &&
-    sudo mkdir -p /mnt/{Downloads,FTPRoot,home,SSDDATA1,linuxgames}
-  #sudo systemctl enable --now mnt-{Downloads,FTPRoot,home,SSDDATA1,linuxgames}.automount
+    sudo mkdir -p /mnt/{Downloads,FTPRoot,home,linuxgames,linuxdata}
+  #sudo systemctl enable --now mnt-{Downloads,FTPRoot,home,linuxgames,linuxdata}.automount
+  #sudo systemctl enable --now mnt-linuxgames-Games-swapfile.swap
 
   # enable some secondary user-specific services
   systemctl --user daemon-reload &&
@@ -260,7 +272,9 @@ fi
 #
 echo "Perform assembly and customization of Distrobox containers?"
 if confirm_action; then
-  sudo pacman -Sy --noconfirm podman distrobox
+  if ! command -v podman >/dev/null || ! command -v distrobox >/dev/null; then
+    sudo pacman -Sy --noconfirm podman distrobox
+  fi
   chmod +x distrobox-setup-*.sh
   distrobox assemble create --file ./distrobox-assemble.ini
   # ARCHLINUX (misc container)
@@ -283,7 +297,6 @@ if confirm_action; then
     runtime/org.gtk.Gtk3theme.adw-gtk3-dark/x86_64/3.22 \
     com.github.tchx84.Flatseal \
     com.github.zocker_160.SyncThingy \
-    dev.vencord.Vesktop \
     it.mijorus.gearlever \
     org.equeim.Tremotesf \
     io.github.dvlv.boxbuddyrs

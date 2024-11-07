@@ -5,8 +5,8 @@ After=default.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/nvidia-pm.sh med
-ExecStop=/usr/local/bin/nvidia-pm.sh high
+ExecStart=/usr/local/bin/nvidia-pm.sh vlow
+ExecStop=/usr/local/bin/nvidia-pm.sh undo
 RemainAfterExit=yes
 
 [Install]

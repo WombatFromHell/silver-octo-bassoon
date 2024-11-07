@@ -58,26 +58,28 @@ fi
 echo "Setup external mounts?"
 if confirm_action; then
   for i in automount mount; do
-    for j in Downloads FTPRoot home linuxgames SSDDATA1; do
+    for j in Downloads FTPRoot home linuxgames linuxdata; do
       sed 's/mnt\//var\/mnt\//g' ./systemd-automount/mnt-$j.$i >./systemd-automount/var-mnt-$j.$i
       $CP ./systemd-automount/var-mnt-$j.$i /etc/systemd/system/ &&
         sudo chown root:root /etc/systemd/system/*.*mount &&
         sudo mkdir -p /var/mnt/$j &&
         rm ./systemd-automount/var-mnt*.*mount
     done
-    # modify and copy and any swap file mounts
-    sed 's/mnt\//var\/mnt\//g' ./systemd-automount/mnt-linuxgames-Games-swapfile.swap \
-      >./systemd-automount/var-mnt-linuxgames-Games-swapfile.swap
-    $CP ./systemd-automount/var-mnt-linuxgames-Games-swapfile.swap /etc/systemd/system/ &&
-      sudo chown root:root /etc/systemd/system/*.swap &&
-      rm ./systemd-automount/var-mnt-linuxgames-Games-swapfile.swap
   done
+
+  # modify and copy and any swap file mounts
+  sed 's/mnt\//var\/mnt\//g' ./systemd-automount/mnt-linuxgames-Games-swapfile.swap \
+    >./systemd-automount/var-mnt-linuxgames-Games-swapfile.swap
+  $CP ./systemd-automount/var-mnt-linuxgames-Games-swapfile.swap /etc/systemd/system/ &&
+    sudo chown root:root /etc/systemd/system/*.swap &&
+    rm ./systemd-automount/var-mnt-linuxgames-Games-swapfile.swap
+
   $CP "$SUPPORT"/.smb-credentials /etc/ &&
     sudo chown root:root /etc/.smb-credentials &&
     sudo chmod 0400 /etc/.smb-credentials &&
-    sudo systemctl daemon-reload &&
-    sudo systemctl enable --now var-mnt-{Downloads,FTPRoot,home,SSDDATA1,linuxgames}.automount
-  #sudo systemctl enable --now var-mnt-linuxgames-Games-swapfile.swap
+    sudo systemctl daemon-reload
+  # sudo systemctl enable --now var-mnt-{Downloads,FTPRoot,home,linuxgames,linuxdata}.automount
+  sudo systemctl enable --now var-mnt-linuxgames-Games-swapfile.swap
 else
   echo "Aborted..."
 fi
@@ -89,7 +91,7 @@ if confirm_action; then
     $CP -r "$ROOT/.wezterm.lua" "$SUPPORT"/.gitconfig "$HOME/"
 
   sudo cat ./etc/environment | sudo tee -a /etc/environment
-  $CP ./etc-systemd/zram-generator.conf /etc/systemd/zram-generator.conf
+  #$CP ./etc-systemd/zram-generator.conf /etc/systemd/zram-generator.conf
 
   $CP ./etc-X11/Xwrapper.config /etc/X11/ &&
     $CP ./etc-xorg.conf.d/20-nvidia.conf /etc/X11/xorg.conf.d/
@@ -126,46 +128,49 @@ if confirm_action; then
   echo "Install Brew and some common utils?"
   if confirm_action; then
     ujust install-brew
-    brew install eza fd ripgrep fzf bat clipboard xclip
-    tar -xvzf "$SUPPORT"/appimages/lazygit_0.42.0_Linux_x86_64.tar.gz &&
-      sudo mv lazygit /usr/local/bin/
+    brew install eza fd ripgrep fzf bat clipboard xclip lazygit
 
     # install some aliases for eza
-    {
-      echo "EZA_STANDARD_OPTIONS='--group --header --group-directories-first --icons --color=auto -A'"
-      echo "alias ls='eza \$EZA_STANDARD_OPTIONS'"
-      echo "alias ll='eza \$EZA_STANDARD_OPTIONS --long'"
-      echo "alias llt='eza \$EZA_STANDARD_OPTIONS --long --tree'"
-      echo "alias la='eza \$EZA_STANDARD_OPTIONS --all'"
-      echo "alias l='eza \$EZA_STANDARD_OPTIONS'"
-      echo "alias cat='bat'"
-    } >>"$HOME/.bashrc"
+    cat <<EOF >>"$HOME"/.bashrc
+# If not running interactively, don't do anything
+[[ $- != *i* ]] && return
+[ -f "/var/run/.containerenv" ] && [[ "$HOSTNAME" == *debian-dev* ]] && /usr/bin/fish -l
+if ! [ -f "/var/run/.containerenv" ] && ! [[ "$HOSTNAME" == *libvirt* ]]; then
+  EZA_STANDARD_OPTIONS='--group --header --group-directories-first --icons --color=auto -A'
+  alias ls='eza \$EZA_STANDARD_OPTIONS'
+  alias ll='eza \$EZA_STANDARD_OPTIONS --long'
+  alias llt='eza \$EZA_STANDARD_OPTIONS --long --tree'
+  alias la='eza \$EZA_STANDARD_OPTIONS --all'
+  alias l='eza \$EZA_STANDARD_OPTIONS'
+  alias cat='bat'
+fi
+EOF
   else
     echo "Aborted..."
   fi
 
   echo "Install customized NeoVim config?"
   if confirm_action; then
-    rm -rf "$HOME/.config/nvim" "$HOME/.local/share/nvim" "$HOME/.local/cache/nvim"
-    git clone git@github.com:WombatFromHell/lazyvim.git "$HOME/.config/nvim"
+    rm -rf "$HOME"/.config/nvim "$HOME"/.local/share/nvim "$HOME"/.local/cache/nvim
+    git clone git@github.com:WombatFromHell/lazyvim.git "$HOME"/.config/nvim
   else
     echo "Aborted..."
   fi
 
   # install some common appimages
   NVIM_LOCAL="/usr/local/bin/nvim.AppImage"
-  $CP "$SUPPORT"/appimages/nvim-0.10.0.AppImage "$NVIM_LOCAL" &&
+  $CP "$SUPPORT"/appimages/nvim.AppImage "$NVIM_LOCAL" &&
     sudo chown root:root "$NVIM_LOCAL" &&
     sudo chmod 0755 "$NVIM_LOCAL" &&
     sudo ln -sf "$NVIM_LOCAL" /usr/local/bin/nvim &&
-    {
-      echo "EDITOR='/usr/local/bin/nvim'"
-      echo "alias edit='\$EDITOR'"
-      echo "alias sedit='sudo -E \$EDITOR'"
-    } >>"$HOME/.bashrc"
+    cat <<EOF >>"$HOME"/.bashrc
+EDITOR='/usr/local/bin/nvim'
+alias edit='\$EDITOR'
+alias sedit='sudo -E \$EDITOR'
+EOF
 
-  mkdir -p "$HOME/AppImages/" &&
-    $CP "$SUPPORT"/appimages/*.AppImage "$HOME/AppImages/" &&
+  mkdir -p "$HOME"/AppImages/ &&
+    $CP "$SUPPORT"/appimages/*.AppImage "$HOME"/AppImages/ &&
     chmod 0755 "$HOME"/AppImages/*.AppImage
 else
   echo "Aborted..."
@@ -193,9 +198,9 @@ echo "Setup Flatpak repo and add common apps?"
 if confirm_action; then
   flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
   flatpak install --user --noninteractive \
+    com.vysp3r.ProtonPlus \
     com.github.zocker_160.SyncThingy \
-    dev.vencord.Vesktop \
-    org.openrgb.OpenRGB org.equeim.Tremotesf
+    org.equeim.Tremotesf
 else
   echo "Aborted..."
 fi

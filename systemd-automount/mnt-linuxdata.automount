@@ -1,0 +1,8 @@
+[Unit]
+Description=Automount Optional "linuxgames" Disk Mount
+
+[Automount]
+Where=/mnt/linuxdata
+
+[Install]
+WantedBy=multi-user.target
