@@ -15,6 +15,7 @@ confirm_action() {
 }
 
 ROOT="./stow-root"
+SUPPORT="./support"
 CP="sudo rsync -vhP --chown=$USER:$USER --chmod=D755,F644"
 
 # cache credentials
@@ -127,8 +128,12 @@ if confirm_action; then
 
   echo "Install Brew and some common utils?"
   if confirm_action; then
-    ujust install-brew
-    brew install eza fd ripgrep fzf bat clipboard xclip lazygit
+    if command -v brew >/dev/null; then
+      brew install eza fd ripgrep fzf bat clipboard xclip lazygit
+    else
+      echo "Error! Cannot find 'brew'!"
+      exit 1
+    fi
 
     # install some aliases for eza
     cat <<EOF >>"$HOME"/.bashrc
