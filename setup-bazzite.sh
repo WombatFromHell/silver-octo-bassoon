@@ -131,7 +131,7 @@ if confirm_action; then
     if command -v brew >/dev/null; then
       brew install eza fd ripgrep fzf bat clipboard xclip lazygit
     else
-      echo "Error! 'brew' not found!"
+      echo "Error! Cannot find 'brew'!"
       exit 1
     fi
 
