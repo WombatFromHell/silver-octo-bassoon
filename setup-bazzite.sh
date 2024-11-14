@@ -15,6 +15,7 @@ confirm_action() {
 }
 
 ROOT="./stow-root"
+SUPPORT="./support"
 CP="sudo rsync -vhP --chown=$USER:$USER --chmod=D755,F644"
 
 # cache credentials
@@ -127,13 +128,17 @@ if confirm_action; then
 
   echo "Install Brew and some common utils?"
   if confirm_action; then
-    ujust install-brew
-    brew install eza fd ripgrep fzf bat clipboard xclip lazygit
+    if command -v brew >/dev/null; then
+      brew install eza fd ripgrep fzf bat clipboard xclip lazygit
+    else
+      echo "Error! 'brew' not found!"
+      exit 1
+    fi
 
     # install some aliases for eza
     cat <<EOF >>"$HOME"/.bashrc
 # If not running interactively, don't do anything
-[[ $- != *i* ]] && return
+! [[ -n "$PS1" ]] && return
 [ -f "/var/run/.containerenv" ] && [[ "$HOSTNAME" == *debian-dev* ]] && /usr/bin/fish -l
 if ! [ -f "/var/run/.containerenv" ] && ! [[ "$HOSTNAME" == *libvirt* ]]; then
   EZA_STANDARD_OPTIONS='--group --header --group-directories-first --icons --color=auto -A'
@@ -182,13 +187,15 @@ fi
 echo "Perform assembly and customization of Distrobox containers?"
 if confirm_action; then
   chmod +x distrobox-setup-*.sh
-  distrobox assemble create --file ./distrobox-assemble.ini
   # ARCHLINUX
-  distrobox-enter -n arch-cli -- bash -c ./distrobox-setup-archcli.sh
+  # distrobox assemble create --file ./distrobox-archcli.ini && \
+  #   distrobox-enter -n arch-cli -- bash -c ./distrobox-setup-archcli.sh
   # DEBIAN (dev container)
-  distrobox-enter -n debian-dev -- bash -c ./distrobox-setup-dev.sh
-  # FEDORA (browser container)
-  distrobox-enter -n fedora-cli -- bash -c ./distrobox-setup-fedcli.sh
+  distrobox assemble create --file ./distrobox-debdev.ini &&
+    distrobox-enter -n debian-dev -- bash -c ./distrobox-setup-debdev.sh
+  # FEDORA (multi-use container)
+  # distrobox assemble create --file ./distrobox-fedcli.ini && \
+  #   distrobox-enter -n fedora-cli -- bash -c ./distrobox-setup-fedcli.sh
 else
   echo "Aborted..."
 fi
@@ -201,6 +208,17 @@ if confirm_action; then
     com.vysp3r.ProtonPlus \
     com.github.zocker_160.SyncThingy \
     org.equeim.Tremotesf
+else
+  echo "Aborted..."
+fi
+
+# fix libva-nvidia-driver using git version of nvidia-vaapi-driver
+echo "Fix libva-nvidia-driver for Flatpak version of Firefox?"
+if confirm_action; then
+  outdir="$HOME/.var/app/org.mozilla.firefox/dri"
+  mkdir -p "$outdir" && rm -rf "$outdir"/*.* || exit 1
+  unzip "$SUPPORT"/libva-nvidia-driver_git-0.0.13.zip -d "$outdir"
+  flatpak override --user --env=LIBVA_DRIVERS_PATH="$outdir" org.mozilla.firefox
 else
   echo "Aborted..."
 fi

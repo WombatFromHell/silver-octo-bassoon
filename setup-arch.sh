@@ -104,7 +104,7 @@ fi
 
 echo "Install Nvidia driver tweaks?"
 if confirm_action; then
-  sudo pacman -Sy nvidia-dkms lib32-nvidia-utils libva-nvidia-driver
+  sudo pacman -Sy nvidia-open-dkms lib32-nvidia-utils libva-nvidia-driver
 
   $CP ./etc-X11/Xwrapper.config /etc/X11/ &&
     $CP ./etc-xorg.conf.d/20-nvidia.conf /etc/X11/xorg.conf.d/
@@ -129,16 +129,20 @@ if confirm_action; then
       openrgb rsync gnupg git earlyoom mangohud lib32-mangohud \
       lib32-pulseaudio fuse2 winetricks protontricks xclip wl-clipboard
 
-  # install some common aliases
-  {
-    echo "EZA_STANDARD_OPTIONS='--group --header --group-directories-first --icons --color=auto -A'"
-    echo "alias ls='eza \$EZA_STANDARD_OPTIONS'"
-    echo "alias ll='eza \$EZA_STANDARD_OPTIONS --long'"
-    echo "alias llt='eza \$EZA_STANDARD_OPTIONS --long --tree'"
-    echo "alias la='eza \$EZA_STANDARD_OPTIONS --all'"
-    echo "alias l='eza \$EZA_STANDARD_OPTIONS'"
-    echo "alias cat='bat'"
-  } >>"$HOME/.bashrc"
+  # install some aliases
+  cat <<EOF >>"$HOME"/.bashrc
+# If not running interactively, don't do anything
+! [[ -n "$PS1" ]] && return
+if ! [ -f "/var/run/.containerenv" ] && ! [[ "$HOSTNAME" == *libvirt* ]]; then
+  EZA_STANDARD_OPTIONS='--group --header --group-directories-first --icons --color=auto -A'
+  alias ls='eza \$EZA_STANDARD_OPTIONS'
+  alias ll='eza \$EZA_STANDARD_OPTIONS --long'
+  alias llt='eza \$EZA_STANDARD_OPTIONS --long --tree'
+  alias la='eza \$EZA_STANDARD_OPTIONS --all'
+  alias l='eza \$EZA_STANDARD_OPTIONS'
+  alias cat='bat'
+fi
+EOF
 
   # enable AMD Ryzen Pstate and enable OpenRGB for Gigabyte mobos (on patched kernels)
   rgb_grub_arg="amd_pstate=active acpi_enforce_resources=lax"
@@ -151,6 +155,7 @@ if confirm_action; then
     sudo systemctl enable --now scx
   # enable earlyoom for safety when under memory stress
   sudo pacman -Sy earlyoom &&
+    sudo systemctl disable --now systemd-oomd &&
     sudo systemctl enable --now earlyoom
   # make sure gamemoded is enabled for our user
   systemctl --user daemon-reload &&
@@ -211,7 +216,7 @@ if confirm_action; then
     sudo systemctl daemon-reload &&
     sudo systemctl enable --now fix-wakeups.service
 
-  # modify and copy and any swap file mounts
+  # modify and copy swap mount
   $CP ./systemd-automount/mnt-linuxgames-Games-swapfile.swap /etc/systemd/system/ &&
     sudo chown root:root /etc/systemd/system/*.swap
 
@@ -250,15 +255,15 @@ if confirm_action; then
 
   # install some common appimages
   NVIM_LOCAL="/usr/local/bin/nvim.AppImage"
-  $CP "$SUPPORT"/appimages/nvim-0.10.0.AppImage "$NVIM_LOCAL" &&
+  $CP "$SUPPORT"/appimages/nvim.AppImage "$NVIM_LOCAL" &&
     sudo chown root:root "$NVIM_LOCAL" &&
     sudo chmod 0755 "$NVIM_LOCAL" &&
     sudo ln -sf "$NVIM_LOCAL" /usr/local/bin/nvim &&
-    {
-      echo "EDITOR='/usr/local/bin/nvim'"
-      echo "alias edit='\$EDITOR'"
-      echo "alias sedit='sudo -E \$EDITOR'"
-    } >>"$HOME/.bashrc"
+    cat <<EOF >>"$HOME"/.bashrc
+echo "EDITOR='/usr/local/bin/nvim'"
+echo "alias edit='\$EDITOR'"
+echo "alias sedit='sudo -E \$EDITOR'"
+EOF
 
   mkdir -p "$HOME/AppImages/" &&
     $CP "$SUPPORT"/appimages/*.AppImage "$HOME/AppImages/" &&
@@ -272,17 +277,16 @@ fi
 #
 echo "Perform assembly and customization of Distrobox containers?"
 if confirm_action; then
-  if ! command -v podman >/dev/null || ! command -v distrobox >/dev/null; then
-    sudo pacman -Sy --noconfirm podman distrobox
-  fi
   chmod +x distrobox-setup-*.sh
-  distrobox assemble create --file ./distrobox-assemble.ini
-  # ARCHLINUX (misc container)
-  #distrobox-enter -n arch-cli -- bash -c ./distrobox-setup-archcli.sh
+  # ARCHLINUX
+  # distrobox assemble create --file ./distrobox-archcli.ini && \
+  #   distrobox-enter -n arch-cli -- bash -c ./distrobox-setup-archcli.sh
   # DEBIAN (dev container)
-  distrobox-enter -n debian-dev -- bash -c ./distrobox-setup-dev.sh
-  # FEDORA (browser container)
-  distrobox-enter -n fedora-cli -- bash -c ./distrobox-setup-fedcli.sh
+  distrobox assemble create --file ./distrobox-debdev.ini &&
+    distrobox-enter -n debian-dev -- bash -c ./distrobox-setup-debdev.sh
+  # FEDORA (multi-use container)
+  # distrobox assemble create --file ./distrobox-fedcli.ini && \
+  #   distrobox-enter -n fedora-cli -- bash -c ./distrobox-setup-fedcli.sh
 else
   echo "Aborted..."
 fi
@@ -299,7 +303,7 @@ if confirm_action; then
     com.github.zocker_160.SyncThingy \
     it.mijorus.gearlever \
     org.equeim.Tremotesf \
-    io.github.dvlv.boxbuddyrs
+    com.vysp3r.ProtonPlus
 else
   echo "Aborted..."
 fi

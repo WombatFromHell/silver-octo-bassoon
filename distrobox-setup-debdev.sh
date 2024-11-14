@@ -21,22 +21,29 @@ sudo apt-get update -y &&
   sudo apt-get install -y code
 
 # install firefox-dev edition repo and signing key
-# sudo mkdir -p /etc/apt/keyrings &&
-#   wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O- | sudo tee /etc/apt/keyrings/packages.mozilla.org.asc >/dev/null
-# gpg -n -q --import --import-options import-show /etc/apt/keyrings/packages.mozilla.org.asc | awk '/pub/{getline; gsub(/^ +| +$/,""); if($0 == "35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3") print "\nThe key fingerprint matches ("$0").\n"; else print "\nVerification failed: the fingerprint ("$0") does not match the expected one.\n"}' &&
-#   echo '
-# Package: *
-# Pin: origin packages.mozilla.org
-# Pin-Priority: 1000
-# ' | sudo tee /etc/apt/preferences.d/mozilla &&
-#   echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" | sudo tee /etc/apt/sources.list.d/mozilla.list >/dev/null &&
-#   sudo apt-get update &&
-#   sudo apt-get install -y firefox-devedition
+sudo mkdir -p /etc/apt/keyrings &&
+  wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O- | sudo tee /etc/apt/keyrings/packages.mozilla.org.asc >/dev/null
+gpg -n -q --import --import-options import-show /etc/apt/keyrings/packages.mozilla.org.asc | awk '/pub/{getline; gsub(/^ +| +$/,""); if($0 == "35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3") print "\nThe key fingerprint matches ("$0").\n"; else print "\nVerification failed: the fingerprint ("$0") does not match the expected one.\n"}' &&
+  echo '
+Package: *
+Pin: origin packages.mozilla.org
+Pin-Priority: 1000
+' | sudo tee /etc/apt/preferences.d/mozilla &&
+  echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" | sudo tee /etc/apt/sources.list.d/mozilla.list >/dev/null &&
+  sudo apt-get update &&
+  sudo apt-get install -y firefox-devedition
 
+# install brave-browser repo and signing key
+sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" |
+  sudo tee /etc/apt/sources.list.d/brave-browser-release.list
+sudo apt-get update &&
+  sudo apt-get install -y brave-browser
+
+#
 # install some common dev environment tools and repos
 #
 # add the eza community repo
-#
 # sudo mkdir -p /etc/apt/keyrings &&
 wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg &&
   echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" | sudo tee /etc/apt/sources.list.d/gierens.list &&
@@ -78,11 +85,22 @@ if command -v code &>/dev/null; then
     distrobox-export -b /usr/bin/xclip-copyfile &&
     distrobox-export -b /usr/bin/xclip-cutfile &&
     distrobox-export -b /usr/bin/xclip-pastefile &&
-    distrobox-export -a firefox-devedition
-
-  echo "GTK_USE_PORTAL=1" >>"$HOME"/.bashrc
-  echo "[ -f \"/var/run/.containerenv\" ] && [[ \"\$HOSTNAME\" == \"\*debian-dev\*\" ]] && /usr/bin/fish -l" >>"$HOME"/.bashrc
-
-  exit 0
+    echo "GTK_USE_PORTAL=1" >>"$HOME"/.bashrc
+else
+  echo "Error! Cannot find 'code'!"
+  exit 1
 fi
-exit 1
+
+if command -v brave-browser &>/dev/null; then
+  distrobox-export -a brave-browser
+else
+  echo "Error! Cannot find 'brave-browser'!"
+  exit 1
+fi
+
+if command -v firefox-devedition &>/dev/null; then
+  distrobox-export -a firefox-devedition
+else
+  echo "Error! Cannot find 'firefox-devedition'!"
+  exit 1
+fi
