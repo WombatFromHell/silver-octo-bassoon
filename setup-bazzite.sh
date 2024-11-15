@@ -219,6 +219,8 @@ if confirm_action; then
   mkdir -p "$outdir" && rm -rf "$outdir"/*.* || exit 1
   unzip "$SUPPORT"/libva-nvidia-driver_git-0.0.13.zip -d "$outdir"
   flatpak override --user --env=LIBVA_DRIVERS_PATH="$outdir" org.mozilla.firefox
+  flatpak --system --noninteractive remove org.mozilla.firefox &&
+    flatpak --user --noninteractive install org.mozilla.firefox org.freedesktop.Platform.ffmpeg-full
 else
   echo "Aborted..."
 fi
