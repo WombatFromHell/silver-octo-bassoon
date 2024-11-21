@@ -216,6 +216,10 @@ if confirm_action; then
 		sudo systemctl daemon-reload &&
 		sudo systemctl enable --now fix-wakeups.service
 
+	# disable systemd suspend user when entering suspend
+	sudo rsync -rvh --chown=root:root --chmod=D755,F644 ./etc-systemd/system/systemd-{homed,suspend}.service.d /etc/systemd/system/ &&
+		sudo systemctl daemon-reload
+
 	# modify and copy swap mount
 	$CP ./systemd-automount/mnt-linuxgames-Games-swapfile.swap /etc/systemd/system/ &&
 		sudo chown root:root /etc/systemd/system/*.swap

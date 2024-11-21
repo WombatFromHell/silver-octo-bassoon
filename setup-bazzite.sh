@@ -107,6 +107,10 @@ if confirm_action; then
 		sudo systemctl enable --now fix-wakeups.service &&
 		sudo systemctl enable --now nvidia-tdp.service
 
+	# disable systemd suspend user when entering suspend
+	sudo rsync -rvh --chown=root:root --chmod=D755,F644 ./etc-systemd/system/systemd-{homed,suspend}.service.d /etc/systemd/system/ &&
+		sudo systemctl daemon-reload
+
 	# enable some secondary user-specific services
 	systemctl --user daemon-reload &&
 		chmod 0755 "$HOME"/.local/bin/* &&
