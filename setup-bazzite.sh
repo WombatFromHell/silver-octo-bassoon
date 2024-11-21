@@ -197,6 +197,9 @@ if confirm_action; then
 	# DEBIAN (dev container)
 	distrobox assemble create --file ./distrobox-debdev.ini &&
 		distrobox-enter -n debian-dev -- bash -c ./distrobox-setup-debdev.sh
+	# DEBIAN (cli container)
+	distrobox assemble create --file ./distrobox-debcli.ini &&
+		distrobox-enter -n debian-cli -- bash -c ./distrobox-setup-debcli.sh
 	# FEDORA (multi-use container)
 	# distrobox assemble create --file ./distrobox-fedcli.ini && \
 	#   distrobox-enter -n fedora-cli -- bash -c ./distrobox-setup-fedcli.sh
