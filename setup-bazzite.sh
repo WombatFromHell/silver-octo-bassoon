@@ -133,7 +133,7 @@ if confirm_action; then
 	echo "Install Brew and some common utils?"
 	if confirm_action; then
 		if command -v brew >/dev/null; then
-			brew install eza fd ripgrep fzf bat clipboard xclip lazygit
+			brew install eza fd ripgrep fzf bat lazygit
 		else
 			echo "Error! Cannot find 'brew'!"
 			exit 1
@@ -198,8 +198,8 @@ if confirm_action; then
 	distrobox assemble create --file ./distrobox-debdev.ini &&
 		distrobox-enter -n debian-dev -- bash -c ./distrobox-setup-debdev.sh
 	# DEBIAN (cli container)
-	distrobox assemble create --file ./distrobox-debcli.ini &&
-		distrobox-enter -n debian-cli -- bash -c ./distrobox-setup-debcli.sh
+	# distrobox assemble create --file ./distrobox-debcli.ini &&
+	#   distrobox-enter -n debian-cli -- bash -c ./distrobox-setup-debcli.sh
 	# FEDORA (multi-use container)
 	# distrobox assemble create --file ./distrobox-fedcli.ini && \
 	#   distrobox-enter -n fedora-cli -- bash -c ./distrobox-setup-fedcli.sh
