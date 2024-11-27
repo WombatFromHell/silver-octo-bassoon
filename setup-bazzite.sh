@@ -214,6 +214,8 @@ if confirm_action; then
 	flatpak install --user --noninteractive \
 		com.vysp3r.ProtonPlus \
 		com.github.zocker_160.SyncThingy
+	# add a workaround for degraded notification support cased by libnotify
+	flatpak override --user --socket=session-bus --env=NOTIFY_IGNORE_PORTAL=1 --talk-name=org.freedesktop.Notifications org.mozilla.firefox
 else
 	echo "Aborted..."
 fi
