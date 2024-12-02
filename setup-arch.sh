@@ -56,16 +56,13 @@ if [ "$ROOT_FS_TYPE" = "btrfs" ]; then
 	if confirm_action; then
 		sudo mkdir -p "$btrfs_mount" &&
 			sudo mount -o subvolid=5,noatime "$ROOT_FS_DEV" "$btrfs_mount" &&
-			sudo btrfs sub cr "$btrfs_mount"/@snapshots &&
-			sudo btrfs sub cr "$btrfs_mount"/@snapshots/root
+			sudo btrfs sub cr "$btrfs_mount"/@snapshots
 		echo "UUID=$ROOT_FS_UUID /.snapshots btrfs subvol=/@snapshots/root,defaults,noatime,compress=zstd,commit=120 0 0" | sudo tee -a /etc/fstab
 
-		sudo pacman -Sy --noconfirm snapper snap-pac inotify-tools
-		paru -Sy --noconfirm grub-btrfs
+		sudo pacman -Sy --noconfirm grub-btrfs snap-pac inotify-tools
 
 		sudo snapper -c root create-config / &&
-			sudo btrfs sub del /.snapshots &&
-			sudo mkdir "$btrfs_mount"/@/.snapshots
+			sudo mv "$btrfs_mount/@/.snapshots" "$btrfs_mount/@snapshots/root"
 
 		snapper_root_conf="/etc/snapper/configs/root"
 		sudo cp -f ./etc-snapper-configs/root "$snapper_root_conf" &&
@@ -76,10 +73,8 @@ if [ "$ROOT_FS_TYPE" = "btrfs" ]; then
 			echo "Detected /home running on a btrfs subvolume, should we setup snapper for it?"
 			if confirm_action; then
 				sudo snapper -c home create-config /home &&
-					sudo btrfs sub del /home/.snapshots
+					sudo mv "$btrfs_mount/@home/.snapshots" "$btrfs_mount/@snapshots/home"
 
-				sudo btrfs sub cr "$btrfs_mount"/@snapshots/home &&
-					sudo mkdir "$btrfs_mount"/@home/.snapshots
 				echo "UUID=$ROOT_FS_UUID /home/.snapshots btrfs subvol=/@snapshots/home,defaults,noatime,compress=zstd,commit=120 0 0" | sudo tee -a /etc/fstab
 
 				snapper_home_conf="/etc/snapper/configs/home"
@@ -93,7 +88,7 @@ if [ "$ROOT_FS_TYPE" = "btrfs" ]; then
 
 		sudo systemctl daemon-reload &&
 			sudo systemctl restart --now snapperd.service &&
-			sudo systemctl enable snapper-{cleanup,boot,timeline}.timer
+			sudo systemctl enable snapper-{cleanup,backup,timeline}.timer
 
 		# regenerate grub-btrfs snapshots
 		sudo grub-mkconfig -o /boot/grub/grub.cfg
@@ -104,8 +99,6 @@ fi
 
 echo "Install Nvidia driver tweaks?"
 if confirm_action; then
-	sudo pacman -Sy nvidia-open-dkms lib32-nvidia-utils libva-nvidia-driver
-
 	$CP ./etc-X11/Xwrapper.config /etc/X11/ &&
 		$CP ./etc-xorg.conf.d/20-nvidia.conf /etc/X11/xorg.conf.d/
 
@@ -127,12 +120,11 @@ if confirm_action; then
 			fd zoxide ripgrep bat fzf fish zsh python-pip \
 			curl wget firefox steam lib32-gamemode gamemode \
 			openrgb rsync gnupg git earlyoom mangohud lib32-mangohud \
-			lib32-pulseaudio fuse2 winetricks protontricks xclip wl-clipboard
+			lib32-pulseaudio fuse2 winetricks protontricks wl-clipboard \
+			qt5-tools linux-cachyos-bore-lto-nvidia-open
 
 	# install some aliases
 	cat <<EOF >>"$HOME"/.bashrc
-# If not running interactively, don't do anything
-! [[ -n "$PS1" ]] && return
 if ! [ -f "/var/run/.containerenv" ] && ! [[ "$HOSTNAME" == *libvirt* ]]; then
   EZA_STANDARD_OPTIONS='--group --header --group-directories-first --icons --color=auto -A'
   alias ls='eza \$EZA_STANDARD_OPTIONS'
@@ -150,21 +142,23 @@ EOF
 		sudo grub-mkconfig -o /boot/grub/grub.cfg
 	fi
 
-	# enable scx_rusty and set as default on boot (assuming CachyOS)
-	sudo pacman -Sy --noconfirm scx-scheds &&
-		sudo systemctl enable --now scx
+	# set user as member of 'gamemode' group to fix gamemode service
+	sudo mkdir -p /etc/polkit-1/localauthority/50-local.d/ &&
+		sudo groupadd -f 'gamemode' &&
+		sudo gpasswd -a "$USER" gamemode &&
+		cat <<EOF >>"/etc/polkit-1/localauthority/50-local.d/gamemode.pkla"
+Identity=unix-group:gamemode
+Action=com.feralinteractive.GameMode.governor-helper;com.feralinteractive.GameMode.gpu-helper;com.feralinteractive.GameMode.cpu-helper;com.feralinteractive.GameMode.procsys-helper
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+EOF
+	systemctl --user enable --now gamemoded.service
+
 	# enable earlyoom for safety when under memory stress
 	sudo pacman -Sy earlyoom &&
 		sudo systemctl disable --now systemd-oomd &&
 		sudo systemctl enable --now earlyoom
-	# make sure gamemoded is enabled for our user
-	systemctl --user daemon-reload &&
-		systemctl --user enable --now gamemoded.service
-	# enable scx_lavd
-	if command -v scx_lavd >/dev/null; then
-		$CP ./etc-default/scx /etc/default/scx # &&
-		# sudo systemctl enable --now scx
-	fi
 else
 	echo "Aborted..."
 fi
@@ -239,6 +233,12 @@ if confirm_action; then
 		chmod 0755 "$HOME"/.local/bin/* &&
 		systemctl --user enable --now on-session-state.service
 
+	# update fish shell plugins
+	fish_path="$(command -v fish)"
+	$fish_path -c "rm -rf $HOME/.config/fish/{completions,conf.d,functions,themes,fish_variables}; \
+      fisher update; \
+      fish_add_path $HOME/.local/bin /usr/local/bin"
+
 	# SETUP USER DEPENDENCIES
 	echo "Install common user fonts?"
 	if confirm_action; then
@@ -259,20 +259,18 @@ if confirm_action; then
 	fi
 
 	# install some common appimages
-	NVIM_LOCAL="/usr/local/bin/nvim.AppImage"
-	$CP "$SUPPORT"/appimages/nvim.AppImage "$NVIM_LOCAL" &&
-		sudo chown root:root "$NVIM_LOCAL" &&
-		sudo chmod 0755 "$NVIM_LOCAL" &&
-		sudo ln -sf "$NVIM_LOCAL" /usr/local/bin/nvim &&
-		cat <<EOF >>"$HOME"/.bashrc
-echo "EDITOR='/usr/local/bin/nvim'"
-echo "alias edit='\$EDITOR'"
-echo "alias sedit='sudo -E \$EDITOR'"
-EOF
-
-	mkdir -p "$HOME/AppImages/" &&
+	mkdir -p "$HOME"/AppImages &&
 		$CP "$SUPPORT"/appimages/*.AppImage "$HOME/AppImages/" &&
 		chmod 0755 "$HOME"/AppImages/*.AppImage
+
+	# link neovim to a global path directory for accessibility
+	sudo ln -sf "$HOME/nvim.AppImage" /usr/local/bin/nvim &&
+		cat <<EOF >>"$HOME"/.bashrc
+EDITOR='/usr/local/bin/nvim'
+alias edit='\$EDITOR'
+alias sedit='sudo -E \$EDITOR'
+EOF
+
 else
 	echo "Aborted..."
 fi
