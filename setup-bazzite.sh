@@ -142,9 +142,9 @@ if confirm_action; then
 		# install some aliases for eza
 		cat <<EOF >>"$HOME"/.bashrc
 # If not running interactively, don't do anything
-! [[ -n "$PS1" ]] && return
-[ -f "/var/run/.containerenv" ] && [[ "$HOSTNAME" == *debian-dev* ]] && /usr/bin/fish -l
-if ! [ -f "/var/run/.containerenv" ] && ! [[ "$HOSTNAME" == *libvirt* ]]; then
+! [[ -n "\$PS1" ]] && return
+[ -f "/var/run/.containerenv" ] && [[ "\$HOSTNAME" == *debian-dev* ]] && /usr/bin/fish -l
+if ! [ -f "/var/run/.containerenv" ] && ! [[ "\$HOSTNAME" == *libvirt* ]]; then
   EZA_STANDARD_OPTIONS='--group --header --group-directories-first --icons --color=auto -A'
   alias ls='eza \$EZA_STANDARD_OPTIONS'
   alias ll='eza \$EZA_STANDARD_OPTIONS --long'
@@ -167,20 +167,21 @@ EOF
 	fi
 
 	# install some common appimages
-	NVIM_LOCAL="/usr/local/bin/nvim.AppImage"
-	$CP "$SUPPORT"/appimages/nvim.AppImage "$NVIM_LOCAL" &&
-		sudo chown root:root "$NVIM_LOCAL" &&
-		sudo chmod 0755 "$NVIM_LOCAL" &&
-		sudo ln -sf "$NVIM_LOCAL" /usr/local/bin/nvim &&
+	appimages_path="$HOME/AppImages"
+	mkdir -p "$appimages_path" &&
+		$CP "$SUPPORT"/appimages/*.* "$appimages_path/" &&
+		chmod 0755 "$appimages_path"/*.*
+
+	# link neovim to a global path directory for accessibility
+	nvim_local_path="$HOME/AppImages/nvim.appimage"
+	sudo ln -sf "$nvim_local_path" /usr/local/bin/nvim &&
+		ln -sf "$nvim_local_path" "$HOME"/.local/bin/nvim &&
 		cat <<EOF >>"$HOME"/.bashrc
 EDITOR='/usr/local/bin/nvim'
 alias edit='\$EDITOR'
 alias sedit='sudo -E \$EDITOR'
 EOF
 
-	mkdir -p "$HOME"/AppImages/ &&
-		$CP "$SUPPORT"/appimages/*.AppImage "$HOME"/AppImages/ &&
-		chmod 0755 "$HOME"/AppImages/*.AppImage
 else
 	echo "Aborted..."
 fi

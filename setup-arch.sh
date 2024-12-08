@@ -118,10 +118,9 @@ if confirm_action; then
 	sudo pacman -R --noconfirm cachy-browser &&
 		sudo pacman -Sy --noconfirm \
 			fd zoxide ripgrep bat fzf fish zsh python-pip \
-			curl wget firefox steam lib32-gamemode gamemode \
-			openrgb rsync gnupg git earlyoom mangohud lib32-mangohud \
-			lib32-pulseaudio fuse2 winetricks protontricks wl-clipboard \
-			qt5-tools linux-cachyos-bore-lto-nvidia-open
+			curl wget firefox steam openrgb rsync gnupg git \
+			earlyoom mangohud lib32-mangohud lib32-pulseaudio \
+			fuse2 winetricks protontricks wl-clipboard
 
 	# install some aliases
 	cat <<EOF >>"$HOME"/.bashrc
@@ -143,17 +142,23 @@ EOF
 	fi
 
 	# set user as member of 'gamemode' group to fix gamemode service
-	sudo mkdir -p /etc/polkit-1/localauthority/50-local.d/ &&
-		sudo groupadd -f 'gamemode' &&
-		sudo gpasswd -a "$USER" gamemode &&
-		cat <<EOF >>"/etc/polkit-1/localauthority/50-local.d/gamemode.pkla"
+	echo "Setup gamemode user service?"
+	if confirm_action; then
+		sudo pacman -Sy --noconfirm lib32-gamemode gamemode &&
+			sudo mkdir -p /etc/polkit-1/localauthority/50-local.d/ &&
+			sudo groupadd -f 'gamemode' &&
+			sudo gpasswd -a "$USER" gamemode &&
+			cat <<EOF >>"/etc/polkit-1/localauthority/50-local.d/gamemode.pkla"
 Identity=unix-group:gamemode
 Action=com.feralinteractive.GameMode.governor-helper;com.feralinteractive.GameMode.gpu-helper;com.feralinteractive.GameMode.cpu-helper;com.feralinteractive.GameMode.procsys-helper
 ResultAny=yes
 ResultInactive=yes
 ResultActive=yes
 EOF
-	systemctl --user enable --now gamemoded.service
+		systemctl --user enable --now gamemoded.service
+	else
+		echo "Aborted..."
+	fi
 
 	# enable earlyoom for safety when under memory stress
 	sudo pacman -Sy earlyoom &&
@@ -187,7 +192,7 @@ echo "Perform user-specific customizations?"
 if confirm_action; then
 	$CP -r "$ROOT/.config" "$HOME/" &&
 		$CP -r "$ROOT/.local" "$HOME/" &&
-		$CP -r "$ROOT/.wezterm.lua" "$SUPPORT"/.gitconfig "$HOME/"
+		$CP "$ROOT/.wezterm.lua" "$SUPPORT"/.gitconfig "$HOME/"
 
 	sudo cat ./etc/environment | sudo tee -a /etc/environment
 	$CP ./etc-systemd/zram-generator.conf /etc/systemd/zram-generator.conf
@@ -219,14 +224,19 @@ if confirm_action; then
 		sudo chown root:root /etc/systemd/system/*.swap
 
 	# enable optional mounts via systemd-automount
-	$CP ./systemd-automount/*.* /etc/systemd/system/
+	echo "Enable optional automounts and swapfile?"
+	if confirm_action; then
+		$CP ./systemd-automount/*.* /etc/systemd/system/
 
-	$CP "$SUPPORT"/.smb-credentials /etc/ &&
-		sudo chown root:root /etc/.smb-credentials &&
-		sudo chmod 0400 /etc/.smb-credentials &&
-		sudo mkdir -p /mnt/{Downloads,FTPRoot,home,linuxgames,linuxdata}
-	#sudo systemctl enable --now mnt-{Downloads,FTPRoot,home,linuxgames,linuxdata}.automount
-	#sudo systemctl enable --now mnt-linuxgames-Games-swapfile.swap
+		$CP "$SUPPORT"/.smb-credentials /etc/ &&
+			sudo chown root:root /etc/.smb-credentials &&
+			sudo chmod 0400 /etc/.smb-credentials
+		#sudo mkdir -p /mnt/{Downloads,FTPRoot,home,linuxgames,linuxdata}
+		sudo systemctl enable --now mnt-{Downloads,FTPRoot,home,linuxgames,linuxdata}.automount
+		sudo systemctl enable --now mnt-linuxgames-Games-swapfile.swap
+	else
+		echo "Aborted..."
+	fi
 
 	# enable some secondary user-specific services
 	systemctl --user daemon-reload &&
@@ -235,8 +245,8 @@ if confirm_action; then
 
 	# update fish shell plugins
 	fish_path="$(command -v fish)"
-	$fish_path -c "rm -rf $HOME/.config/fish/{completions,conf.d,functions,themes,fish_variables}; \
-      fisher update; \
+	$fish_path -c "rm -rf $HOME/.config/fish/{completions,conf.d,functions,themes,fish_variables} && \
+      fisher update && \
       fish_add_path $HOME/.local/bin /usr/local/bin"
 
 	# SETUP USER DEPENDENCIES
@@ -259,12 +269,15 @@ if confirm_action; then
 	fi
 
 	# install some common appimages
-	mkdir -p "$HOME"/AppImages &&
-		$CP "$SUPPORT"/appimages/*.AppImage "$HOME/AppImages/" &&
-		chmod 0755 "$HOME"/AppImages/*.AppImage
+	appimages_path="$HOME/AppImages"
+	mkdir -p "$appimages_path" &&
+		$CP "$SUPPORT"/appimages/*.* "$appimages_path/" &&
+		chmod 0755 "$appimages_path"/*.*
 
 	# link neovim to a global path directory for accessibility
-	sudo ln -sf "$HOME/nvim.AppImage" /usr/local/bin/nvim &&
+	nvim_local_path="$HOME/AppImages/nvim.appimage"
+	sudo ln -sf "$nvim_local_path" /usr/local/bin/nvim &&
+		ln -sf "$nvim_local_path" "$HOME"/.local/bin/nvim &&
 		cat <<EOF >>"$HOME"/.bashrc
 EDITOR='/usr/local/bin/nvim'
 alias edit='\$EDITOR'
