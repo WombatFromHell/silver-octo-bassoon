@@ -293,16 +293,11 @@ fi
 #
 echo "Perform assembly and customization of Distrobox containers?"
 if confirm_action; then
-	chmod +x distrobox-setup-*.sh
-	# ARCHLINUX
-	# distrobox assemble create --file ./distrobox-archcli.ini && \
-	#   distrobox-enter -n arch-cli -- bash -c ./distrobox-setup-archcli.sh
-	# DEBIAN (dev container)
-	distrobox assemble create --file ./distrobox-debdev.ini &&
-		distrobox-enter -n debian-dev -- bash -c ./distrobox-setup-debdev.sh
-	# FEDORA (multi-use container)
-	# distrobox assemble create --file ./distrobox-fedcli.ini && \
-	#   distrobox-enter -n fedora-cli -- bash -c ./distrobox-setup-fedcli.sh
+	# DEBIAN (dev container with Brave and VSCode)
+	if ! command -v distrobox >/dev/null; then
+		sudo pacman -Sy --noconfirm podman podman-compose distrobox
+	fi
+	distrobox assemble create --file ./distrobox-devbox.ini
 else
 	echo "Aborted..."
 fi

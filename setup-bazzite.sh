@@ -196,8 +196,7 @@ if confirm_action; then
 	# distrobox assemble create --file ./distrobox-archcli.ini && \
 	#   distrobox-enter -n arch-cli -- bash -c ./distrobox-setup-archcli.sh
 	# DEBIAN (dev container)
-	distrobox assemble create --file ./distrobox-debdev.ini &&
-		distrobox-enter -n debian-dev -- bash -c ./distrobox-setup-debdev.sh
+	distrobox assemble create --file ./distrobox-devbox.ini
 	# DEBIAN (cli container)
 	# distrobox assemble create --file ./distrobox-debcli.ini &&
 	#   distrobox-enter -n debian-cli -- bash -c ./distrobox-setup-debcli.sh
