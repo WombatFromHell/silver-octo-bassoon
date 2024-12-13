@@ -191,18 +191,12 @@ fi
 #
 echo "Perform assembly and customization of Distrobox containers?"
 if confirm_action; then
-	chmod +x distrobox-setup-*.sh
 	# ARCHLINUX
-	# distrobox assemble create --file ./distrobox-archcli.ini && \
-	#   distrobox-enter -n arch-cli -- bash -c ./distrobox-setup-archcli.sh
+	# distrobox assemble create --file ./distrobox/distrobox-assemble-archcli.ini
 	# DEBIAN (dev container)
-	distrobox assemble create --file ./distrobox-devbox.ini
-	# DEBIAN (cli container)
-	# distrobox assemble create --file ./distrobox-debcli.ini &&
-	#   distrobox-enter -n debian-cli -- bash -c ./distrobox-setup-debcli.sh
+	distrobox assemble create --file ./distrobox/distrobox-assemble-devbox.ini
 	# FEDORA (multi-use container)
-	# distrobox assemble create --file ./distrobox-fedcli.ini && \
-	#   distrobox-enter -n fedora-cli -- bash -c ./distrobox-setup-fedcli.sh
+	#distrobox assemble create --file ./distrobox/distrobox-assemble-fedcli.ini
 else
 	echo "Aborted..."
 fi
