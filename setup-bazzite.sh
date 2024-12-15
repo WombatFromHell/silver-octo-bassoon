@@ -191,12 +191,15 @@ fi
 #
 echo "Perform assembly and customization of Distrobox containers?"
 if confirm_action; then
+	chmod +x ./distrobox/*.sh
 	# ARCHLINUX
 	# distrobox assemble create --file ./distrobox/distrobox-assemble-archcli.ini
 	# DEBIAN (dev container)
-	distrobox assemble create --file ./distrobox/distrobox-assemble-devbox.ini
+	distrobox assemble create --file ./distrobox/distrobox-assemble-devbox.ini &&
+		distrobox enter devbox -- bash -c ./distrobox/distrobox-setup-devbox.sh
 	# FEDORA (multi-use container)
-	#distrobox assemble create --file ./distrobox/distrobox-assemble-fedcli.ini
+	# distrobox assemble create --file ./distrobox/distrobox-assemble-fedcli.ini &&
+	# distrobox enter fedcli -- bash -c ./distrobox/distrobox-setup-fedcli.sh
 else
 	echo "Aborted..."
 fi
