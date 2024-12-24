@@ -196,7 +196,7 @@ if confirm_action; then
 	# distrobox assemble create --file ./distrobox/distrobox-assemble-archcli.ini
 	# DEBIAN (dev container)
 	distrobox assemble create --file ./distrobox/distrobox-assemble-devbox.ini &&
-		distrobox enter devbox -- bash -c ./distrobox/distrobox-setup-devbox.sh
+		./distrobox/brave-export-fix.sh
 	# FEDORA (multi-use container)
 	# distrobox assemble create --file ./distrobox/distrobox-assemble-fedcli.ini &&
 	# distrobox enter fedcli -- bash -c ./distrobox/distrobox-setup-fedcli.sh
