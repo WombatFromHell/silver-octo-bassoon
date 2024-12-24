@@ -14,4 +14,4 @@ fi
 
 cp -f "$BRAVE_EXPORT" "$BRAVE_EXPORT.bak"
 sed -i "s#${BRAVE_ESC}#${BRAVER_ESC}#g" "$BRAVE_EXPORT"
-sudo update-desktop-database
+update-desktop-database ~/.local/share/applications
