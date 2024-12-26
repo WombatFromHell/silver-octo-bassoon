@@ -213,6 +213,16 @@ if confirm_action; then
 		com.github.zocker_160.SyncThingy
 	# add a workaround for degraded notification support cased by libnotify
 	flatpak override --user --socket=session-bus --env=NOTIFY_IGNORE_PORTAL=1 --talk-name=org.freedesktop.Notifications org.mozilla.firefox
+
+	echo "Install Flatpak version of Brave browser?"
+	if confirm_action; then
+		flatpak install --user --noninteractive com.brave.Browser
+		chmod +x ./support/brave-flatpak-fix.sh
+		# include a fix for hardware acceleration
+		./support/brave-flatpak-fix.sh
+	else
+		echo "Aborted..."
+	fi
 else
 	echo "Aborted..."
 fi

@@ -317,6 +317,16 @@ if confirm_action; then
 		com.github.zocker_160.SyncThingy \
 		it.mijorus.gearlever \
 		com.vysp3r.ProtonPlus
+
+	echo "Install Flatpak version of Brave browser?"
+	if confirm_action; then
+		flatpak install --user --noninteractive com.brave.Browser
+		chmod +x ./support/brave-flatpak-fix.sh
+		# include a fix for hardware acceleration
+		./support/brave-flatpak-fix.sh
+	else
+		echo "Aborted..."
+	fi
 else
 	echo "Aborted..."
 fi
