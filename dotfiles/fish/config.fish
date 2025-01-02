@@ -109,6 +109,7 @@ end
 set -x nvm_default_version v23.4.0
 set -x EDITOR /usr/local/bin/nvim
 set -x GPG_TTY (tty)
+set -x XDG_DATA_HOME $HOME/.local/share
 
 set --erase fish_user_paths
 fish_add_path ~/.local/bin ~/.local/share/nvim/mason/bin /usr/local/bin ~/.rd/bin

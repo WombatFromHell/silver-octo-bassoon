@@ -5,7 +5,7 @@ After=default.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/nvidia-pm.sh vlow
+ExecStart=/usr/local/bin/nvidia-pm.sh low
 ExecStop=/usr/local/bin/nvidia-pm.sh undo
 RemainAfterExit=yes
 
