@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 
 PREFIX=""
-if
-	command -v uwsm &
-	/dev/null
-then
+if command -v uwsm >/dev/null; then
 	PREFIX="uwsm app --"
 fi
 
@@ -32,7 +29,6 @@ close_steam() {
 graceful_exit() {
 	notify-send "System" "Gracefully closing apps..."
 
-	# close layers
 	systemctl --user stop gBar.service
 	systemctl --user stop pipewire.service
 	systemctl --user stop wireplumber.service
@@ -41,6 +37,8 @@ graceful_exit() {
 	# close all client windows
 	HYPRCMDS=$(hyprctl --instance 0 -j clients | jq -j '.[] | "dispatch closewindow address:\(.address); "')
 	hyprctl --instance 0 --batch "$HYPRCMDS" >/tmp/hyprgraceexit.log 2>&1
+	sleep 1
+
 	close_steam
 
 	COUNT=$(hyprctl clients | grep -c "class:")
@@ -52,7 +50,6 @@ graceful_exit() {
 		systemctl --user start gBar.service
 		systemctl --user start pipewire.service
 		systemctl --user start wireplumber.service
-		sleep 1
 		exit 1
 	fi
 }
@@ -60,13 +57,7 @@ graceful_exit() {
 hypr_exit() {
 	if pgrep -x "Hyprland" >/dev/null; then
 		graceful_exit
-		if [ -n "$PREFIX" ]; then
-			uwsm stop
-			sleep 1
-			hyprctl --instance 0 dispatch exit
-		else
-			hyprctl --instance 0 dispatch exit
-		fi
+		loginctl kill-session "$XDG_SESSION_ID"
 	fi
 }
 
