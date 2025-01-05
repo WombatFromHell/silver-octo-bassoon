@@ -66,8 +66,7 @@ tooltip {
 #tray,
 #backlight,
 #custom-notification,
-#custom-gputemp,
-#custom-launch_wofi {
+#custom-gputemp {
 	background: #1e1e2e;
 	background: #313244;
 	opacity: 0.8;
@@ -151,7 +150,6 @@ tooltip {
 	color: #89b4fa;
 	border-left: 0px;
 	border-right: 0px;
-	padding-left: 17px;
 	border-radius: 15px 0px 0px 15px;
 }
 
