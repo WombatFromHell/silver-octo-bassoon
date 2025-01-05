@@ -13,6 +13,10 @@ window#waybar {
 	color: #cdd6f4;
 }
 
+window#waybar.empty #window {
+	background-color: transparent;
+}
+
 tooltip {
 	background: #1e1e2e;
 	border-radius: 10px;
