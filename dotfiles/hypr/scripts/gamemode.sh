@@ -23,6 +23,7 @@ HEIGHT=$(echo "$GPR" | cut -d' ' -f2)
 #PERFUTIL="gamemoderun"
 PERFUTIL="game-performance"
 GAMESCOPE=$(which gamescope)
+
 HYPRGAMEMODE=$(hyprctl getoption animations:enabled | awk 'NR==1{print $2}')
 if [ "$HYPRGAMEMODE" -eq 1 ]; then
 	hyprctl --batch "\
@@ -35,9 +36,7 @@ if [ "$HYPRGAMEMODE" -eq 1 ]; then
         keyword decoration:rounding 0"
 	$PERFUTIL "$GAMESCOPE" \
 		-W "$WIDTH" -H "$HEIGHT" \
-		--backend sdl \
 		--hdr-enabled \
-		--immediate-flips \
 		-f "$@"
 fi
 hyprctl reload
