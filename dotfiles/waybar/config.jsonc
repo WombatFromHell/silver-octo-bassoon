@@ -10,20 +10,16 @@
 	"modules-center": ["hyprland/window"],
 	"modules-right": [
 		"tray",
-		"network",
 		"pulseaudio",
 		"pulseaudio#microphone",
 		"clock",
 		"custom/notification"
 	],
+
 	"hyprland/window": {
 		"format": "{}"
 	},
 
-	"workspace": {
-		"format": " {}",
-		"disable-scroll": false
-	},
 	"hyprland/workspaces": {
 		"disable-scroll": true,
 		"all-outputs": true,
@@ -36,9 +32,13 @@
 			"4": []
 		},
 		"format-icons": {
-			"active": "  ",
+			// "active": "  ",
 			"persistent": "  ",
-			"default": "  "
+			"default": "  ",
+			"1": "  ",
+			"2": "  ",
+			"3": "  ",
+			"4": "  "
 		}
 	},
 
