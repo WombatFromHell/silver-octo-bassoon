@@ -28,8 +28,8 @@ function yy
 end
 
 function custom_snap
-    set -q argv[2]; or set $argv[2] root
-    set -q argv[1]; or set $argv[1] "hard snapshot"
+    set -q argv[2]; or set argv[2] root
+    set -q argv[1]; and test -n "$argv[1]"; or set argv[1] "hard snapshot"
     snapper -c "$argv[2]" create -c important --description "$argv[1]"
 end
 function custom_snap_clean
@@ -43,8 +43,13 @@ function snap_home
     custom_snap "$argv[1]" home
 end
 function snap_quick
-    snap_root "$argv[1]"
-    snap_home "$argv[1]"
+    if set -q argv[1]; and test -n "$argv[1]"
+        snap_root "$argv[1]"
+        snap_home "$argv[1]"
+    else
+        snap_root
+        snap_home
+    end
 end
 function snap_ls
     snapper -c root ls && echo
@@ -130,6 +135,16 @@ alias yz='yazi'
 alias cat='bat'
 alias edit='$EDITOR'
 alias sedit='sudo -E $EDITOR'
+alias mkdir='mkdir -pv'
+# rsync shortcuts
+alias rsud_d='rsync --dry-run -avhzP --update --delete'
+alias rsud='rsync -avhzP --update --delete'
+alias rsu_d='rsync --dry-run -avhzP --update'
+alias rsu='rsync -avhzP --update'
+alias rsfd_d='rsync --dry-run -avhzP --update --delete --exclude="*/"'
+alias rsfd='rsync -avhzP --update --delete --exclude="*/"'
+alias rsf_d='rsync --dry-run -avhzP --update --exclude="*/"'
+alias rsf='rsync -avhzP --update --exclude="*/"'
 
 alias reflect='sudo cachyos-rate-mirrors --sync-check --country "US"'
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
