@@ -6,7 +6,12 @@
 	"passthrough": false,
 	"gtk-layer-shell": true,
 	"height": 44,
-	"modules-left": ["hyprland/workspaces", "temperature", "custom/gputemp"],
+	"modules-left": [
+		"hyprland/workspaces",
+		"custom/weather",
+		"temperature",
+		"custom/gputemp"
+	],
 	"modules-center": ["hyprland/window"],
 	"modules-right": [
 		"tray",
@@ -35,16 +40,16 @@
 			// "active": "  ",
 			"persistent": "  ",
 			"default": "  ",
-			"1": "  ",
-			"2": "  ",
-			"3": "  ",
-			"4": "  "
+			"1": " ",
+			"2": " ",
+			"3": " ",
+			"4": " "
 		}
 	},
 
 	"tray": {
-		"icon-size": 20,
-		"spacing": 14
+		"icon-size": 22,
+		"spacing": 18
 	},
 
 	"clock": {
@@ -148,5 +153,13 @@
 		"on-click": "swaync-client -t -sw",
 		"on-click-right": "swaync-client -d -sw",
 		"escape": true
+	},
+
+	"custom/weather": {
+		"format": "{}",
+		"tooltip": true,
+		"exec": "~/.config/hypr/scripts/wttrbar.sh",
+		"interval": 3600,
+		"return-type": "json"
 	}
 }
