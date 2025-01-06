@@ -53,7 +53,7 @@
 	},
 
 	"clock": {
-		"format": " {:%I:%M %p}",
+		"format": " {:%I:%M %p - %m/%d/%y}",
 		"tooltip-format": "<tt>{calendar}</tt>",
 		"calendar": {
 			"mode": "month",
@@ -99,7 +99,7 @@
 
 	"temperature": {
 		"hwmon-path": "/sys/bus/pci/drivers/k10temp/0000:00:18.3/hwmon/hwmon4/temp1_input",
-		"format": "{temperatureC}°C ",
+		"format": " {temperatureC}°C",
 		"critical-threshold": 86,
 		"format-critical": "{temperatureC}°C ",
 		"tooltip": false,
@@ -109,7 +109,7 @@
 	"custom/gputemp": {
 		"exec-if": "nvidia-smi",
 		"exec": "nvidia-smi --id=0 --query-gpu=temperature.gpu --format=csv,noheader,nounits",
-		"format": "{}°C ",
+		"format": " {}°C",
 		"return-type": "",
 		"tooltip": false,
 		"interval": 2
