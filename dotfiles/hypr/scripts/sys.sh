@@ -29,7 +29,7 @@ close_steam() {
 graceful_exit() {
 	notify-send "System" "Gracefully closing apps..."
 
-	systemctl --user stop gBar.service
+	systemctl --user stop waybar.service
 	systemctl --user stop pipewire.service
 	systemctl --user stop wireplumber.service
 	sleep 1
@@ -47,7 +47,7 @@ graceful_exit() {
 		return
 	else
 		notify-send "System" "Some apps didn't close. Aborting exit."
-		systemctl --user start gBar.service
+		systemctl --user start waybar.service
 		systemctl --user start pipewire.service
 		systemctl --user start wireplumber.service
 		exit 1
