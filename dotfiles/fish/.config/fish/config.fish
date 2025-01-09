@@ -111,7 +111,7 @@ function update_neovim
     end
 end
 
-set -x nvm_default_version v23.4.0
+set -x nvm_default_version v23.6.0
 set -x EDITOR /usr/local/bin/nvim
 set -x GPG_TTY (tty)
 set -x XDG_DATA_HOME $HOME/.local/share
@@ -137,14 +137,16 @@ alias edit='$EDITOR'
 alias sedit='sudo -E $EDITOR'
 alias mkdir='mkdir -pv'
 # rsync shortcuts
-alias rsud_d='rsync --dry-run -avhzP --update --delete'
-alias rsud='rsync -avhzP --update --delete'
-alias rsu_d='rsync --dry-run -avhzP --update'
-alias rsu='rsync -avhzP --update'
-alias rsfd_d='rsync --dry-run -avhzP --update --delete --exclude="*/"'
-alias rsfd='rsync -avhzP --update --delete --exclude="*/"'
-alias rsf_d='rsync --dry-run -avhzP --update --exclude="*/"'
-alias rsf='rsync -avhzP --update --exclude="*/"'
+alias _rsync='rsync -avzL --partial --info=progress2'
+alias _rsyncd='_rsync --dry-run'
+alias rsud_d='_rsync --update --delete'
+alias rsud='_rsync --update --delete'
+alias rsu_d='_rsyncd --update'
+alias rsu='_rsync --update'
+alias rsfd_d='_rsyncd --update --delete --exclude="*/"'
+alias rsfd='_rsync --update --delete --exclude="*/"'
+alias rsf_d='_rsyncd --update --exclude="*/"'
+alias rsf='_rsync --update --exclude="*/"'
 
 alias reflect='sudo cachyos-rate-mirrors --sync-check --country "US"'
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'

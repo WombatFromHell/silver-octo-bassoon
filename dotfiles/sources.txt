@@ -1,0 +1,7 @@
+home
+fish
+fuzzel
+hypr
+kitty
+swaync
+waybar
