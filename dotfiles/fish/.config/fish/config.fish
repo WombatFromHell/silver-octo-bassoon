@@ -117,19 +117,20 @@ set -x GPG_TTY (tty)
 set -x XDG_DATA_HOME $HOME/.local/share
 
 set --erase fish_user_paths
-fish_add_path ~/.local/bin ~/.local/share/nvim/mason/bin /usr/local/bin ~/.rd/bin
+# fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/nvim/mason/bin /usr/local/bin ~/.rd/bin
 
 set EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --color=auto -A
 set pure_shorten_prompt_current_directory_length 1
 set pure_truncate_prompt_current_directory_keeps 0
 set fish_prompt_pwd_dir_length 3
 
-alias ls='eza $EZA_STANDARD_OPTIONS'
-alias ll='eza $EZA_STANDARD_OPTIONS --long'
-alias llt='eza $EZA_STANDARD_OPTIONS --long --tree'
-alias ltt='eza -T'
-alias la='eza $EZA_STANDARD_OPTIONS --all'
 alias l='eza $EZA_STANDARD_OPTIONS'
+alias la='eza $EZA_STANDARD_OPTIONS --all'
+alias ll='eza $EZA_STANDARD_OPTIONS --long'
+alias ls='eza $EZA_STANDARD_OPTIONS'
+alias lt='eza $EZA_STANDARD_OPTIONS --tree'
+alias llt='eza $EZA_STANDARD_OPTIONS --long --tree'
+#
 alias lg='lazygit'
 alias yz='yazi'
 alias cat='bat'
@@ -137,17 +138,18 @@ alias edit='$EDITOR'
 alias sedit='sudo -E $EDITOR'
 alias mkdir='mkdir -pv'
 # rsync shortcuts
-alias _rsync='rsync -avzL --partial --info=progress2'
+alias _rsync='rsync -avzL --partial --info=progress2 --update'
 alias _rsyncd='_rsync --dry-run'
-alias rsud_d='_rsync --update --delete'
-alias rsud='_rsync --update --delete'
-alias rsu_d='_rsyncd --update'
-alias rsu='_rsync --update'
-alias rsfd_d='_rsyncd --update --delete --exclude="*/"'
-alias rsfd='_rsync --update --delete --exclude="*/"'
-alias rsf_d='_rsyncd --update --exclude="*/"'
-alias rsf='_rsync --update --exclude="*/"'
-
+#
+alias rsud='_rsync --delete'
+alias rsud_d='_rsyncd --delete'
+alias rsu='_rsync'
+alias rsu_d='_rsyncd'
+alias rsfd='_rsync --delete --exclude="*/"'
+alias rsfd_d='_rsyncd --delete --exclude="*/"'
+alias rsf='_rsync --exclude="*/"'
+alias rsf_d='_rsyncd --exclude="*/"'
+#
 alias reflect='sudo cachyos-rate-mirrors --sync-check --country "US"'
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
 

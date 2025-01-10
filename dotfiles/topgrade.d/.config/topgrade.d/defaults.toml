@@ -1,0 +1,12 @@
+[misc]
+no_retry = true
+assume_yes = true
+
+[firmware]
+upgrade = false
+
+[flatpak]
+use_sudo = false
+
+[distrobox]
+use_root = false

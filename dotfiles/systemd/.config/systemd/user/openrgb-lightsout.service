@@ -1,0 +1,9 @@
+[Unit]
+Description=OpenRGB Profile Service (lightsout)
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/scripts/openrgb-load.sh
+
+[Install]
+WantedBy=graphical-session.target

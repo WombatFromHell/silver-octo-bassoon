@@ -1,4 +1,4 @@
-export PATH="$PATH:$HOME/.local/bin"
+export PATH="$PATH:$HOME/.local/bin:$HOME/.local/bin/scripts:$HOME/.local/share/nvim/mason/bin:/usr/local/bin:$HOME/.rd/bin"
 
 if [[ $- == *i* ]]; then
   # only if interactive

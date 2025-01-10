@@ -3,5 +3,11 @@ fish
 fuzzel
 hypr
 kitty
+MangoHud
+mpv
+pipewire
+scripts
 swaync
+systemd
+topgrade.d
 waybar

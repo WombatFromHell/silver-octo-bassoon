@@ -1,0 +1,302 @@
+{
+    "servers": [
+        {
+            "connection": {
+                "url": "http://192.168.1.153:9091/transmission/rpc",
+                "username": "transmission",
+                "password": "ceysE57ZdUVXk5LKjiaVj5m:"
+            },
+            "name": "HOMENAS",
+            "pathMappings": [],
+            "expandedDirFilters": [],
+            "lastSaveDirs": [],
+            "intervals": {
+                "session": 60,
+                "torrents": 5,
+                "torrentsMinimized": 60,
+                "details": 5
+            }
+        }
+    ],
+    "app": {
+        "window": {
+            "size": [
+                1024,
+                800
+            ],
+            "position": [
+                0,
+                0
+            ]
+        },
+        "showTabStrip": true,
+        "openTabs": [
+            "HOMENAS"
+        ],
+        "lastTab": 0,
+        "deleteAdded": false,
+        "toastNotifications": false,
+        "toastNotificationSound": false,
+        "showTrayIcon": false,
+        "onMinimize": "minimize",
+        "onClose": "quit",
+        "fontSizeBase": 0.9,
+        "fontSize": 0.7289999999999999
+    },
+    "interface": {
+        "theme": "dark",
+        "tables": {
+            "torrents": {
+                "columns": [],
+                "columnVisibility": {
+                    "sizeWhenDone": false,
+                    "leftUntilDone": false,
+                    "downloadedEver": false,
+                    "uploadedEver": false,
+                    "simpleRatio": false,
+                    "eta": false,
+                    "tracker": false,
+                    "trackerStatus": false,
+                    "doneDate": false,
+                    "activityDate": false,
+                    "downloadDir": false,
+                    "id": false,
+                    "queuePosition": false,
+                    "isPrivate": false,
+                    "group": false,
+                    "file-count": false,
+                    "pieceCount": false,
+                    "metadataPercentComplete": false,
+                    "error": false
+                },
+                "columnOrder": [
+                    "name",
+                    "totalSize",
+                    "sizeWhenDone",
+                    "leftUntilDone",
+                    "haveValid",
+                    "downloadedEver",
+                    "uploadedEver",
+                    "simpleRatio",
+                    "percentDone",
+                    "rateDownload",
+                    "rateUpload",
+                    "status",
+                    "addedDate",
+                    "peersSendingToUs",
+                    "peersGettingFromUs",
+                    "eta",
+                    "uploadRatio",
+                    "tracker",
+                    "trackerStatus",
+                    "error",
+                    "doneDate",
+                    "activityDate",
+                    "downloadDir",
+                    "bandwidthPriority",
+                    "id",
+                    "queuePosition",
+                    "secondsSeeding",
+                    "isPrivate",
+                    "labels",
+                    "group",
+                    "file-count",
+                    "pieceCount",
+                    "metadataPercentComplete"
+                ],
+                "columnSizes": {
+                    "name": 233,
+                    "totalSize": 57,
+                    "haveValid": 54,
+                    "percentDone": 72,
+                    "rateDownload": 58,
+                    "rateUpload": 53,
+                    "status": 43,
+                    "addedDate": 1,
+                    "peersSendingToUs": 46,
+                    "peersGettingFromUs": 48,
+                    "uploadRatio": 42,
+                    "bandwidthPriority": 58
+                },
+                "sortBy": []
+            },
+            "filetree": {
+                "columns": [],
+                "columnVisibility": {},
+                "columnOrder": [],
+                "columnSizes": {},
+                "sortBy": []
+            },
+            "filetreebrief": {
+                "columns": [],
+                "columnVisibility": {},
+                "columnOrder": [],
+                "columnSizes": {},
+                "sortBy": []
+            },
+            "trackers": {
+                "columns": [],
+                "columnVisibility": {},
+                "columnOrder": [],
+                "columnSizes": {},
+                "sortBy": []
+            },
+            "peers": {
+                "columns": [],
+                "columnVisibility": {
+                    "flagStr": false,
+                    "cachedFrom": false,
+                    "cachedConnection": false,
+                    "cachedProtocol": false
+                },
+                "columnOrder": [],
+                "columnSizes": {},
+                "sortBy": []
+            }
+        },
+        "sashSizes": {
+            "vertical": [
+                49.16309763132593,
+                50.83690236867407
+            ],
+            "horizontal": [
+                20,
+                80
+            ]
+        },
+        "filterSections": [
+            {
+                "section": "Status",
+                "visible": true
+            },
+            {
+                "section": "Directories",
+                "visible": true
+            },
+            {
+                "section": "Labels",
+                "visible": true
+            },
+            {
+                "section": "Trackers",
+                "visible": true
+            }
+        ],
+        "statusFiltersVisibility": {
+            "All Torrents": true,
+            "Downloading": true,
+            "Completed": true,
+            "Active": true,
+            "Inactive": true,
+            "Running": false,
+            "Stopped": true,
+            "Error": true,
+            "Waiting": true,
+            "Magnetizing": false
+        },
+        "compactDirectories": false,
+        "statusBarSections": [
+            {
+                "section": "Connection",
+                "visible": true
+            },
+            {
+                "section": "Download speed ",
+                "visible": true
+            },
+            {
+                "section": "Upload speed",
+                "visible": true
+            },
+            {
+                "section": "Free space",
+                "visible": true
+            },
+            {
+                "section": "Total",
+                "visible": true
+            },
+            {
+                "section": "Selected",
+                "visible": true
+            }
+        ],
+        "statusBarGlobalSpeeds": false,
+        "showFiltersPanel": true,
+        "showDetailsPanel": true,
+        "detailsTabs": [
+            {
+                "section": "General",
+                "visible": true
+            },
+            {
+                "section": "Files",
+                "visible": true
+            },
+            {
+                "section": "Pieces",
+                "visible": true
+            },
+            {
+                "section": "Peers",
+                "visible": true
+            },
+            {
+                "section": "Trackers",
+                "visible": true
+            },
+            {
+                "section": "<spacer>",
+                "visible": true
+            },
+            {
+                "section": "Server statistics",
+                "visible": true
+            }
+        ],
+        "showFilesSearchBox": false,
+        "flatFileTree": false,
+        "mainSplit": "vertical",
+        "skipAddDialog": false,
+        "deleteTorrentData": "default off",
+        "deleteTorrentDataSelection": false,
+        "numLastSaveDirs": 20,
+        "sortLastSaveDirs": false,
+        "preconfiguredLabels": [],
+        "ignoredTrackerPrefixes": [
+            "t",
+            "tr",
+            "tk",
+            "tracker",
+            "bt",
+            "open",
+            "opentracker"
+        ],
+        "defaultTrackers": [
+            "udp://tracker.opentrackr.org:1337/announce",
+            "udp://tracker.openbittorrent.com:6969/announce",
+            "http://tracker.openbittorrent.com:80/announce",
+            "udp://tracker.torrent.eu.org:451/announce",
+            "udp://open.demonii.com:1337/announce",
+            "http://bt.endpot.com:80/announce",
+            "udp://opentracker.i2p.rocks:6969/announce",
+            "udp://open.stealth.si:80/announce",
+            "udp://exodus.desync.com:6969/announce",
+            "udp://tracker.moeking.me:6969/announce",
+            "udp://tracker.bitsearch.to:1337/announce",
+            "udp://explodie.org:6969/announce",
+            "udp://uploads.gamecoast.net:6969/announce",
+            "udp://tracker.theoks.net:6969/announce",
+            "udp://tracker.leech.ie:1337/announce",
+            "https://tracker2.ctix.cn:443/announce",
+            "https://tracker1.520.jp:443/announce"
+        ],
+        "styleOverrides": {
+            "dark": {},
+            "light": {}
+        },
+        "animatedProgressbars": true,
+        "colorfulProgressbars": false
+    },
+    "configVersion": 1
+}
