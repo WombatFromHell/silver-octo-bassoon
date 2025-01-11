@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 RSYNC=$(command -v rsync)
-CP=("$RSYNC -azL --partial --info=progress2 --update")
+CP=("$RSYNC -azL --partial --update")
 
 # sanity check by making sure we run from the same dir as the script
 script_dir="$(dirname "$(readlink -f "$0")")"

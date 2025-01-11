@@ -111,8 +111,23 @@ function update_neovim
     end
 end
 
+function set_editor
+    set -l editor (command -v nvim || /usr/local/bin/nvim)
+    set -l fallback (command -v nano)
+    if test -x "$editor"
+        set -x EDITOR $editor
+        set -x VISUAL $editor
+    else if test -x "$fallback"
+        set -x EDITOR $fallback
+        set -x VISUAL $fallback
+    else
+        set --erase EDITOR
+        set --erase VISUAL
+    end
+end
+
+set_editor
 set -x nvm_default_version v23.6.0
-set -x EDITOR /usr/local/bin/nvim
 set -x GPG_TTY (tty)
 set -x XDG_DATA_HOME $HOME/.local/share
 
@@ -153,6 +168,18 @@ alias rsf_d='_rsyncd --exclude="*/"'
 alias reflect='sudo cachyos-rate-mirrors --sync-check --country "US"'
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
 
+# only when not already inside fish
 if command -q zoxide
     zoxide init fish | source
+end
+if command -q direnv
+    set -x DIRENV_LOG_FORMAT ""
+    direnv hook fish | source
+end
+set -l cargo_fish_path "$HOME/.cargo/env.fish"
+if test -f "$cargo_fish_path"
+    source "$cargo_fish_path"
+end
+if test (ps -o comm= -p $fish_pid) != fish
+    # do things here only when NOT already inside fish
 end
