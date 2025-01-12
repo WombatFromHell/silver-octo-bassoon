@@ -234,6 +234,11 @@ alias sedit='sudo -E \$EDITOR'
 EOF
 fi
 
+if confirm "Install Nix?"; then
+  chmod +x "$SUPPORT"/lix-installer
+  "$SUPPORT"/lix-installer install linux
+fi
+
 #
 # SETUP DISTROBOX CONTAINERS
 #

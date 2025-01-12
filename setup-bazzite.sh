@@ -107,12 +107,12 @@ if ! [ -f "/var/run/.containerenv" ] && ! [[ "\$HOSTNAME" == *libvirt* ]]; then
   alias cat='bat'
 fi
 EOF
-  fi
-
-  if confirm "Install Nix as an alternative to Brew?"; then
-    chmod +x "$SUPPORT"/lix-installer
-    "$SUPPORT"/lix-installer install ostree
-    echo && echo "Don't forget to copy \"./home-manager/home.nix\" and do: home-manager switch!"
+  else
+    if confirm "Install Nix as an alternative to Brew?"; then
+      chmod +x "$SUPPORT"/lix-installer
+      "$SUPPORT"/lix-installer install ostree
+      echo && echo "Reminder: deploy dotfiles and do a 'home-manager switch'!"
+    fi
   fi
 
   if confirm "Install customized NeoVim config?"; then
