@@ -60,7 +60,7 @@ for dir in "${directories[@]}"; do
   elif [ "$dir" == "scripts" ]; then
     target="$HOME/.local/bin/$dir"
     rm -f "$target"
-    chmod +x "$dir"/*.sh
+    chmod +x "./$dir"/*.sh
     ln -sf "$script_dir/$dir" "$target"
   elif [ "$dir" == "pipewire" ]; then
     hesuvi_tgt="$HOME/.config/pipewire/atmos.wav"
