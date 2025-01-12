@@ -1,53 +1,14 @@
 #!/usr/bin/env bash
 
-SUPPORT="./support"
-CP="sudo rsync -vhP --chown=$USER:$USER --chmod=D755,F644"
-
-# cache credentials
-sudo -v &
-pid=$!
-wait $pid
-if [ "$?" -eq 130 ]; then
-  echo "Error: Cannot obtain sudo credentials!"
-  exit 1
-fi
-
-confirm_action() {
-  read -r -p "Continue? (y/[n]): " reply
-  case $reply in
-  [Yy]*) return 0 ;; # Continue execution
-  [Nn]*) return 1 ;; # Exit script
-  *) return 1 ;;
-  esac
-}
-
-update_grub_cmdline() {
-  local text_to_add="$1"
-  local target_file="/etc/default/grub"
-  local backup_file="${target_file}.bak"
-  local variable_name="GRUB_CMDLINE_LINUX_DEFAULT"
-
-  # Create a backup of the target file
-  if ! sudo cp -f "$target_file" "$backup_file"; then
-    echo "Error: Failed to create backup file."
-    return 1
-  fi
-  # Check if the text already exists in the target file
-  if grep -q "$text_to_add" "$target_file"; then
-    echo "Text already exists in $target_file. No changes made."
-    return 1
-  fi
-
-  sudo sed -i "s/^$variable_name=\"\(.*\)\"/$variable_name=\"\1 $text_to_add\"/" "$target_file"
-}
+source ./common.sh
+cache_creds
 
 ROOT_FS_TYPE=$(df -T / | awk 'NR==2 {print $2}')
 ROOT_FS_DEV=$(df -T / | awk 'NR==2 {print $1}')
 ROOT_FS_UUID=$(sudo blkid -s UUID -o value "$ROOT_FS_DEV")
 HOME_FS_TYPE=$(df -T /home | awk 'NR==2 {print $2}')
 
-if [ "$ROOT_FS_TYPE" = "btrfs" ]; then
-  echo "Install grub-btrfsd and snapper (with dnf plugin)?"
+if [ "$ROOT_FS_TYPE" = "btrfs" ] && confirm "Install grub-btrfsd and snapper?"; then
   echo "IMPORTANT: Root (/) and Home (/home) must be mounted on @ and @home respectively!"
   echo "!! Ensure you have a root (subvolid=5) subvol for @var, @var_tmp, and @var_log before continuing !!"
   btrfs_mount="/mnt/btrfs"
@@ -68,36 +29,29 @@ if [ "$ROOT_FS_TYPE" = "btrfs" ]; then
       sudo chown root:root "$snapper_root_conf" &&
       sudo chmod 0644 "$snapper_root_conf"
 
-    if [ "$HOME_FS_TYPE" = "btrfs" ]; then
-      echo "Detected /home running on a btrfs subvolume, should we setup snapper for it?"
-      if confirm_action; then
-        sudo snapper -c home create-config /home &&
-          sudo mv "$btrfs_mount/@home/.snapshots" "$btrfs_mount/@snapshots/home"
+    if [ "$HOME_FS_TYPE" = "btrfs" ] &&
+      confirm "Detected /home running on a btrfs subvolume, should we setup snapper for it?"; then
+      sudo snapper -c home create-config /home &&
+        sudo mv "$btrfs_mount/@home/.snapshots" "$btrfs_mount/@snapshots/home"
 
-        echo "UUID=$ROOT_FS_UUID /home/.snapshots btrfs subvol=/@snapshots/home,defaults,noatime,compress=zstd,commit=120 0 0" | sudo tee -a /etc/fstab
+      echo "UUID=$ROOT_FS_UUID /home/.snapshots btrfs subvol=/@snapshots/home,defaults,noatime,compress=zstd,commit=120 0 0" | sudo tee -a /etc/fstab
 
-        snapper_home_conf="/etc/snapper/configs/home"
-        sudo cp -f ./etc-snapper-configs/home "$snapper_home_conf" &&
-          sudo chown root:root "$snapper_home_conf" &&
-          sudo chmod 0644 "$snapper_home_conf"
-      else
-        echo "Aborted..."
-      fi
+      snapper_home_conf="/etc/snapper/configs/home"
+      sudo cp -f ./etc-snapper-configs/home "$snapper_home_conf" &&
+        sudo chown root:root "$snapper_home_conf" &&
+        sudo chmod 0644 "$snapper_home_conf"
     fi
-
-    sudo systemctl daemon-reload &&
-      sudo systemctl restart --now snapperd.service &&
-      sudo systemctl enable snapper-{cleanup,backup,timeline}.timer
-
-    # regenerate grub-btrfs snapshots
-    sudo grub-mkconfig -o /boot/grub/grub.cfg
-  else
-    echo "Aborted..."
   fi
+
+  sudo systemctl daemon-reload &&
+    sudo systemctl restart --now snapperd.service &&
+    sudo systemctl enable snapper-{cleanup,backup,timeline}.timer
+
+  # regenerate grub-btrfs snapshots
+  sudo grub-mkconfig -o /boot/grub/grub.cfg
 fi
 
-echo "Install Nvidia driver tweaks?"
-if confirm_action; then
+if confirm "Install Nvidia driver tweaks?"; then
   $CP ./etc-X11/Xwrapper.config /etc/X11/ &&
     $CP ./etc-xorg.conf.d/20-nvidia.conf /etc/X11/xorg.conf.d/
 
@@ -108,12 +62,9 @@ if confirm_action; then
 
   $CP ./etc-modprobe.d/nvidia.conf /etc/modprobe.d/nvidia.conf &&
     sudo chown root:root /etc/modprobe.d/nvidia.conf
-else
-  echo "Aborted..."
 fi
 
-echo "Install some common packages and tweaks (like Steam)?"
-if confirm_action; then
+if confirm "Install some common packages and tweaks (like Steam)?"; then
   sudo pacman -R --noconfirm cachy-browser &&
     sudo pacman -Sy --noconfirm \
       fd zoxide ripgrep bat fzf fish zsh python-pip \
@@ -155,20 +106,15 @@ ResultInactive=yes
 ResultActive=yes
 EOF
     systemctl --user enable --now gamemoded.service
-  else
-    echo "Aborted..."
   fi
 
   # enable earlyoom for safety when under memory stress
   sudo pacman -Sy earlyoom &&
     sudo systemctl disable --now systemd-oomd &&
     sudo systemctl enable --now earlyoom
-else
-  echo "Aborted..."
 fi
 
-echo "Setup Chaotic AUR?"
-if confirm_action; then
+if confirm "Setup Chaotic AUR?"; then
   sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
   sudo pacman-key --lsign-key 3056513887B78AEB
   sudo pacman -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst'
@@ -182,16 +128,13 @@ if confirm_action; then
 Include = /etc/pacman.d/chaotic-mirrorlist
 EOF
   fi
-else
-  echo "Aborted..."
 fi
 
 #
 # SETUP
 #
 # import ssh keys
-echo "Setup SSH/GPG keys and config?"
-if confirm_action; then
+if confirm "Setup SSH/GPG keys and config?"; then
   $CP "$SUPPORT"/.ssh/{id_rsa,id_rsa.pub,config} "$HOME"/.ssh/ &&
     sudo chown -R "$USER:$USER" "$HOME/.ssh"
   chmod 0400 "$HOME"/.ssh/{id_rsa,id_rsa.pub}
@@ -202,12 +145,10 @@ if confirm_action; then
 
   $CP "$SUPPORT"/.gnupg/gpg-agent.conf "$HOME"/.gnupg/ &&
     gpg-connect-agent reloadagent /bye
-else
-  echo "Aborted..."
 fi
 
-echo "Perform user-specific customizations?"
-if confirm_action; then
+echo
+if confirm "Perform user-specific customizations?"; then
   $CP -r "$SUPPORT"/bin/ "$HOME"/.local/bin/ &&
     $CP "$SUPPORT"/.gitconfig "$HOME"/
 
@@ -241,8 +182,7 @@ if confirm_action; then
     sudo chown root:root /etc/systemd/system/*.swap
 
   # enable optional mounts via systemd-automount
-  echo "Enable optional automounts and swapfile?"
-  if confirm_action; then
+  if confirm "Enable optional automounts and swapfile?"; then
     $CP ./systemd-automount/*.* /etc/systemd/system/
 
     $CP "$SUPPORT"/.smb-credentials /etc/ &&
@@ -251,8 +191,6 @@ if confirm_action; then
     #sudo mkdir -p /mnt/{Downloads,FTPRoot,home,linuxgames,linuxdata}
     sudo systemctl enable --now mnt-{Downloads,FTPRoot,home,linuxgames,linuxdata}.automount
     sudo systemctl enable --now mnt-linuxgames-Games-swapfile.swap
-  else
-    echo "Aborted..."
   fi
 
   # enable some secondary user-specific services
@@ -267,22 +205,16 @@ if confirm_action; then
       fish_add_path $HOME/.local/bin /usr/local/bin"
 
   # SETUP USER DEPENDENCIES
-  echo "Install common user fonts?"
-  if confirm_action; then
+  if confirm "Install common user fonts?"; then
     mkdir -p ~/.fonts &&
       tar xvzf "$SUPPORT"/fonts.tar.gz -C ~/.fonts/ &&
       fc-cache -fv
-  else
-    echo "Aborted..."
   fi
 
-  echo "Install customized NeoVim config?"
-  if confirm_action; then
+  if confirm "Install customized NeoVim config?"; then
     rm -rf "$HOME/.config/nvim" "$HOME/.local/share/nvim" "$HOME/.local/cache/nvim"
     git clone git@github.com:WombatFromHell/lazyvim.git "$HOME/.config/nvim"
     sudo pacman -Sy --noconfirm base-devel procps-ng curl file git
-  else
-    echo "Aborted..."
   fi
 
   # install some common appimages
@@ -300,16 +232,12 @@ EDITOR='/usr/local/bin/nvim'
 alias edit='\$EDITOR'
 alias sedit='sudo -E \$EDITOR'
 EOF
-
-else
-  echo "Aborted..."
 fi
 
 #
 # SETUP DISTROBOX CONTAINERS
 #
-echo "Perform assembly and customization of Distrobox containers?"
-if confirm_action; then
+if confirm "Perform assembly and customization of Distrobox containers?"; then
   chmod +x ./distrobox/*.sh
   # ARCHLINUX
   # distrobox assemble create --file ./distrobox/distrobox-assemble-archcli.ini
@@ -319,13 +247,10 @@ if confirm_action; then
   # FEDORA (multi-use container)
   # distrobox assemble create --file ./distrobox/distrobox-assemble-fedcli.ini &&
   # distrobox enter fedcli -- bash -c ./distrobox/distrobox-setup-fedcli.sh
-else
-  echo "Aborted..."
 fi
 
 # pre-install common Flatpaks
-echo "Setup Flatpak repo and add common apps?"
-if confirm_action; then
+if confirm "Setup Flatpak repo and add common apps?"; then
   sudo pacman -Sy --noconfirm flatpak
   flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
   flatpak install --user --noninteractive \
@@ -335,22 +260,16 @@ if confirm_action; then
     it.mijorus.gearlever \
     com.vysp3r.ProtonPlus
 
-  echo "Install Flatpak version of Brave browser?"
-  if confirm_action; then
+  if confirm "Install Flatpak version of Brave browser?"; then
     flatpak install --user --noninteractive com.brave.Browser
     chmod +x ./support/brave-flatpak-fix.sh
     # include a fix for hardware acceleration
     ./support/brave-flatpak-fix.sh
-  else
-    echo "Aborted..."
   fi
-else
-  echo "Aborted..."
 fi
 
 # provide a way to pre-install libvirt/qemu
-echo "Setup libvirt/qemu with vfio passthrough support?"
-if confirm_action; then
+if confirm "Setup libvirt/qemu with vfio passthrough support?"; then
   sudo pacman -Sy --noconfirm libvirt qemu-desktop swtpm
 
   # add qemu specific kargs for passthrough if they don't already exist
@@ -366,8 +285,6 @@ if confirm_action; then
 
   # add current user to libvirt group
   sudo usermod -aG libvirt "$USER"
-else
-  echo "Aborted..."
 fi
 
 echo "Finished!"

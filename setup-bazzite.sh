@@ -1,45 +1,14 @@
 #!/usr/bin/env bash
-#set -euxo pipefail
 
-#
-# THIS SCRIPT IS MODELED AFTER BAZZITE'S CONTAINERFILE
-#
+source ./common.sh
+cache_creds
 
-confirm_action() {
-  read -r -p "Continue? (y/[n]): " reply
-  case $reply in
-  [Yy]*) return 0 ;; # Continue execution
-  [Nn]*) return 1 ;; # Exit script
-  *) return 1 ;;
-  esac
-}
-
-SUPPORT="./support"
-CP="sudo rsync -vhP --chown=$USER:$USER --chmod=D755,F644"
-
-# cache credentials
-sudo -v &
-pid=$!
-wait $pid
-if [ "$?" -eq 130 ]; then
-  echo "Error: Cannot obtain sudo credentials!"
-  exit 1
-fi
-
-#
-# SETUP
-#
-#
-echo "Add some kernel args for OpenRGB Gigabyte Mobo support?"
-if confirm_action; then
+if confirm "Add some kernel args for OpenRGB Gigabyte Mobo support?"; then
   rpm-ostree kargs --append=amd_pstate=active --append=acpi_enforce_resources=lax
-else
-  echo "Aborted..."
 fi
 
 # import ssh keys
-echo "Setup SSH/GPG keys and config?"
-if confirm_action; then
+if confirm "Setup SSH/GPG keys and config?"; then
   $CP "$SUPPORT"/.ssh/{id_rsa,id_rsa.pub,config} "$HOME"/.ssh/ &&
     sudo chown -R "$USER:$USER" "$HOME"/.ssh
   chmod 0400 "$HOME"/.ssh/{id_rsa,id_rsa.pub}
@@ -50,13 +19,10 @@ if confirm_action; then
 
   $CP "$SUPPORT"/.gnupg/gpg-agent.conf "$HOME"/.gnupg/ &&
     gpg-connect-agent reloadagent /bye
-else
-  echo "Aborted..."
 fi
 
 # enable optional mounts via systemd-automount
-echo "Setup external mounts?"
-if confirm_action; then
+if confirm "Setup external mounts?"; then
   for i in automount mount; do
     for j in Downloads FTPRoot home linuxgames linuxdata; do
       sed 's/mnt\//var\/mnt\//g' ./systemd-automount/mnt-$j.$i >./systemd-automount/var-mnt-$j.$i
@@ -80,12 +46,9 @@ if confirm_action; then
     sudo systemctl daemon-reload
   # sudo systemctl enable --now var-mnt-{Downloads,FTPRoot,home,linuxgames,linuxdata}.automount
   sudo systemctl enable --now var-mnt-linuxgames-Games-swapfile.swap
-else
-  echo "Aborted..."
 fi
 
-echo "Perform user-specific customizations?"
-if confirm_action; then
+if confirm "Perform user-specific customizations?"; then
   $CP -r "$SUPPORT"/bin/ "$HOME"/.local/bin/ &&
     $CP -r "$SUPPORT"/.gitconfig "$HOME"/
 
@@ -115,17 +78,13 @@ if confirm_action; then
     systemctl --user enable --now on-session-state.service
 
   # SETUP USER DEPENDENCIES
-  echo "Install common user fonts?"
-  if confirm_action; then
+  if confirm "Install common user fonts?"; then
     mkdir -p ~/.fonts &&
       tar xvzf "$SUPPORT"/fonts.tar.gz -C ~/.fonts/ &&
       fc-cache -fv
-  else
-    echo "Aborted..."
   fi
 
-  echo "Install Brew and some common utils?"
-  if confirm_action; then
+  if confirm "Install Brew and some common utils?"; then
     if command -v brew >/dev/null; then
       brew install eza fd ripgrep fzf bat lazygit
     else
@@ -148,25 +107,17 @@ if ! [ -f "/var/run/.containerenv" ] && ! [[ "\$HOSTNAME" == *libvirt* ]]; then
   alias cat='bat'
 fi
 EOF
-  else
-    echo "Aborted..."
   fi
 
-  echo "Install Nix as an alternative to Brew?"
-  if confirm_action; then
+  if confirm "Install Nix as an alternative to Brew?"; then
     chmod +x "$SUPPORT"/lix-installer
     "$SUPPORT"/lix-installer install ostree
     echo && echo "Don't forget to copy \"./home-manager/home.nix\" and do: home-manager switch!"
-  else
-    echo "Aborted..."
   fi
 
-  echo "Install customized NeoVim config?"
-  if confirm_action; then
+  if confirm "Install customized NeoVim config?"; then
     rm -rf "$HOME"/.config/nvim "$HOME"/.local/share/nvim "$HOME"/.local/cache/nvim
     git clone git@github.com:WombatFromHell/lazyvim.git "$HOME"/.config/nvim
-  else
-    echo "Aborted..."
   fi
 
   # install some common appimages
@@ -185,16 +136,12 @@ export VISUAL='/usr/local/bin/nvim'
 alias edit='\$EDITOR'
 alias sedit='sudo -E \$EDITOR'
 EOF
-
-else
-  echo "Aborted..."
 fi
 
 #
 # SETUP DISTROBOX CONTAINERS
 #
-echo "Perform assembly and customization of Distrobox containers?"
-if confirm_action; then
+if confirm "Perform assembly and customization of Distrobox containers?"; then
   chmod +x ./distrobox/*.sh
   # ARCHLINUX
   # distrobox assemble create --file ./distrobox/distrobox-assemble-archcli.ini
@@ -204,13 +151,10 @@ if confirm_action; then
   # FEDORA (multi-use container)
   # distrobox assemble create --file ./distrobox/distrobox-assemble-fedcli.ini &&
   # distrobox enter fedcli -- bash -c ./distrobox/distrobox-setup-fedcli.sh
-else
-  echo "Aborted..."
 fi
 
 # pre-install common Flatpaks
-echo "Setup Flatpak repo and add common apps?"
-if confirm_action; then
+if confirm "Setup Flatpak repo and add common apps?"; then
   flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
   flatpak install --user --noninteractive \
     com.vysp3r.ProtonPlus \
@@ -218,30 +162,22 @@ if confirm_action; then
   # add a workaround for degraded notification support cased by libnotify
   flatpak override --user --socket=session-bus --env=NOTIFY_IGNORE_PORTAL=1 --talk-name=org.freedesktop.Notifications org.mozilla.firefox
 
-  echo "Install Flatpak version of Brave browser?"
-  if confirm_action; then
+  if confirm "Install Flatpak version of Brave browser?"; then
     flatpak install --user --noninteractive com.brave.Browser
     chmod +x ./support/brave-flatpak-fix.sh
     # include a fix for hardware acceleration
     ./support/brave-flatpak-fix.sh
-  else
-    echo "Aborted..."
   fi
-else
-  echo "Aborted..."
 fi
 
 # fix libva-nvidia-driver using git version of nvidia-vaapi-driver
-echo "Fix libva-nvidia-driver for Flatpak version of Firefox?"
-if confirm_action; then
+if confirm "Fix libva-nvidia-driver for Flatpak version of Firefox?"; then
   outdir="$HOME/.var/app/org.mozilla.firefox/dri"
   mkdir -p "$outdir" && rm -rf "$outdir"/*.* || exit 1
   unzip "$SUPPORT"/libva-nvidia-driver_git-0.0.13.zip -d "$outdir"
   flatpak override --user --env=LIBVA_DRIVERS_PATH="$outdir" org.mozilla.firefox
   flatpak --system --noninteractive remove org.mozilla.firefox &&
     flatpak --user --noninteractive install org.mozilla.firefox org.freedesktop.Platform.ffmpeg-full
-else
-  echo "Aborted..."
 fi
 
 echo "Finished!"

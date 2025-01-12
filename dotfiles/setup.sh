@@ -19,18 +19,25 @@ if [ "$1" == "-a" ] || [ "$1" == "--all" ]; then
   CONFIRM="true"
 fi
 
-confirm_action() {
+confirm() {
   if [ "$CONFIRM" == "true" ]; then
-    return 0
+    return 0 # skip confirmation for ALL prompts
   fi
 
-  read -p "Proceed with action (y/n)? " -r -n 1 answer
-  if [[ $answer =~ ^[Yy]$ ]]; then
-    return 0 # Success
-  else
+  read -r -p "$1 (Y/n) " response
+  case "$response" in
+  [nN])
+    echo "Action aborted..."
+    return 1
+    ;;
+  [yY] | "")
+    return 0
+    ;;
+  *)
     echo "Action aborted!"
-    return 1 # Failure
-  fi
+    return 1
+    ;;
+  esac
 }
 
 mapfile -t directories <sources.txt
@@ -61,8 +68,7 @@ for dir in "${directories[@]}"; do
     stow pipewire
   else
     TARGET="$HOME/.config/$dir"
-    echo "Removing all files from $TARGET..."
-    if confirm_action; then
+    if confirm "Removing all files from $TARGET before stowing"; then
       rm -rf "${TARGET:?}"/*
       mkdir -p "$TARGET"/
       stow "$dir"
@@ -71,8 +77,6 @@ for dir in "${directories[@]}"; do
       if [ "$dir" == "fish" ]; then
         fish -c "fisher update"
       fi
-    else
-      exit 1
     fi
   fi
 done
