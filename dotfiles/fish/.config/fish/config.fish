@@ -112,14 +112,14 @@ function update_neovim
 end
 
 function set_editor
-    set -l editor (command -v nvim || /usr/local/bin/nvim)
-    set -l fallback (command -v nano)
-    if test -x "$editor"
-        set -x EDITOR $editor
-        set -x VISUAL $editor
-    else if test -x "$fallback"
-        set -x EDITOR $fallback
-        set -x VISUAL $fallback
+    set editor (command -v nvim || /usr/local/bin/nvim)
+    set fallback (command -v nano)
+    if test -n "$editor"
+        set -gx EDITOR $editor[1]
+        set -gx VISUAL $editor[1]
+    else if test -n "$fallback"
+        set -gx EDITOR $fallback[1]
+        set -gx VISUAL $fallback[1]
     else
         set --erase EDITOR
         set --erase VISUAL
@@ -167,6 +167,9 @@ alias rsf_d='_rsyncd --exclude="*/"'
 #
 alias reflect='sudo cachyos-rate-mirrors --sync-check --country "US"'
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
+#
+set NIX_FLAKE_ROOT $HOME/.dotfiles/nix
+alias nh-home='nh home switch $NIX_FLAKE_ROOT/home'
 
 # only when not already inside fish
 if command -q zoxide

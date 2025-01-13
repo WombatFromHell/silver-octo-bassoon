@@ -14,11 +14,13 @@ in {
     nerd-fonts.jetbrains-mono
     nerd-fonts.caskaydia-cove
     # common programs
+    nh
     direnv
     nix-direnv
     wl-clipboard
     git
     fish
+    dust
     fzf
     eza
     bat
