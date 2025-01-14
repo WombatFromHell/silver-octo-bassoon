@@ -19,7 +19,9 @@ AUTO_CONFIRM=false
 process_perms() {
   find . -type d -exec chmod 0755 {} \;
   find . -type f -exec chmod 0644 {} \;
-  find . -regex ".*\(\.tmux\|\.sh\|/tpm\)" -exec chmod 0755 {} \;
+  find . \
+    \( -type f -name "*.tmux" -o -type f -name "*.sh" -o -type f -name "tpm" \) \
+    -exec chmod 0755 {} \;
   echo -e "\nFixed repo permissions..."
 }
 
