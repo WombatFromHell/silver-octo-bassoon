@@ -138,6 +138,7 @@ set EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --co
 set pure_shorten_prompt_current_directory_length 1
 set pure_truncate_prompt_current_directory_keeps 0
 set fish_prompt_pwd_dir_length 3
+set fish_tmux_autostart true
 
 alias l='eza $EZA_STANDARD_OPTIONS'
 alias la='eza $EZA_STANDARD_OPTIONS --all'

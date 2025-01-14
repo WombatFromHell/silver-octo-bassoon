@@ -13,3 +13,6 @@ topgrade.d
 waybar
 tmux
 ghostty
+bat
+yazi
+lazygit

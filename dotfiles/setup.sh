@@ -76,6 +76,8 @@ for dir in "${directories[@]}"; do
       echo "" && echo "$TARGET has been stowed!"
       if [ "$dir" == "fish" ]; then
         fish -c "fisher update"
+      elif [ "$dir" == "tmux" ]; then
+        find "$TARGET"/ -type -name "*.tmux" -exec chmod +x {} \;
       fi
     fi
   fi
