@@ -3,7 +3,7 @@ if test -f ~/.profile
 end
 
 if status is-interactive && ! functions -q fisher
-    curl -sL https://git.io/fisher | source && fisher update
+    curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher update
 end
 
 if status is-interactive
