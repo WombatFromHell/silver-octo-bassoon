@@ -11,3 +11,5 @@ swaync
 systemd
 topgrade.d
 waybar
+tmux
+ghostty
