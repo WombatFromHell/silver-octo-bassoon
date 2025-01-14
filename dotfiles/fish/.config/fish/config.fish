@@ -184,6 +184,6 @@ set -l cargo_fish_path "$HOME/.cargo/env.fish"
 if test -f "$cargo_fish_path"
     source "$cargo_fish_path"
 end
-if test (ps -o comm= -p $fish_pid) != fish
-    # do things here only when NOT already inside fish
-end
+# if test (ps -o comm= -p $fish_pid) != fish
+#     # do things here only when NOT already inside fish
+# end
