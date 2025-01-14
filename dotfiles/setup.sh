@@ -1,108 +1,117 @@
 #!/usr/bin/env bash
 
-# sanity check by making sure we run from the same dir as the script
+# Ensure script runs from its directory
 script_dir="$(dirname "$(readlink -f "$0")")"
-if [[ "$(pwd -P)" != "$script_dir" ]]; then
-  echo "Error: script must be run from the same directory as the stowed data!"
-  exit 1
-fi
+cd "$script_dir" || exit 1
 
-if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
+# Help message
+show_help() {
   echo "Usage: $(basename "$0") [-a|--all] [-h|--help]"
   echo "Options:"
   echo "  -a, --all     Skip confirmation prompts"
   echo "  -h, --help    Show this help message"
   exit 0
-fi
-CONFIRM=""
-if [ "$1" == "-a" ] || [ "$1" == "--all" ]; then
-  CONFIRM="true"
-fi
+}
 
+# Parse arguments
+[[ "$1" == "-h" || "$1" == "--help" ]] && show_help
+AUTO_CONFIRM=false
+[[ "$1" == "-a" || "$1" == "--all" ]] && AUTO_CONFIRM=true
+
+# Confirmation function
 confirm() {
-  if [ "$CONFIRM" == "true" ]; then
-    return 0 # skip confirmation for ALL prompts
+  [[ "$AUTO_CONFIRM" == true ]] && return 0
+  read -r -p "$1 (y/N) " response
+  [[ "$response" == "y" || "$response" == "Y" ]]
+}
+
+unlink_dir() {
+  if [[ -L "$1" ]]; then
+    unlink "$1"
+  else
+    rm -rf "${1:?}"/*
   fi
 
-  read -r -p "$1 (y/N) " response
-  case "$response" in
-  [nN] | "")
-    echo "Action aborted..."
-    return 1
+}
+
+# Special directory handlers
+handle_home() {
+  local files=(".bashrc" ".zshrc" ".wezterm.lua")
+  for file in "${files[@]}"; do
+    cp -f "$HOME/$file" "$HOME/${file}.stowed"
+    rm -f "$HOME/$file"
+  done
+  stow home
+  echo -e "\n$HOME has been stowed!"
+}
+
+handle_scripts() {
+  local target="$HOME/.local/bin/scripts"
+  unlink_dir "$target"
+  chmod +x "./$1"/*.sh
+  ln -sf "$script_dir/$1" "$target"
+}
+
+handle_pipewire() {
+  local tgt=".config/pipewire"
+  local hesuvi_tgt="$HOME/$tgt/atmos.wav"
+  sed -i "s|%PATH%|$hesuvi_tgt|g" "./$1/$tgt/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
+  stow pipewire
+}
+
+handle_nix() {
+  local target="$HOME/.nix-flakes"
+  unlink_dir "$target"
+  stow nix
+}
+
+handle_tmux() {
+  echo "Attempting to correct tmux source permissions..."
+  find "./$1"/ -type d -exec chmod 0755 {} \;
+  find "./$1"/ -type f -exec chmod 0644 {} \;
+  find "./$1"/ -type f -name "*.tmux" -exec chmod 0755 {} \;
+  find "./$1"/ -type f -name "*.sh" -exec chmod 0755 {} \;
+  find "./$1"/ -type f -name "tpm" -exec chmod 0755 {} \;
+}
+
+# Main stow function
+stow_directory() {
+  local dir=$1
+  local target="$HOME/.config/$dir"
+
+  case "$dir" in
+  home)
+    confirm "Are you sure you want to stow $HOME?" && handle_home
     ;;
-  [yY])
-    return 0
+  scripts)
+    confirm "Are you sure you want to stow $dir?" && handle_scripts "$dir"
+    ;;
+  pipewire)
+    confirm "Are you sure you want to stow $dir?" && handle_pipewire "$dir"
+    ;;
+  nix)
+    confirm "Are you sure you want to stow $dir?" && handle_nix
     ;;
   *)
-    echo "Action aborted!"
-    return 1
+    if confirm "Removing all files from $target before stowing"; then
+      unlink_dir "$target"
+      mkdir -p "$target"/
+      stow "$dir"
+      echo -e "\n'$dir' has been unstowed!"
+
+      # Post-stow actions
+      case "$dir" in
+      fish) fish -c "fisher update" ;;
+      bat) bat cache --build ;;
+      tmux) handle_tmux "$dir" ;;
+      esac
+    fi
     ;;
   esac
 }
 
+# Main execution
 mapfile -t directories <sources.txt
-
 for dir in "${directories[@]}"; do
-  TARGET="$HOME/.config/$dir"
-  if [ "$dir" == "home" ]; then
-    if confirm "Are you sure you want to stow $HOME?"; then
-      files=(
-        ".bashrc"
-        ".zshrc"
-        ".wezterm.lua"
-      )
-      for file in "${files[@]}"; do
-        cp -f "$HOME/$file" "$HOME/${file}.stowed"
-        rm -f "$HOME/$file"
-      done
-
-      stow home
-      echo "" && echo "$HOME has been stowed!"
-    fi
-  elif [ "$dir" == "scripts" ]; then
-    if confirm "Are you sure you want to stow $dir?"; then
-      target="$HOME/.local/bin/$dir"
-      rm -f "$target"
-      chmod +x "./$dir"/*.sh
-      ln -sf "$script_dir/$dir" "$target"
-    fi
-  elif [ "$dir" == "pipewire" ]; then
-    if confirm "Are you sure you want to stow $dir?"; then
-      hesuvi_tgt="$HOME/.config/pipewire/atmos.wav"
-      sed -i "s|%PATH%|$hesuvi_tgt|g" "$dir/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
-      stow pipewire
-    fi
-  elif [ "$dir" == "nix" ]; then
-    TARGET="$HOME/.nix-flakes"
-    if confirm "Are you sure you want to stow $dir?"; then
-      rm -rf "${TARGET:?}"/*
-      stow nix
-    fi
-  else
-    if confirm "Removing all files from $TARGET before stowing"; then
-      if [[ -L "$TARGET" ]]; then
-        unlink "$TARGET"
-      else
-        # only recursively delete if it's a real directory
-        rm -rf "${TARGET:?}"/*
-      fi
-      mkdir -p "$TARGET"/
-      stow "$dir"
-
-      echo "" && echo "$TARGET has been stowed!"
-      if [ "$dir" == "fish" ]; then
-        fish -c "fisher update"
-        if [ "$dir" == "bat" ]; then
-          bat cache --build
-        fi
-      elif [ "$dir" == "tmux" ]; then
-        echo "Attempting to correct tmux source permissions..."
-        find "./$dir"/ -type d -exec chmod 0755 {} \;
-        find "./$dir"/ -type f -exec chmod 0644 {} \;
-        find "./$dir"/ -type f -name "*.tmux" -exec chmod 0755 {} \;
-        find "./$dir"/ -type f -name "*.sh" -exec chmod 0755 {} \;
-        find "./$dir"/ -type f -name "tpm" -exec chmod 0755 {} \;
-      fi
-    fi
-  fi
+  stow_directory "$dir"
 done

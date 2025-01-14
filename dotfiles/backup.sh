@@ -1,60 +1,95 @@
 #!/usr/bin/env bash
 
-RSYNC=$(command -v rsync)
-CP=("$RSYNC -azL --partial --update")
-
-# sanity check by making sure we run from the same dir as the script
+RSYNC=("$(command -v rsync)" "-azL" "--partial" "--update")
 script_dir="$(dirname "$(readlink -f "$0")")"
+
 if [[ "$(pwd -P)" != "$script_dir" ]]; then
   echo "Error: script must be run from the same directory as the stowed data!"
   exit 1
 fi
 
+backup_home() {
+  local src="$HOME"
+  local tgt="./home"
+  local files=(
+    ".bashrc"
+    ".zshrc"
+    ".wezterm.lua"
+    ".config/chromium-flags.conf"
+    ".config/trguing.json"
+  )
+
+  for file in "${files[@]}"; do
+    local dir_path
+    dir_path="$(dirname "$tgt/$file")"
+    mkdir -p "$dir_path"
+    "${RSYNC[@]}" "$src/$file" "$tgt/$file"
+  done
+}
+
+backup_pipewire() {
+  local src="$HOME/.config/pipewire"
+  local tgt="./$1/.config/$1"
+  mkdir -p "$tgt"
+
+  "${RSYNC[@]}" "$src"/* "$tgt"/
+  sed -i "s|$HOME/.config/pipewire/atmos.wav|%PATH%|g" \
+    "$tgt/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
+}
+
+backup_systemd() {
+  local src="$HOME/.config/systemd"
+  local tgt="./$1/.config/$1"
+  mkdir -p "$tgt"
+
+  "${RSYNC[@]}" --exclude=*/ --exclude="on-session-state.service" "$src"/* "$tgt"/
+}
+
+backup_directory() {
+  local dir="$1"
+  local src="$HOME/.config/$dir"
+  local tgt="./$dir"
+
+  case "$dir" in
+  "home")
+    backup_home
+    src="$HOME"
+    ;;
+  "scripts")
+    src="$HOME/.local/bin/$dir"
+    mkdir -p "$tgt"
+    "${RSYNC[@]}" --delete "$src"/* "$tgt"/
+    ;;
+  "nix")
+    src="$HOME/.nix-flakes"
+    "${RSYNC[@]}" "$src" "$tgt"/
+    ;;
+  "fish")
+    tgt="./$dir/.config/$dir"
+    mkdir -p "$tgt"
+    "${RSYNC[@]}" "$src"/config.fish "$src"/fish_plugins "$tgt"/
+    ;;
+  "pipewire")
+    backup_pipewire "$dir"
+    src="$HOME/.config/$dir"
+    ;;
+  "systemd")
+    backup_systemd "$dir"
+    src="$HOME/.config/$dir"
+    ;;
+  *)
+    src="$HOME/.config/$dir"
+    tgt="./$dir/.config/$dir"
+    mkdir -p "$tgt"
+    "${RSYNC[@]}" "$src"/* "$tgt"/
+    ;;
+  esac
+
+  echo -e "\nBacked up $src to $tgt"
+}
+
+# Main execution
 mapfile -t directories <sources.txt
-
 for dir in "${directories[@]}"; do
-  DIR="$HOME/.config/$dir"
-  if [ "$dir" == "home" ]; then
-    DIR="$HOME"
-    files=(
-      ".bashrc"
-      ".wezterm.lua"
-      ".config/chromium-flags.conf"
-      ".config/trguing.json"
-    )
-    for file in "${files[@]}"; do
-      ${CP[*]} "$DIR/$file" "${dir}"/
-    done
-    echo "" && echo "$HOME has been backed up!"
-  elif [ "$dir" == "scripts" ]; then
-    DIR="$HOME/.local/bin/$dir"
-    TARGET="./$dir"
-    mkdir -p "$TARGET"
-    ${CP[*]} --delete "$DIR"/* "$TARGET"/
-    echo "" && echo "Backed up $DIR to $TARGET"
-  else
-    TARGET="./$dir/.config/$dir"
-    mkdir -p "$TARGET"
-
-    if [ "$dir" == "pipewire" ]; then
-      hesuvi_tgt="$HOME/.config/pipewire/atmos.wav"
-      ${CP[*]} "$DIR"/* "$TARGET"/
-      sed -i "s|$hesuvi_tgt|%PATH%|g" "$TARGET"/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf
-      echo "" && echo "Backed up generalized pipewire config to $TARGET"
-    elif [ "$dir" == "systemd" ]; then
-      mkdir -p "$TARGET"
-      ${CP[*]} --exclude=*/ \
-        --exclude="on-session-state.service" \
-        "$DIR"/* "$TARGET"/
-      echo "" && echo "Backed up $DIR to $TARGET"
-    elif [ "$dir" == "fish" ]; then
-      mkdir -p "$TARGET"
-      # copy only files necessary to construct working fish config
-      ${CP[*]} "$DIR"/config.fish "$DIR"/fish_plugins "$TARGET"/
-      echo "" && echo "Backed up $DIR to $TARGET"
-    else
-      ${CP[*]} "$DIR"/* "$TARGET"/
-      echo "" && echo "Backed up $DIR to $TARGET"
-    fi
-  fi
+  backup_directory "$dir"
 done

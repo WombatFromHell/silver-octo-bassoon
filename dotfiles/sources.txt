@@ -16,3 +16,4 @@ ghostty
 bat
 yazi
 lazygit
+nix
