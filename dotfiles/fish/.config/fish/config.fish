@@ -138,7 +138,14 @@ set EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --co
 set pure_shorten_prompt_current_directory_length 1
 set pure_truncate_prompt_current_directory_keeps 0
 set fish_prompt_pwd_dir_length 3
-set fish_tmux_autostart true
+set fish_tmux_autostart false
+set -U fish_tmux_config ~/.config/tmux/tmux.conf
+# exclude some common cli tools from done notifications
+set -U --erase __done_exclude
+set -U __done_exclude '^git (?!push|pull|fetch)'
+set -U --append __done_exclude '^(nvim|nano|bat|cat|less|lazygit|lg)'
+set -U --append __done_exclude '^sudo (nvim|nano|bat|cat|less)'
+set -U --append __done_exclude '^sedit'
 
 alias l='eza $EZA_STANDARD_OPTIONS'
 alias la='eza $EZA_STANDARD_OPTIONS --all'
