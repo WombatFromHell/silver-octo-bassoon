@@ -1,0 +1,14 @@
+[Unit]
+Description=Clipboard history “manager” for wayland
+Documentation=https://github.com/sentriz/cliphist
+
+[Service]
+Type=exec
+ExecStart=wl-paste --watch cliphist -max-items 10 store
+Restart=on-failure
+RestartSec=5
+Slice=app-graphical.slice
+
+[Install]
+# WantedBy=graphical-session.target
+WantedBy=wayland-session@hyprland.desktop.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Hypridle utility for Hyprland
+Documentation=man:hypridle(1)
+
+[Service]
+ExecStart=hypridle
+Restart=on-failure
+RestartSec=5
+Slice=app-graphical.slice
+
+[Install]
+# WantedBy=graphical-session.target
+WantedBy=wayland-session@hyprland.desktop.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Hyprpaper wallpaper utility for Hyprland
+Documentation=man:hyprpaper(1)
+
+[Service]
+Type=exec
+ExecStart=hyprpaper
+Restart=on-failure
+RestartSec=5
+Slice=app-graphical.slice
+
+[Install]
+# WantedBy=graphical-session.target
+WantedBy=wayland-session@hyprland.desktop.target
