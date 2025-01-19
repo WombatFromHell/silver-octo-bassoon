@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-if command -v uwsm >/dev/null; then
-  uwsm app -- "$@"
+UWSM=$(command -v uwsm)
+if [ -n "$UWSM" ]; then
+  "$UWSM" app -- "$@"
 else
   echo "Error: uwsm not found!"
   exit 1

@@ -3,8 +3,7 @@ Description=Hyprpaper wallpaper utility for Hyprland
 Documentation=man:hyprpaper(1)
 
 [Service]
-Type=exec
-ExecStart=hyprpaper
+ExecStart=/usr/bin/hyprpaper
 Restart=on-failure
 RestartSec=5
 Slice=app-graphical.slice

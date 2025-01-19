@@ -3,7 +3,7 @@ Description=Hypridle utility for Hyprland
 Documentation=man:hypridle(1)
 
 [Service]
-ExecStart=hypridle
+ExecStart=/usr/bin/hypridle
 Restart=on-failure
 RestartSec=5
 Slice=app-graphical.slice
