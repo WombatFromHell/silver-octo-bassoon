@@ -13,6 +13,7 @@ backup_home() {
   local tgt="./home"
   local files=(
     ".bashrc"
+    ".profile"
     ".zshrc"
     ".wezterm.lua"
     ".config/chromium-flags.conf"
@@ -33,6 +34,7 @@ backup_pipewire() {
   mkdir -p "$tgt"
 
   "${RSYNC[@]}" "$src"/* "$tgt"/
+  # generalize pipewire HRIR path
   sed -i "s|$HOME/.config/pipewire/atmos.wav|%PATH%|g" \
     "$tgt/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
 }
@@ -47,13 +49,13 @@ backup_systemd() {
 
 backup_directory() {
   local dir="$1"
-  local src="$HOME/.config/$dir"
   local tgt="./$dir"
+  local src="$HOME/.config/$dir"
 
   case "$dir" in
   "home")
-    backup_home
     src="$HOME"
+    backup_home
     ;;
   "scripts")
     src="$HOME/.local/bin/$dir"
@@ -71,14 +73,11 @@ backup_directory() {
     ;;
   "pipewire")
     backup_pipewire "$dir"
-    src="$HOME/.config/$dir"
     ;;
   "systemd")
     backup_systemd "$dir"
-    src="$HOME/.config/$dir"
     ;;
   *)
-    src="$HOME/.config/$dir"
     tgt="./$dir/.config/$dir"
     mkdir -p "$tgt"
     "${RSYNC[@]}" "$src"/* "$tgt"/
