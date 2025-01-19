@@ -138,8 +138,7 @@ set EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --co
 set pure_shorten_prompt_current_directory_length 1
 set pure_truncate_prompt_current_directory_keeps 0
 set fish_prompt_pwd_dir_length 3
-set fish_tmux_autostart false
-set -U fish_tmux_config ~/.config/tmux/tmux.conf
+set fish_tmux_autostart true
 # exclude some common cli tools from done notifications
 set -U --erase __done_exclude
 set -U __done_exclude '^git (?!push|pull|fetch)'
