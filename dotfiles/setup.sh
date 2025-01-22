@@ -1,26 +1,29 @@
 #!/usr/bin/env bash
 
 OS=$(uname)
+AUTO_CONFIRM=false
 # Ensure script runs from its directory
 script_dir="$(dirname "$(readlink -f "$0")")"
 cd "$script_dir" || exit 1
 
 show_help() {
-  echo "Usage: $(basename "$0") [-a|--all] [-h|--help]"
+  echo "Usage: $(basename "$0") [-y|--confirm] [-h|--help]"
   echo "Options:"
-  echo "  -a, --all     Skip confirmation prompts"
+  echo "  -y, --confirm     Skip confirmation prompts"
   echo "  -h, --help    Show this help message"
   exit 0
 }
 [[ "$1" == "-h" || "$1" == "--help" ]] && show_help
-AUTO_CONFIRM=false
-[[ "$1" == "-a" || "$1" == "--all" ]] && AUTO_CONFIRM=true
+[[ "$1" == "-y" || "$1" == "--confirm" ]] && AUTO_CONFIRM=true
 
 fix_perms() {
   find . -type d -exec chmod 0755 {} \;
   find . -type f -exec chmod 0644 {} \;
   find . \
-    \( -type f -name "*.tmux" -o -type f -name "*.sh" -o -type f -name "tpm" \) \
+    \( -type f -name "*.tmux" \
+    -o -type f -name "*.sh" \
+    -o -type f -name "tpm" \
+    -o type f -path "scripts/*.py" \) \
     -exec chmod 0755 {} \;
   echo -e "\nFixed repo permissions..."
 }
