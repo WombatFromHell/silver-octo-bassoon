@@ -1,0 +1,34 @@
+[[backup]]
+path = "$HOME/.config"
+output = "BraveSoftware_backup"
+include = "BraveSoftware"
+
+[[backup]]
+path = "$HOME/.config"
+output = "heroic_backup"
+include = "heroic"
+
+[[backup]]
+path = "$HOME/.config"
+output = "Code_backup"
+include = "Code"
+
+[[backup]]
+path = "$HOME/.config"
+output = "vesktop_backup"
+include = "vesktop"
+
+[[backup]]
+path = "$HOME"
+output = "mozilla_backup"
+include = ".mozilla"
+
+[[backup]]
+path = "$HOME/.steam/steam/userdata/22932417/config"
+output = "steam_userdata_backup"
+include = "grid;librarycache;shortcuts.vdf"
+
+[[backup]]
+path = "/etc/ananicy.d"
+output = "ananicy-user-rules_backup"
+include = "01-user"

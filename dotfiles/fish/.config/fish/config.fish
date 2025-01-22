@@ -27,6 +27,19 @@ function yy
     rm -f -- "$tmp"
 end
 
+function view_tarzst
+    if test -z "$argv[1]"
+        echo "Usage: $(status current-function) <file.tar.zst>"
+        return 1
+    end
+    if command -v unzstd &>/dev/null
+        unzstd -c "$argv[1]" | tar tv
+    else
+        echo "Error: zstd must be accessible in path for $(status current-function) to work!"
+        return 1
+    end
+end
+
 function custom_snap
     set -q argv[2]; or set argv[2] root
     set -q argv[1]; and test -n "$argv[1]"; or set argv[1] "hard snapshot"
