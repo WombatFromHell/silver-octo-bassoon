@@ -1,34 +1,47 @@
 [[backup]]
 path = "$HOME/.config"
 output = "BraveSoftware_backup"
-include = "BraveSoftware"
+include = ["BraveSoftware"]
+exclude = ["Cache", "Code Cache", "GPUCache"]
 
 [[backup]]
 path = "$HOME/.config"
 output = "heroic_backup"
-include = "heroic"
+include = ["heroic"]
+exclude = ["Cache", "Code Cache", "GPUCache"]
 
 [[backup]]
 path = "$HOME/.config"
 output = "Code_backup"
-include = "Code"
+include = ["Code"]
+exclude = ["Cache", "Code Cache", "GPUCache"]
 
 [[backup]]
 path = "$HOME/.config"
 output = "vesktop_backup"
-include = "vesktop"
+include = ["vesktop"]
+exclude = ["Cache", "Code Cache", "GPUCache"]
 
 [[backup]]
 path = "$HOME"
 output = "mozilla_backup"
-include = ".mozilla"
+include = [".mozilla"]
+exclude = [
+  "storage/cache",
+  "OfflineCache",
+  "safebrowsing",
+  "startupCache",
+  "storage/temporary",
+  "storage/default/*/cache",
+  "cache2",
+]
 
 [[backup]]
 path = "$HOME/.steam/steam/userdata/22932417/config"
 output = "steam_userdata_backup"
-include = "grid;librarycache;shortcuts.vdf"
+include = ["grid", "librarycache", "shortcuts.vdf"]
 
 [[backup]]
 path = "/etc/ananicy.d"
 output = "ananicy-user-rules_backup"
-include = "01-user"
+include = ["01-user"]
