@@ -40,6 +40,10 @@ function view_tarzst
     end
 end
 
+function to_clip
+    $argv 2>&1 | tee /dev/tty | wl-copy
+end
+
 function custom_snap
     set -q argv[2]; or set argv[2] root
     set -q argv[1]; and test -n "$argv[1]"; or set argv[1] "hard snapshot"
