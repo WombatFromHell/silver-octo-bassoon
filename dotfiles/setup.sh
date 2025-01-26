@@ -23,7 +23,7 @@ fix_perms() {
     \( -type f -name "*.tmux" \
     -o -type f -name "*.sh" \
     -o -type f -name "tpm" \
-    -o type f -path "scripts/*.py" \) \
+    -o -type f -path "scripts/*.py" \) \
     -exec chmod 0755 {} \;
   echo -e "\nFixed repo permissions..."
 }
@@ -83,6 +83,7 @@ handle_scripts() {
   if confirm "Are you sure you want to stow $dir?"; then
     local target="$HOME/.local/bin/scripts"
     remove_this "$target"
+    mkdir -p "$(dirname "$target")"
     chmod +x "./$1"/*.sh
     # just link, don't stow
     ln -sf "$script_dir/$1" "$target"
@@ -103,6 +104,24 @@ handle_pipewire() {
   else
     echo -e "\nSkipping $dir stow on $OS..."
   fi
+}
+
+handle_nix() {
+  local dir=$1
+  local target=$2
+
+  local hm_root="$HOME/.config/home-manager"
+  local nix_root="/etc/nixos"
+
+  local files=("hardware-configuration.nix" "configuration.nix" "nvidia.nix")
+
+  remove_this "$hm_root"
+  ln -sf "./$dir/home" "$hm_root"
+  for file in "${files[@]}"; do
+    sudo cp -f "$nix_root"/"$file" "$nix_root"/"$file".bak
+    sudo cp -f ./"$dir"/nixos/"$file" "$nix_root"/"$file"
+  done
+  echo -e "\nPerform a 'home-manager switch' and a 'sudo nixos-rebuild switch' to complete nix stowing!"
 }
 
 handle_stow() {
@@ -126,11 +145,7 @@ handle_stow() {
     ;;
 
   nix)
-    target="$HOME/.nix-flakes"
-    if confirm "Are you sure you want to stow $dir?"; then
-      remove_this "$target"
-      stow "$dir"
-    fi
+    handle_nix "$dir" "$target"
     ;;
 
   *)
@@ -148,9 +163,9 @@ handle_stow() {
 
     tmux)
       # try to workaround tmux.fish "tmuxconf" issue
-      cp -f "$HOME"/.tmux.conf "$HOME"/.tmux.conf.stowed &&
-        remove_this "$HOME"/.tmux.conf &&
-        ln -sf "$HOME"/.config/tmux/tmux.conf "$HOME"/.tmux.conf
+      cp -f "$HOME"/.tmux.conf "$HOME"/.tmux.conf.stowed
+      remove_this "$HOME"/.tmux.conf
+      ln -sf "$HOME"/.config/tmux/tmux.conf "$HOME"/.tmux.conf
       ;;
     esac
 

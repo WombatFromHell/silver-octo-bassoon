@@ -1,4 +1,3 @@
-. "$HOME/.cargo/env"
 export XCURSOR_SIZE=32
 export HYPRCURSOR_SIZE=32
 export GTK_USE_PORTAL=1

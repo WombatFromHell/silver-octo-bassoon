@@ -16,6 +16,7 @@ if status is-interactive
         # Combine them to form the desired title
         echo "$user_host:$current_dir"
     end
+    # eval (zellij setup --generate-auto-start fish | string collect)
 end
 
 function yy
@@ -144,9 +145,12 @@ function set_editor
 end
 
 set_editor
-set -x nvm_default_version v23.6.0
+set -x nvm_default_version v23.6.1
 set -x GPG_TTY (tty)
 set -x XDG_DATA_HOME $HOME/.local/share
+
+set -x ZELLIJ_AUTO_ATTACH false
+set -x ZELLIJ_AUTO_EXIT true
 
 set --erase fish_user_paths
 # fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/nvim/mason/bin /usr/local/bin ~/.rd/bin

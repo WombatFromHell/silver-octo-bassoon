@@ -17,3 +17,4 @@ bat
 yazi
 lazygit
 nix
+zellij

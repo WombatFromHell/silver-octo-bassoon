@@ -1,4 +1,9 @@
+gtk-tabs-location = hidden
 font-family = "JetBrainsMono Nerd Font"
 font-size = 11
 theme = dark:catppuccin-mocha,light:catppuccin-latte
+# window-decoration = false
+shell-integration = fish
 confirm-close-surface = false
+background-opacity = 0.95
+background-blur-radius = 20
