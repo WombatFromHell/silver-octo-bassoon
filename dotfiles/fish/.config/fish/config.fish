@@ -16,7 +16,11 @@ if status is-interactive
         # Combine them to form the desired title
         echo "$user_host:$current_dir"
     end
-    # eval (zellij setup --generate-auto-start fish | string collect)
+
+    # enable zellij integration
+    set ZELLIJ_AUTO_ATTACH true
+    set ZELLIJ_AUTO_EXIT false
+    eval (zellij setup --generate-auto-start fish | string collect)
 end
 
 function yy
@@ -149,9 +153,6 @@ set -x nvm_default_version v23.6.1
 set -x GPG_TTY (tty)
 set -x XDG_DATA_HOME $HOME/.local/share
 
-set -x ZELLIJ_AUTO_ATTACH false
-set -x ZELLIJ_AUTO_EXIT true
-
 set --erase fish_user_paths
 # fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/nvim/mason/bin /usr/local/bin ~/.rd/bin
 
@@ -159,7 +160,7 @@ set EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --co
 set pure_shorten_prompt_current_directory_length 1
 set pure_truncate_prompt_current_directory_keeps 0
 set fish_prompt_pwd_dir_length 3
-set fish_tmux_autostart true
+set fish_tmux_autostart false
 # exclude some common cli tools from done notifications
 set -U --erase __done_exclude
 set -U __done_exclude '^git (?!push|pull|fetch)'
@@ -180,6 +181,14 @@ alias cat='bat'
 alias edit='$EDITOR'
 alias sedit='sudo -E $EDITOR'
 alias mkdir='mkdir -pv'
+# zellij shortcuts
+alias zls='zellij ls'
+alias zkill='zellij kill-session'
+alias zka='zellij ka'
+alias zda='zellij da'
+alias zr='zellij run'
+alias za='zellij attach'
+alias zd='zellij detach'
 # rsync shortcuts
 alias _rsync='rsync -avzL --partial --info=progress2 --update'
 alias _rsyncd='_rsync --dry-run'
