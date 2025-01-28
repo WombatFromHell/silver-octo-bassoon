@@ -8,6 +8,7 @@ EXCLUDES=(
   --exclude=__pycache__/
   --exclude=pipewire/
   --exclude='*.wants/'
+  --exclude='hardware-configuration.nix'
 )
 DOWN_CMD=("${_CMD[@]}" "${EXCLUDES[@]}")
 UP_CMD=("${DOWN_CMD[@]}" "--delete")

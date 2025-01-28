@@ -59,6 +59,7 @@ handle_home() {
 
   if confirm "Are you sure you want to stow $HOME?"; then
     local files=(
+      ".gitconfig"
       ".profile"
       ".bashrc"
       ".zshrc"

@@ -1,5 +1,9 @@
-{ config, lib, pkgs, ... }:
 {
+  config,
+  lib,
+  pkgs,
+  ...
+}: {
   options = {
     nvidia.enable = lib.mkEnableOption "User configured NVIDIA driver module";
   };
@@ -9,9 +13,9 @@
     hardware = {
       graphics = {
         enable = true;
-	extraPackages = with pkgs; [
-	  nvidia-vaapi-driver
-	];
+        extraPackages = with pkgs; [
+          nvidia-vaapi-driver
+        ];
       };
       # opengl.enable = true;
       nvidia = {

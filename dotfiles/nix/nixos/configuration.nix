@@ -1,127 +1,129 @@
-# Edit this configuration file to define what should be installed on
-# your system.  Help is available in the configuration.nix(5) man page
-# and in the NixOS manual (accessible by running ‘nixos-help’).
-
-{ config, lib, pkgs, ... }:
-
-let
-  username = "josh";
-  myuid = 1000;
-in
 {
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  config,
+  lib,
+  pkgs,
+  sharedArgs,
+  ...
+}: let
+  user = sharedArgs.username;
+in {
+  nix = {
+    settings.experimental-features = ["nix-command" "flakes"];
+    # gc = {
+    #   automatic = true;
+    #   dates = "weekly";
+    #   options = "--delete-older-than 1w";
+    # };
+  };
+  nixpkgs.config.allowUnfree = true;
 
-  imports =
-    [ # Include the results of the hardware scan.
-      ./hardware-configuration.nix
-      ./nvidia.nix
-      ./gigabyte-sleepfix.nix
-      ./nvidia-pm.nix
-      <home-manager/nixos>
+  # NOTE: make sure to copy in/out your hardware-configuration.nix!
+  imports = [./hardware-configuration.nix];
+
+  boot = {
+    loader = {
+      systemd-boot.enable = true;
+      efi.canTouchEfiVariables = true;
+    };
+
+    kernelPackages = pkgs.linuxPackages_latest;
+    # provide some chaotic-nyx niceties
+    # NOTE: enable these only after the first 'rebuild'
+    # kernelPackages = pkgs.linuxPackages_cachyos;
+    # services.scx.enable = true;
+
+    kernelModules = ["i2c-dev"];
+    kernelParams = [
+      "amd_pstate=active"
+      "acpi_enforce_resources=lax"
     ];
-
-  # Bootloader.
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
-  # use the latest linux kernel
-  boot.kernelPackages = pkgs.linuxPackages_latest;
-
-  networking.hostName = "methyl"; # Define your hostname.
-  # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
-  networking.networkmanager.enable = true;
-  networking.firewall = {
-    enable = false;
-    # networking.firewall.allowedTCPPorts = [ ... ];
-    # networking.firewall.allowedUDPPorts = [ ... ];
   };
 
-  # Set your time zone.
-  time.timeZone = "America/Denver";
+  networking = {
+    hostName = host;
+    networkmanager.enable = true;
+    firewall.enable = false;
+  };
 
-  # Select internationalisation properties.
+  time.timeZone = "America/Denver";
   i18n.defaultLocale = "en_US.UTF-8";
 
-  i18n.extraLocaleSettings = {
-    LC_ADDRESS = "en_US.UTF-8";
-    LC_IDENTIFICATION = "en_US.UTF-8";
-    LC_MEASUREMENT = "en_US.UTF-8";
-    LC_MONETARY = "en_US.UTF-8";
-    LC_NAME = "en_US.UTF-8";
-    LC_NUMERIC = "en_US.UTF-8";
-    LC_PAPER = "en_US.UTF-8";
-    LC_TELEPHONE = "en_US.UTF-8";
-    LC_TIME = "en_US.UTF-8";
-  };
-
-  # Enable the X11 windowing system.
-  # You can disable this if you're only using the Wayland session.
-  services.xserver.enable = true;
-
-  # Enable the KDE Plasma Desktop Environment.
-  services.displayManager.sddm.enable = true;
-  services.desktopManager.plasma6.enable = true;
-
-  # Configure keymap in X11
-  services.xserver.xkb = {
-    layout = "us";
-    variant = "";
-  };
-
-  # Enable CUPS to print documents.
-  services.printing = {
+  zramSwap = {
     enable = true;
-    drivers = with pkgs; [ brlaser ];
+    algorithm = "zstd";
+    priority = 100;
+    memoryPercent = 13;
   };
 
-  # Enable sound with pipewire.
-  hardware.pulseaudio.enable = false;
+  services = {
+    earlyoom.enable = true;
+
+    xserver.enable = true;
+    displayManager.sddm.enable = true;
+    desktopManager.plasma6.enable = true;
+    xserver.xkb.layout = "us";
+
+    sshd.enable = true;
+
+    printing = {
+      enable = true;
+      # provide the brother printer lpd's
+      drivers = with pkgs; [brlaser];
+    };
+
+    pulseaudio.enable = false;
+    pipewire = {
+      enable = true;
+      wireplumber.enable = true;
+      alsa.enable = true;
+      alsa.support32Bit = true;
+      pulse.enable = true;
+    };
+
+    flatpak.enable = true;
+    ollama.enable = true;
+  };
   security.rtkit.enable = true;
-  services.pipewire = {
-    enable = true;
-    wireplumber.enable = true;
-    alsa.enable = true;
-    alsa.support32Bit = true;
-    pulse.enable = true;
-  };
 
-  # List packages installed in system profile. To search, run:
-  # $ nix search wget
   environment.systemPackages = with pkgs; [
     cifs-utils
     fish
     wget
     curl
     neovim
-    home-manager
-    firefox
-    kdePackages.kate
-    # container stuff
+    nh
     dive
     podman-tui
     podman-compose
   ];
-  
 
-  # Define a user account. Don't forget to set a password with ‘passwd’.
-  users.users.${username} = {
+  users.users.${user} = {
     isNormalUser = true;
-    description = "${username}";
+    description = "${user}";
     uid = myuid;
-    extraGroups = [ "networkmanager" "wheel" "input" ];
-    packages = with pkgs; [
-    ];
+    extraGroups = ["networkmanager" "wheel" "input" "i2c"];
   };
 
-  hardware = {
-    bluetooth.enable = true;
-    steam-hardware.enable = true;
+  hardware.bluetooth.enable = true;
+  hardware.steam-hardware.enable = true;
+
+  programs = {
+    steam.enable = true;
+    appimage.enable = true;
+
+    nh = {
+      enable = true;
+      clean.enable = true;
+      clean.extraArgs = "--keep-since 7d --keep 3";
+      flake = "/home/${user}/.dotfiles/nix";
+    };
+
+    gnupg.agent = {
+      enable = true;
+      enableSSHSupport = true;
+    };
   };
-  programs.steam = {
-    enable = true;
-    extest.enable = true;
-  };
-  
-  # enable containers via podman
+
   virtualisation = {
     containers.enable = true;
     podman = {
@@ -129,70 +131,14 @@ in
       dockerCompat = true;
       defaultNetwork.settings.dns_enabled = true;
     };
-    oci-containers = {
-      backend = "podman";
-      # define containers to be started as systemd services below
-      # 
-      # container-name = {
-      #   image = "..."
-      #   autoStart = true;
-      #   ports = [ "ip:port:port" ];
-      # };
-    };
   };
 
-  # enable flatpak support
-  services.flatpak.enable = true;
   systemd.services.flatpak-repo = {
-    wantedBy = [ "multi-user.target" ];
-    path = [ pkgs.flatpak ];
+    wantedBy = ["multi-user.target"];
+    path = [pkgs.flatpak];
     script = ''
       flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
     '';
-  };
-
-  # enable appimage support
-  programs.appimage = {
-    enable = true;
-    binfmt = true;
-  };
-
-  # enable user configured nvidia support
-  nvidia.enable = true;
-  # enable gigabyte usb s3 wakeup fix
-  services.sleepfix.enable = true;
-  # enable nvidiapm helper
-  services.nvidiapm.enable = true;
-
-  services.gvfs.enable = true;
-  fileSystems = let
-    mygid = toString config.users.groups.users.gid;
-    automount_opts = "credentials=/etc/nixos/.smb-secrets,uid=${toString myuid},gid=${mygid},dir_mode=0770,file_mode=0660,x-systemd.automount,noauto,x-systemd.idle-timeout=300,x-systemd.device-timeout=5s,x-systemd.mount-timeout=5s";
-  in
-    {
-      "/mnt/home" = {
-        device = "//192.168.1.153/home";
-        fsType = "cifs";
-        options = ["${automount_opts}"];
-      };
-      "/mnt/FTPRoot" = {
-        device = "//192.168.1.153/FTPRoot";
-        fsType = "cifs";
-        options = ["${automount_opts}"];
-      };
-      "/mnt/Downloads" = {
-        device = "//192.168.1.153/Downloads";
-        fsType = "cifs";
-        options = ["${automount_opts}"];
-      };
-    };
-
-  nixpkgs.config.allowUnfree = true;
-  home-manager.useGlobalPkgs = true;
-  programs.fish.enable = true;
-    programs.gnupg.agent = {
-    enable = true;
-    enableSSHSupport = true;
   };
 
   system.stateVersion = "24.11";
