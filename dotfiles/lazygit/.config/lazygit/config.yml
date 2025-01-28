@@ -1,3 +1,6 @@
+os:
+  edit: "nvim {{filename}}"
+
 theme:
   activeBorderColor:
     - "#94e2d5"

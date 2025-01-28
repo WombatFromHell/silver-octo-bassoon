@@ -17,6 +17,9 @@ if [[ $- == *i* ]]; then
 fi
 
 NIX_DAEMON="/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh"
+if [ -d "/nix" ]; then
+  export PATH="$PATH:$HOME/.nix-profile/bin"
+fi
 if [ -r "$NIX_DAEMON" ]; then
   source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 fi
