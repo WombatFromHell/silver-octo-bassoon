@@ -2,3 +2,4 @@ support
 fish_variables
 
 .smb-credentials
+hardware-configuration.nix

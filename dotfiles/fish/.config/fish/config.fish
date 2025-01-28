@@ -18,9 +18,11 @@ if status is-interactive
     end
 
     # enable zellij integration
-    set ZELLIJ_AUTO_ATTACH true
-    set ZELLIJ_AUTO_EXIT false
-    eval (zellij setup --generate-auto-start fish | string collect)
+    if not set -q SSH_TTY
+        set ZELLIJ_AUTO_ATTACH true
+        set ZELLIJ_AUTO_EXIT false
+        eval (zellij setup --generate-auto-start fish | string collect)
+    end
 end
 
 function yy
@@ -206,7 +208,9 @@ alias reflect='sudo cachyos-rate-mirrors --sync-check --country "US"'
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
 #
 set NIX_FLAKE_ROOT $HOME/.dotfiles/nix
-alias nh-home='nh home switch $NIX_FLAKE_ROOT/home'
+alias nixconf='$EDITOR $NIX_FLAKE_ROOT'
+alias nhu_d='nh home switch -H methyl $NIX_FLAKE_ROOT'
+alias nhc='nh clean'
 
 # only when not already inside fish
 if command -q zoxide

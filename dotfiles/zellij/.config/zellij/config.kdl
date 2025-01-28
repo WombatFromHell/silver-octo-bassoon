@@ -1,6 +1,7 @@
 keybinds clear-defaults=true {
     locked {
-        bind "Ctrl g" { SwitchToMode "normal"; }
+        // bind "Ctrl g" { SwitchToMode "normal"; }
+        bind "Alt '" { SwitchToMode "normal"; }
     }
     pane {
         bind "left" { MoveFocus "left"; }
@@ -17,7 +18,8 @@ keybinds clear-defaults=true {
         bind "l" { MoveFocus "right"; }
         bind "n" { NewPane; SwitchToMode "normal"; }
         bind "p" { SwitchFocus; }
-        bind "Ctrl p" { SwitchToMode "normal"; }
+        // bind "Ctrl p" { SwitchToMode "normal"; }
+        bind "Alt p" { SwitchToMode "normal"; }
         bind "r" { NewPane "right"; SwitchToMode "normal"; }
         bind "w" { ToggleFloatingPanes; SwitchToMode "normal"; }
         bind "z" { TogglePaneFrames; SwitchToMode "normal"; }
@@ -101,7 +103,8 @@ keybinds clear-defaults=true {
             }
             SwitchToMode "normal"
         }
-        bind "Ctrl o" { SwitchToMode "normal"; }
+        // bind "Ctrl o" { SwitchToMode "normal"; }
+        bind "Alt o" { SwitchToMode "normal"; }
         bind "p" {
             LaunchOrFocusPlugin "plugin-manager" {
                 floating true
@@ -118,46 +121,56 @@ keybinds clear-defaults=true {
         }
     }
     shared_except "locked" {
-        bind "Alt left" { MoveFocusOrTab "left"; }
-        bind "Alt down" { MoveFocus "down"; }
-        bind "Alt up" { MoveFocus "up"; }
-        bind "Alt right" { MoveFocusOrTab "right"; }
-        bind "Alt +" { Resize "Increase"; }
+        // bind "Alt left" { MoveFocusOrTab "left"; }
+        // bind "Alt down" { MoveFocus "down"; }
+        // bind "Alt up" { MoveFocus "up"; }
+        // bind "Alt right" { MoveFocusOrTab "right"; }
+        // bind "Alt +" { Resize "Increase"; }
         bind "Alt -" { Resize "Decrease"; }
         bind "Alt =" { Resize "Increase"; }
         bind "Alt [" { PreviousSwapLayout; }
         bind "Alt ]" { NextSwapLayout; }
-        bind "Alt p" { ToggleFloatingPanes; }
-        bind "Ctrl g" { SwitchToMode "locked"; }
+        // bind "Alt p" { ToggleFloatingPanes; }
+        // bind "Ctrl g" { SwitchToMode "locked"; }
+        bind "Alt g" { SwitchToMode "locked"; }
+        // bind "Alt i" { MoveTab "left"; }
+        // bind "Alt o" { MoveTab "right"; }
         bind "Alt h" { MoveFocusOrTab "left"; }
-        bind "Alt i" { MoveTab "left"; }
         bind "Alt j" { MoveFocus "down"; }
         bind "Alt k" { MoveFocus "up"; }
         bind "Alt l" { MoveFocusOrTab "right"; }
-        bind "Alt n" { NewPane; }
-        bind "Alt o" { MoveTab "right"; }
+        bind "Alt n" { NewPane "down"; }
+        bind "Alt N" { NewPane "right"; }
+        bind "Alt T" { NewTab; }
         bind "Ctrl q" { Quit; }
     }
     shared_except "locked" "move" {
-        bind "Ctrl m" { SwitchToMode "move"; }
+        // bind "Ctrl m" { SwitchToMode "move"; }
+        bind "Alt m" { SwitchToMode "move"; }
     }
     shared_except "locked" "session" {
-        bind "Ctrl o" { SwitchToMode "session"; }
+        // bind "Ctrl o" { SwitchToMode "session"; }
+        bind "Alt s" { SwitchToMode "session"; }
     }
     shared_except "locked" "scroll" "search" "tmux" {
-        bind "Ctrl b" { SwitchToMode "tmux"; }
+        // bind "Ctrl b" { SwitchToMode "tmux"; }
+        bind "Alt x" { SwitchToMode "tmux"; }
     }
     shared_except "locked" "scroll" "search" {
-        bind "Ctrl s" { SwitchToMode "scroll"; }
+        // bind "Ctrl s" { SwitchToMode "scroll"; }
+        bind "Alt /" { SwitchToMode "scroll"; }
     }
     shared_except "locked" "tab" {
-        bind "Ctrl t" { SwitchToMode "tab"; }
+        // bind "Ctrl t" { SwitchToMode "tab"; }
+        bind "Alt t" { SwitchToMode "tab"; }
     }
     shared_except "locked" "pane" {
-        bind "Ctrl p" { SwitchToMode "pane"; }
+        // bind "Ctrl p" { SwitchToMode "pane"; }
+        bind "Alt p" { SwitchToMode "pane"; }
     }
     shared_except "locked" "resize" {
-        bind "Ctrl n" { SwitchToMode "resize"; }
+        // bind "Ctrl n" { SwitchToMode "resize"; }
+        bind "Alt r" { SwitchToMode "resize"; }
     }
     shared_except "normal" "locked" "entersearch" {
         bind "enter" { SwitchToMode "normal"; }
@@ -427,3 +440,4 @@ pane_frames false
 // Default: true (if the host terminal supports it)
 // 
 // support_kitty_keyboard_protocol false
+support_kitty_keyboard_protocol false
