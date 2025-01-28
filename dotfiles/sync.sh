@@ -3,12 +3,15 @@
 LOCAL="."
 REMOTE="/mnt/home/GDrive/Backups/linux-config/backups/dotfiles/"
 
-CMD=(rsync -avzL --checksum --partial --update --info=progress2)
+_CMD=(rsync -avzL --checksum --partial --update --info=progress2)
 EXCLUDES=(
   --exclude=__pycache__/
   --exclude=pipewire/
   --exclude='*.wants/'
 )
+DOWN_CMD=("${_CMD[@]}" "${EXCLUDES[@]}")
+UP_CMD=("${DOWN_CMD[@]}" "--delete")
+EQ_CMD=("${DOWN_CMD[@]}" "--stats" "--dry-run")
 
 script_dir="$(dirname "$(readlink -f "$0")")"
 if [[ "$(pwd -P)" != "$script_dir" ]]; then
@@ -41,37 +44,35 @@ confirm() {
 }
 
 equality() {
-  ADD=(--stats --delete "${EXCLUDES[@]}" --dry-run)
-  ECMD=("${CMD[@]}" "${ADD[@]}" "$1" "$2")
   local result
-  result=$("${ECMD[@]}" | grep "Number of regular files transferred" | awk -F ": " '{print $2}')
+  result=$(
+    "${EQ_CMD[@]}" "$@" |
+      grep "Number of regular files transferred" |
+      awk -F ": " '{print $2}'
+  )
 
-  if [[ $result -gt 0 ]]; then
-    return 1
-  else
+  if [ "$result" -eq 0 ]; then
+    echo "No changes detected!"
     return 0
+  else
+    return 1
   fi
 }
 
 do_sync() {
   echo "==== PERFORMING A DRY RUN ===="
-  echo "Syncing $1 => $2"
-  "${CMD[@]}" "$1" "$2"
-  if confirm "Please confirm sync of: $1 => $2"; then
-    unset 'CMD[${#CMD[@]}-1]'
-    # "${CMD[@]}" "$2" "$1"
-    echo "Would normally do: ${CMD[*]} $1 $2"
+  "${UP_CMD[@]}" "--dry-run" "${@}"
+  if echo && confirm "Confirm syncing: $1 => $2"; then
+    "${UP_CMD[@]}" "$@"
+    # echo "Would normally do: ${UP_CMD[*]} $*"
   fi
 }
 
 sync() {
-  CMD+=("--delete" "${EXCLUDES[@]}" "--dry-run")
   [ "$swap" == true ] && TARGETS=("$2" "$1") || TARGETS=("$1" "$2")
-  if equality "${TARGETS[@]}"; then
-    echo "No changes detected!"
-    return
+  if ! equality "${TARGETS[@]}"; then
+    do_sync "${TARGETS[@]}"
   fi
-  do_sync "${TARGETS[@]}"
 }
 
 if [ "$1" == "--help" ]; then

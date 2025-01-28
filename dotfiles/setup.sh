@@ -1,21 +1,19 @@
 #!/usr/bin/env bash
 
-OS=$(uname)
+OS=$(uname -a)
 AUTO_CONFIRM=false
 # Ensure script runs from its directory
 script_dir="$(dirname "$(readlink -f "$0")")"
 cd "$script_dir" || exit 1
 
 show_help() {
-  echo "Usage: $(basename "$0") [-y|--confirm] [-h|--help]"
+  echo "Usage: $(basename "$0") [-y|--confirm] [--fix-perms] [-h|--help]"
   echo "Options:"
   echo "  -y, --confirm     Skip confirmation prompts"
-  echo "  -h, --help    Show this help message"
+  echo "  --fix-perms       Normalize this repo's file permissions"
+  echo "  -h, --help        Show this help message"
   exit 0
 }
-[[ "$1" == "-h" || "$1" == "--help" ]] && show_help
-[[ "$1" == "-y" || "$1" == "--confirm" ]] && AUTO_CONFIRM=true
-
 fix_perms() {
   find . -type d -exec chmod 0755 {} \;
   find . -type f -exec chmod 0644 {} \;
@@ -25,7 +23,7 @@ fix_perms() {
     -o -type f -name "tpm" \
     -o -type f -path "scripts/*.py" \) \
     -exec chmod 0755 {} \;
-  echo -e "\nFixed repo permissions..."
+  echo "Fixed repo permissions..."
 }
 
 confirm() {
@@ -34,11 +32,15 @@ confirm() {
   [[ "$response" == "y" || "$response" == "Y" ]]
 }
 
-check_for_linux() {
-  if [ "$OS" != "Linux" ]; then
-    return 1
+check_for_os() {
+  if echo "$OS" | grep -q "NixOS"; then
+    echo "NixOS"
+  elif echo "$OS" | grep -q "Darwin"; then
+    echo "Darwin"
+  elif echo "$OS" | grep -q "Linux"; then
+    echo "Linux"
   else
-    return 0
+    echo "Other"
   fi
 }
 
@@ -94,7 +96,10 @@ handle_pipewire() {
   local dir=$1
   local target=$2
 
-  if check_for_linux && confirm "Are you sure you want to stow $dir?"; then
+  local os
+  os=$(check_for_os)
+
+  if [[ "$os" == "Linux" || "$os" == "NixOS" ]] && confirm "Are you sure you want to stow $dir?"; then
     local tgt=".config/pipewire"
     local hesuvi_tgt="$HOME/$tgt/atmos.wav"
     sed -i \
@@ -102,7 +107,7 @@ handle_pipewire() {
       "./$dir/$tgt/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
     stow "$dir"
   else
-    echo -e "\nSkipping $dir stow on $OS..."
+    echo -e "\nSkipping $dir stow on $os..."
   fi
 }
 
@@ -110,23 +115,34 @@ handle_nix() {
   local dir=$1
   local target=$2
 
-  local hm_root="$HOME/.config/home-manager"
-  local nix_root="/etc/nixos"
+  local os
+  os=$(check_for_os)
 
-  local files=("hardware-configuration.nix" "configuration.nix" "nvidia.nix")
+  local root="/etc/nixos"
+  local conf="hardware-configuration.nix"
 
-  remove_this "$hm_root"
-  ln -sf "./$dir/home" "$hm_root"
-  for file in "${files[@]}"; do
-    sudo cp -f "$nix_root"/"$file" "$nix_root"/"$file".bak
-    sudo cp -f ./"$dir"/nixos/"$file" "$nix_root"/"$file"
-  done
-  echo -e "\nPerform a 'home-manager switch' and a 'sudo nixos-rebuild switch' to complete nix stowing!"
+  if
+    [ "$os" == "NixOS" ] &&
+      confirm "Are you sure you want to setup the nix flake at: $dir?"
+  then
+    if [ -r "$root/$conf" ]; then
+      cp -f "$root/$conf" ./"$dir"/nixos/"$conf"
+    else
+      echo "Error: unable to read $root/$conf!"
+      return 1
+    fi
+    echo -e "\nPerform a 'sudo nixos-rebuild switch --flake $script_dir/nix#methyl'"
+  else
+    echo -e "\nSkipping nix flake setup on $os..."
+  fi
 }
 
 handle_stow() {
   local dir=$1
   local target="$HOME/.config/$dir"
+
+  local os
+  os=$(check_for_os)
 
   case "$dir" in
 
@@ -155,17 +171,10 @@ handle_stow() {
     case "$dir" in
     systemd)
       # exclude systemd on non-Linux OS'
-      if ! check_for_linux; then
-        echo -e "\nSkipping $dir stow on $OS..."
+      if [[ "$os" != "Linux" ]]; then
+        echo -e "\nSkipping $dir stow on $os..."
         return
       fi
-      ;;
-
-    tmux)
-      # try to workaround tmux.fish "tmuxconf" issue
-      cp -f "$HOME"/.tmux.conf "$HOME"/.tmux.conf.stowed
-      remove_this "$HOME"/.tmux.conf
-      ln -sf "$HOME"/.config/tmux/tmux.conf "$HOME"/.tmux.conf
       ;;
     esac
 
@@ -189,10 +198,28 @@ handle_stow() {
 
 main() {
   fix_perms # normalize permissions
-  mapfile -t directories <sources.txt
+  mapfile -t directories < <(find . -mindepth 1 -maxdepth 1 -type d | sed 's|^./||' | sort)
   for dir in "${directories[@]}"; do
     handle_stow "$dir"
   done
 }
+
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  -y | --confirm)
+    AUTO_CONFIRM=true
+    shift
+    ;;
+  --fix-perms)
+    fix_perms
+    shift
+    exit 0
+    ;;
+  -h | --help)
+    show_help
+    ;;
+  esac
+done
 
 main
