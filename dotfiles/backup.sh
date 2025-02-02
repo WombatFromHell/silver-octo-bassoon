@@ -35,7 +35,7 @@ backup_pipewire() {
 
   "${RSYNC[@]}" "$src"/* "$tgt"/
   # generalize pipewire HRIR path
-  sed -i "s|$HOME/.config/pipewire/atmos.wav|%PATH%|g" \
+  sed -i "s|$HOME/.config/pipewire/hrir.wav|%PATH%|g" \
     "$tgt/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
 }
 
@@ -61,10 +61,6 @@ backup_directory() {
     src="$HOME/.local/bin/$dir"
     mkdir -p "$tgt"
     "${RSYNC[@]}" --delete "$src"/* "$tgt"/
-    ;;
-  "nix")
-    src="$HOME/.nix-flakes"
-    "${RSYNC[@]}" "$src" "$tgt"/
     ;;
   "fish")
     tgt="./$dir/.config/$dir"

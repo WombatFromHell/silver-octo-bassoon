@@ -100,41 +100,15 @@ handle_pipewire() {
   local os
   os=$(check_for_os)
 
-  if [[ "$os" == "Linux" || "$os" == "NixOS" ]] && confirm "Are you sure you want to stow $dir?"; then
+  if [[ "$os" == "Linux" ]] && confirm "Are you sure you want to stow $dir?"; then
     local tgt=".config/pipewire"
-    local hesuvi_tgt="$HOME/$tgt/atmos.wav"
+    local hesuvi_tgt="$HOME/$tgt/hrir.wav"
     sed -i \
       "s|%PATH%|$hesuvi_tgt|g" \
       "./$dir/$tgt/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
     stow "$dir"
   else
     echo -e "\nSkipping $dir stow on $os..."
-  fi
-}
-
-handle_nix() {
-  local dir=$1
-  local target=$2
-
-  local os
-  os=$(check_for_os)
-
-  local root="/etc/nixos"
-  local conf="hardware-configuration.nix"
-
-  if
-    [ "$os" == "NixOS" ] &&
-      confirm "Are you sure you want to setup the nix flake at: $dir?"
-  then
-    if [ -r "$root/$conf" ]; then
-      cp -f "$root/$conf" ./"$dir"/nixos/"$conf"
-    else
-      echo "Error: unable to read $root/$conf!"
-      return 1
-    fi
-    echo -e "\nPerform a 'sudo nixos-rebuild switch --flake $script_dir/nix#methyl'"
-  else
-    echo -e "\nSkipping nix flake setup on $os..."
   fi
 }
 
@@ -159,10 +133,6 @@ handle_stow() {
 
   pipewire)
     handle_pipewire "$dir" "$target"
-    ;;
-
-  nix)
-    handle_nix "$dir" "$target"
     ;;
 
   *)
