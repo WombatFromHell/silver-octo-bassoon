@@ -105,7 +105,7 @@ ResultAny=yes
 ResultInactive=yes
 ResultActive=yes
 EOF
-    systemctl --user enable --now gamemoded.service
+    # systemctl --user enable --now gamemoded.service
   fi
 
   # enable earlyoom for safety when under memory stress
@@ -194,9 +194,12 @@ if confirm "Perform user-specific customizations?"; then
   fi
 
   # enable some secondary user-specific services
+  mkdir -p "$HOME"/.config/systemd/user/
+  $CP ./systemd-user/*.service "$HOME"/.config/systemd/user/
   systemctl --user daemon-reload &&
-    chmod 0755 "$HOME"/.local/bin/* &&
-    systemctl --user enable --now on-session-state.service
+    chmod 0755 "$HOME"/.local/bin/*
+  systemctl --user enable --now on-session-state.service
+  systemctl --user enable --now openrgb-lightsout.service
 
   # update fish shell plugins
   fish_path="$(command -v fish)"

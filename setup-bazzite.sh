@@ -73,9 +73,12 @@ if confirm "Perform user-specific customizations?"; then
     sudo systemctl daemon-reload
 
   # enable some secondary user-specific services
+  mkdir -p "$HOME"/.config/systemd/user/
+  $CP ./systemd-user/*.service "$HOME"/.config/systemd/user/
   systemctl --user daemon-reload &&
-    chmod 0755 "$HOME"/.local/bin/* &&
-    systemctl --user enable --now on-session-state.service
+    chmod 0755 "$HOME"/.local/bin/*
+  systemctl --user enable --now on-session-state.service
+  systemctl --user enable --now openrgb-lightsout.service
 
   # SETUP USER DEPENDENCIES
   if confirm "Install common user fonts?"; then
