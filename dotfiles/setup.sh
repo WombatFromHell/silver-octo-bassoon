@@ -7,10 +7,11 @@ script_dir="$(dirname "$(readlink -f "$0")")"
 cd "$script_dir" || exit 1
 
 show_help() {
-  echo "Usage: $(basename "$0") [-y|--confirm] [--fix-perms] [-h|--help]"
+  echo "Usage: $(basename "$0") [-y|--confirm] [--fix-perms] [--fetch-nix] [-h|--help]"
   echo "Options:"
   echo "  -y, --confirm     Skip confirmation prompts"
   echo "  --fix-perms       Normalize this repo's file permissions"
+  echo "  --fetch-nix       Grab Nix flake from GitHub"
   echo "  -h, --help        Show this help message"
   exit 0
 }
@@ -51,6 +52,20 @@ remove_this() {
     rm -rf "${1:?}"/
     return 1
   fi
+}
+
+fetch_nix() {
+  GIT=$(command -v git)
+  NIX=$(command -v nix)
+  if [[ -z "$GIT" ]]; then
+    echo "Error: cannot find 'git', might not be installed?"
+    exit 1
+  fi
+  if [[ -z "$NIX" ]]; then
+    echo "Warning: cannot find 'nix', might not be installed?"
+    exit 1
+  fi
+  git clone git@github.com:WombatFromHell/automatic-palm-tree.git "$script_dir"/nix
 }
 
 handle_home() {
@@ -184,6 +199,11 @@ while [[ $# -gt 0 ]]; do
     ;;
   --fix-perms)
     fix_perms
+    shift
+    exit 0
+    ;;
+  --fetch-nix)
+    fetch_nix
     shift
     exit 0
     ;;
