@@ -2,7 +2,7 @@
 	askpass =
 [user]
 	name = WombatFromHell
-	email = WombatFromHell@users.noreply.github.com
+	email = 1840075+WombatFromHell@users.noreply.github.com
 	signingkey = C68C7E751A853172DF30686248836A072D7B5656
 [alias]
 	co = checkout
