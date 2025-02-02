@@ -18,10 +18,41 @@ if status is-interactive
     end
 
     # enable zellij integration
-    if not set -q SSH_TTY
-        set ZELLIJ_AUTO_ATTACH true
-        set ZELLIJ_AUTO_EXIT false
-        eval (zellij setup --generate-auto-start fish | string collect)
+    if not set -q ZELLIJ
+        if test "$ZELLIJ_AUTO_ATTACH" = true
+            zellij attach -c
+        else
+            zellij
+        end
+
+        if test "$ZELLIJ_AUTO_EXIT" = true
+            kill $fish_pid
+        end
+    end
+    set ZELLIJ_AUTO_ATTACH true
+    set ZELLIJ_AUTO_EXIT true
+
+    if type -q zellij
+        # Update the zellij tab name with the current process name or pwd.
+        function zellij_tab_name_update_pre --on-event fish_preexec
+            if set -q ZELLIJ
+                set -l cmd_line (string split " " -- $argv)
+                set -l process_name $cmd_line[1]
+                if test -n "$process_name" -a "$process_name" != z
+                    command nohup zellij action rename-tab $process_name >/dev/null 2>&1
+                end
+            end
+        end
+
+        function zellij_tab_name_update_post --on-event fish_postexec
+            if set -q ZELLIJ
+                set -l cmd_line (string split " " -- $argv)
+                set -l process_name $cmd_line[1]
+                if test "$process_name" = z
+                    command nohup zellij action rename-tab (prompt_pwd) >/dev/null 2>&1
+                end
+            end
+        end
     end
 end
 
@@ -150,10 +181,18 @@ function set_editor
     end
 end
 
+function setup_podman_sock
+    if test -r "$XDG_RUNTIME_DIR"/podman/podman.sock
+        set -Ux DOCKER_HOST unix:///run/user/$(id -u)/podman/podman.sock
+    end
+end
+
 set_editor
+setup_podman_sock
 set -x nvm_default_version v23.6.1
 set -x GPG_TTY (tty)
 set -x XDG_DATA_HOME $HOME/.local/share
+set -x NIXPKGS_ALLOW_UNFREE true
 
 set --erase fish_user_paths
 fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/nvim/mason/bin /usr/local/bin ~/.rd/bin ~/.nix-profile/bin
@@ -209,7 +248,7 @@ alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /d
 #
 set NIX_FLAKE_ROOT $HOME/.dotfiles/nix
 alias nixconf='$EDITOR $NIX_FLAKE_ROOT'
-alias nhu_d='nh home switch -H methyl $NIX_FLAKE_ROOT'
+alias nhu='nh os switch -H methyl $NIX_FLAKE_ROOT'
 alias nhc='nh clean'
 
 # only when not already inside fish

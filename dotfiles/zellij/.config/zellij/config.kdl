@@ -135,10 +135,10 @@ keybinds clear-defaults=true {
         bind "Alt g" { SwitchToMode "locked"; }
         // bind "Alt i" { MoveTab "left"; }
         // bind "Alt o" { MoveTab "right"; }
-        bind "Alt h" { MoveFocusOrTab "left"; }
-        bind "Alt j" { MoveFocus "down"; }
-        bind "Alt k" { MoveFocus "up"; }
-        bind "Alt l" { MoveFocusOrTab "right"; }
+        bind "Alt H" { MoveFocusOrTab "left"; }
+        bind "Alt J" { MoveFocus "down"; }
+        bind "Alt K" { MoveFocus "up"; }
+        bind "Alt L" { MoveFocusOrTab "right"; }
         bind "Alt n" { NewPane "down"; }
         bind "Alt N" { NewPane "right"; }
         bind "Alt T" { NewTab; }
@@ -253,7 +253,7 @@ plugins {
     strider location="zellij:strider"
     tab-bar location="zellij:tab-bar"
     welcome-screen location="zellij:session-manager" {
-        welcome_screen true
+        welcome_screen false
     }
 }
 
@@ -268,12 +268,27 @@ load_plugins {
 //   - true
 //   - false (Default)
 // 
-simplified_ui true
+simplified_ui false
  
 // Choose the theme that is specified in the themes section.
 // Default: default
 // 
 // theme "dracula"
+themes {
+  catppuccin-mocha {
+    bg "#585b70" // Surface2
+    fg "#cdd6f4" // Text
+    red "#f38ba8"
+    green "#a6e3a1"
+    blue "#89b4fa"
+    yellow "#f9e2af"
+    magenta "#f5c2e7" // Pink
+    orange "#fab387" // Peach
+    cyan "#89dceb" // Sky
+    black "#181825" // Mantle
+    white "#cdd6f4" // Text
+  }
+}
 theme "catppuccin-mocha"
  
 // Choose the base input mode of zellij.
@@ -284,7 +299,8 @@ theme "catppuccin-mocha"
 // Choose the path to the default shell that zellij will use for opening new panes
 // Default: $SHELL
 // 
-// default_shell "fish"
+// default_shell "bash"
+default_shell "fish"
  
 // Choose the path to override cwd that zellij will use for opening new panes
 // 
@@ -293,7 +309,7 @@ theme "catppuccin-mocha"
 // The name of the default layout to load on startup
 // Default: "default"
 // 
-default_layout "compact"
+default_layout "topbar"
  
 // The folder in which Zellij will look for layouts
 // (Requires restart)
@@ -388,7 +404,7 @@ pane_frames false
 // if it is already running or creates it otherwise.
 // Default: false
 // 
-// attach_to_session true
+attach_to_session true
  
 // Toggle between having Zellij lay out panes according to a predefined set of layouts whenever possible
 // Options:
