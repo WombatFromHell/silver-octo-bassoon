@@ -65,18 +65,30 @@ function yy
     rm -f -- "$tmp"
 end
 
+
 function view_tarzst
     if test -z "$argv[1]"
-        echo "Usage: $(status current-function) <file.tar.zst>"
+        echo "Usage: view_tarzst <file.tar.zst> [tar-options]"
         return 1
     end
-    if command -v unzstd &>/dev/null
-        unzstd -c "$argv[1]" | tar tv
+
+    set file $argv[1]
+
+    if test (count $argv) -gt 1
+        # Allow passing multiple tar options if needed
+        set tar_opts $argv[2..-1]
     else
-        echo "Error: zstd must be accessible in path for $(status current-function) to work!"
+        set tar_opts tv
+    end
+
+    if command -v unzstd >/dev/null
+        unzstd -c "$file" | tar $tar_opts
+    else
+        echo "Error: zstd must be accessible in PATH for view_tarzst to work!"
         return 1
     end
 end
+
 
 function to_clip
     $argv 2>&1 | tee /dev/tty | wl-copy
