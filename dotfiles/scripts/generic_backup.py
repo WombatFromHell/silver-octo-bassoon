@@ -143,21 +143,25 @@ def get_files_to_tar(include_list, exclude_list):
         for match in matches:
             abs_match = os.path.abspath(match)
             if os.path.isdir(abs_match):
-                # Recursively add all files in the directory
+                # Recursively add all files in the directory as relative paths
                 for root, _, files in os.walk(abs_match):
                     for file in files:
                         file_path = os.path.join(root, file)
                         if is_readable_file(file_path):
-                            files_to_tar.add(file_path)
+                            # Convert to relative path from current_dir
+                            rel_path = os.path.relpath(file_path, current_dir)
+                            files_to_tar.add(rel_path)
             elif is_readable_file(abs_match):
-                files_to_tar.add(abs_match)
+                # Convert to relative path from current_dir
+                rel_path = os.path.relpath(abs_match, current_dir)
+                files_to_tar.add(rel_path)
 
     # Exclude files matching exclude patterns
     excluded_files = set()
     for file in files_to_tar:
-        relative_path = os.path.relpath(file, current_dir)
+        # Since files are relative, check against the exclude patterns directly
         for pattern in exclude_list:
-            if matches_pattern(relative_path, pattern):
+            if matches_pattern(file, pattern):
                 excluded_files.add(file)
     files_to_tar -= excluded_files
 
