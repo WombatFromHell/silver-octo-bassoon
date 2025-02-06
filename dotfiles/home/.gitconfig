@@ -2,53 +2,58 @@
 	askpass =
 [user]
 	name = WombatFromHell
-	email = 1840075+WombatFromHell@users.noreply.github.com
+	email = WombatFromHell@users.noreply.github.com
 	signingkey = C68C7E751A853172DF30686248836A072D7B5656
 [alias]
-	co = checkout
-	cob = checkout -b
-	coo = !git fetch && git checkout
+	aa = add -A .
+	aacm = !git add -A . && git commit -m
+	amendm = commit --amend -m
 	br = branch
 	brd = branch -d
 	brD = branch -D
-	merged = branch --merged
-	dmerged = "git branch --merged | grep -v '\\*' | xargs -n 1 git branch -d"
-	st = status
-	aa = add -A .
 	cm = commit -m
-	aacm = !git add -A . && git commit -m
+	co = checkout
+	cob = checkout -b
+	coo = !git fetch && git checkout
+	cfd = !git clean -f -d
 	cp = cherry-pick
-	amend = commit --amend -m
 	dev = !git checkout dev && git pull origin dev
-	staging = !git checkout staging && git pull origin staging
-	master = !git checkout master && git pull origin
+  dmerged = "git branch --merged | grep -v '\\*' | xargs -n 1 git branch -d"
+	dstash = !git stash --keep-index && !git stash push -m "staged" --keep-index && !git stash pop stash@{1}
+	f = "!git ls-files | grep -i"
+  gca = gc --auto
+  gcagg = !git prune && gc --aggressive
+	gr = grep -Ii
+  hard-drop = !git reset HEAD --hard && git clean -f -d
+	hreset = reset --hard HEAD
+  la = "!git config -l | grep alias | cut -c 7-"
+	ls = log --pretty=format:"%C(yellow)%h%Cred%d\\ %Creset%s%Cblue\\ [%cn]" --decorate
+	ll = log --pretty=format:"%C(yellow)%h%Cred%d\\ %Creset%s%Cblue\\ [%cn]" --decorate --numstat
 	main = !git checkout main && git pull origin
+	merged = branch --merged
 	po = push origin
 	pod = push origin dev
+  pogm = !git push origin gh-pages && git checkout main && git pull origin main && git rebase gh-pages && git push origin main && git checkout gh-pages
+  poh = push origin HEAD
 	pos = push origin staging
-	pom = push origin master
-	poh = push origin HEAD
-	pogm = !git push origin gh-pages && git checkout master && git pull origin master && git rebase gh-pages && git push origin master && git checkout gh-pages
-	pomg = !git push origin master && git checkout gh-pages && git pull origin gh-pages && git rebase master && git push origin gh-pages && git checkout master
+	pom = push origin main
+	pomg = !git push origin main && git checkout gh-pages && git pull origin gh-pages && git rebase main && git push origin gh-pages && git checkout main
 	plo = pull origin
 	plod = pull origin dev
 	plos = pull origin staging
-	plom = pull origin master
+	plom = pull origin main
 	ploh = pull origin HEAD
-	unstage = reset --soft HEAD^
-	hardreset = reset --hard HEAD
-	ls = log --pretty=format:"%C(yellow)%h%Cred%d\\ %Creset%s%Cblue\\ [%cn]" --decorate
-	ll = log --pretty=format:"%C(yellow)%h%Cred%d\\ %Creset%s%Cblue\\ [%cn]" --decorate --numstat
-	f = "!git ls-files | grep -i"
-	gr = grep -Ii
-	la = "!git config -l | grep alias | cut -c 7-"
-	stat = !git --no-pager log --oneline -5
-	cfd = !git clean -f -d
-	reamend = !git commit --amend --no-edit
+  racm = !git reset HEAD^ && git add -A . && git commit -m
+  reflogg = !git log --graph --reflog
+  ram = !git add -A . && git commit --amend --no-edit
+  ramm = !git add -A . && git commit --amend -m
+	st = status
+	staging = !git checkout staging && git pull origin staging
 	stashall = !git stash --all
 	stashu = !git stash push -u
+  stat = !git --no-pager log --oneline -10
 	switchsafe = !git stash save -u
-	dstash = !git stash --keep-index && !git stash push -m "staged" --keep-index && !git stash pop stash@{1}
+	unstage = reset --soft HEAD^
 [core]
 	pager = less -F -X
 [credential]

@@ -1,5 +1,7 @@
 support
 fish_variables
+.local/bin
+monitor-session
 
 .smb-credentials
-hardware-configuration.nix
+.smb-secrets

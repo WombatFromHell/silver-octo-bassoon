@@ -26,15 +26,7 @@ exclude = ["Cache", "Code Cache", "GPUCache"]
 path = "$HOME"
 output = "mozilla_backup"
 include = [".mozilla"]
-exclude = [
-  "storage/cache",
-  "OfflineCache",
-  "safebrowsing",
-  "startupCache",
-  "storage/temporary",
-  "storage/default/*/cache",
-  "cache2",
-]
+exclude = ["OfflineCache", "safebrowsing", "startupCache", "cache2"]
 
 [[backup]]
 path = "$HOME/.steam/steam/userdata/22932417/config"

@@ -204,7 +204,7 @@ setup_podman_sock
 set -x nvm_default_version v23.6.1
 set -x GPG_TTY (tty)
 set -x XDG_DATA_HOME $HOME/.local/share
-set -x NIXPKGS_ALLOW_UNFREE true
+set -x XDG_CONFIG_HOME $HOME/.config
 
 set --erase fish_user_paths
 fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/nvim/mason/bin /usr/local/bin ~/.rd/bin ~/.nix-profile/bin
@@ -258,9 +258,15 @@ alias rsf_d='_rsyncd --exclude="*/"'
 alias reflect='sudo cachyos-rate-mirrors --sync-check --country "US"'
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
 #
+alias zc='zellij attach -c'
+#
 set NIX_FLAKE_ROOT $HOME/.dotfiles/nix
 alias nixconf='$EDITOR $NIX_FLAKE_ROOT'
+alias nrd='nixos-rebuild dry-build --flake $HOME/.dotfiles/nix#methyl'
+alias nru='nixos-rebuild --flake $HOME/.dotfiles/nix#methyl'
 alias nhu='nh os switch -H methyl $NIX_FLAKE_ROOT'
+alias nhuu='nh os switch -H methyl -u $NIX_FLAKE_ROOT'
+alias nls='nixos-rebuild list-generations'
 alias nhc='nh clean'
 
 # only when not already inside fish
