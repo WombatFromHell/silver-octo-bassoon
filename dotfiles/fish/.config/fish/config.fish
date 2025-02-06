@@ -18,6 +18,9 @@ if status is-interactive
     end
 
     # enable zellij integration
+    set -x ZELLIJ_AUTO_ATTACH true
+    set -x ZELLIJ_AUTO_EXIT true
+
     if not set -q ZELLIJ
         if test "$ZELLIJ_AUTO_ATTACH" = true
             zellij attach -c
@@ -29,8 +32,6 @@ if status is-interactive
             kill $fish_pid
         end
     end
-    set ZELLIJ_AUTO_ATTACH true
-    set ZELLIJ_AUTO_EXIT true
 
     if type -q zellij
         # Update the zellij tab name with the current process name or pwd.
