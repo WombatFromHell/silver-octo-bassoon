@@ -268,7 +268,8 @@ alias nru='nixos-rebuild --flake $HOME/.dotfiles/nix#methyl'
 alias nhu='nh os switch -H methyl $NIX_FLAKE_ROOT'
 alias nhuu='nh os switch -H methyl -u $NIX_FLAKE_ROOT'
 alias nls='nixos-rebuild list-generations'
-alias nhc='nh clean'
+alias nhc='nh clean all --ask'
+alias nhc_d='nhc --dry'
 
 # only when not already inside fish
 if command -q zoxide
