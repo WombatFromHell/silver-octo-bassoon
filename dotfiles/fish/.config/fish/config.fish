@@ -268,7 +268,7 @@ alias nru='nixos-rebuild --flake $HOME/.dotfiles/nix#methyl'
 alias nhu='nh os switch -H methyl $NIX_FLAKE_ROOT'
 alias nhuu='nh os switch -H methyl -u $NIX_FLAKE_ROOT'
 alias nls='nixos-rebuild list-generations'
-alias nhc='nh clean all --ask'
+alias nhc='nh clean all --keep-since 24h --keep 3 --ask && rm -rf ~/.cache/nix/'
 alias nhc_d='nhc --dry'
 
 # only when not already inside fish
