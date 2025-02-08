@@ -22,7 +22,7 @@
 	dstash = !git stash --keep-index && !git stash push -m "staged" --keep-index && !git stash pop stash@{1}
 	f = "!git ls-files | grep -i"
   gca = gc --auto
-  gcagg = !git prune && gc --aggressive
+  gcagg = !git prune && git gc --aggressive
 	gr = grep -Ii
   hard-drop = !git reset HEAD --hard && git clean -f -d
 	hreset = reset --hard HEAD
