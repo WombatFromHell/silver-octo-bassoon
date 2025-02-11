@@ -200,6 +200,19 @@ function setup_podman_sock
     end
 end
 
+function nh_clean
+    set -l keep --keep 5
+    set -l keep_since --keep-since 3d
+    if test -n "$argv[1]"
+        set keep --keep "$argv[1]"
+    end
+    if test -n "$argv[2]"
+        set keep_since --keep-since "$argv[2]"
+    end
+    nh clean all --ask $keep $keep_since
+end
+
+
 set_editor
 setup_podman_sock
 set -x nvm_default_version v23.6.1
@@ -229,6 +242,8 @@ alias ls='eza $EZA_STANDARD_OPTIONS'
 alias lt='eza $EZA_STANDARD_OPTIONS --tree'
 alias llt='eza $EZA_STANDARD_OPTIONS --long --tree'
 #
+alias vi='$EDITOR'
+alias vim='$EDITOR'
 alias lg='lazygit'
 alias yz='yazi'
 alias cat='bat'
@@ -261,15 +276,18 @@ alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /d
 #
 alias zc='zellij attach -c'
 #
-set NIX_FLAKE_ROOT $HOME/.dotfiles/nix
-alias nixconf='$EDITOR $NIX_FLAKE_ROOT'
-alias nrd='nixos-rebuild dry-build --flake $HOME/.dotfiles/nix#methyl'
-alias nru='nixos-rebuild --flake $HOME/.dotfiles/nix#methyl'
-alias nhu='nh os switch -H methyl $NIX_FLAKE_ROOT'
-alias nhuu='nh os switch -H methyl -u $NIX_FLAKE_ROOT'
-alias nls='nixos-rebuild list-generations'
-alias nhc='nh clean all --keep-since 24h --keep 3 --ask && rm -rf ~/.cache/nix/'
-alias nhc_d='nhc --dry'
+set NIX_FLAKE_OS_ROOT $HOME/.dotfiles/nix
+set NIX_FLAKE_HM_ROOT $HOME/.dotfiles/nix/home
+alias nixconf='$EDITOR $NIX_FLAKE_OS_ROOT'
+#
+set _host (hostname)
+alias _nhos='nh os switch -H $_host'
+alias nhu='_nhos $NIX_FLAKE_OS_ROOT'
+alias nhb='nh os build -H $_host --dry $NIX_FLAKE_OS_ROOT'
+alias nhuu='_nh -u $NIX_FLAKE_OS_ROOT'
+alias nhc='nh_clean'
+alias nls='sudo nixos-rebuild list-generations'
+alias nixopt='sudo nix-store --gc && sudo nix-store --optimize'
 
 # only when not already inside fish
 if command -q zoxide
