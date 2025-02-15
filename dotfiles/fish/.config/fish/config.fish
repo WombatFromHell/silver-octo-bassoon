@@ -220,8 +220,11 @@ set -x GPG_TTY (tty)
 set -x XDG_DATA_HOME $HOME/.local/share
 set -x XDG_CONFIG_HOME $HOME/.config
 
+set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
+set -x CARGO_HOME $HOME/.cargo
+
 set --erase fish_user_paths
-fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/nvim/mason/bin /usr/local/bin ~/.rd/bin ~/.nix-profile/bin
+fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/nvim/mason/bin /usr/local/bin ~/.rd/bin ~/.nix-profile/bin $RUSTUP_HOME
 
 set EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --color=auto -A
 set pure_shorten_prompt_current_directory_length 1

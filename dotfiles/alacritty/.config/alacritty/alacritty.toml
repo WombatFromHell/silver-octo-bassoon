@@ -4,23 +4,24 @@ general.import = ["~/.config/alacritty/catppuccin-mocha.toml"]
 TERM = "xterm-256color"
 
 [window]
-opacity = 0.95
-dimensions.columns = 100
-dimensions.lines = 35
+opacity = 0.99
+dimensions.columns = 110
+dimensions.lines = 38
 decorations = "Full"
 decorations_theme_variant = "Dark"
 option_as_alt = "OnlyLeft"
 
 [font]
+normal.family = "Iosevka Nerd Font"
+bold.family = "Iosevka Nerd Font"
+italic.family = "Iosevka Nerd Font"
+bold_italic.family = "Iosevka Nerd Font"
+#
 # normal.family = "JetBrainsMono Nerd Font"
 # bold.family = "JetBrainsMono Nerd Font"
 # italic.family = "JetBrainsMono Nerd Font"
 # bold_italic.family = "JetBrainsMono Nerd Font"
-normal.family = "MesloLGL Nerd Font Mono"
-bold.family = "MesloLGL Nerd Font Mono"
-italic.family = "MesloLGL Nerd Font Mono"
-bold_italic.family = "MesloLGL Nerd Font Mono"
-size = 11.5
+size = 13
 
 [cursor]
 style = { shape = "Block", blinking = "On" }
