@@ -1,6 +1,6 @@
-if test -f ~/.profile
-    # fenv "source ~/.profile"
-end
+# if test -f $HOME/.profile
+#     fenv "source $HOME/.profile"
+# end
 
 if status is-interactive && ! functions -q fisher
     curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher update
@@ -200,19 +200,6 @@ function setup_podman_sock
     end
 end
 
-function nh_clean
-    set -l keep --keep 5
-    set -l keep_since --keep-since 3d
-    if test -n "$argv[1]"
-        set keep --keep "$argv[1]"
-    end
-    if test -n "$argv[2]"
-        set keep_since --keep-since "$argv[2]"
-    end
-    nh clean all --ask $keep $keep_since
-end
-
-
 set_editor
 setup_podman_sock
 set -x nvm_default_version v23.6.1
@@ -288,8 +275,16 @@ alias _nhos='nh os switch -H $_host'
 alias nhu='_nhos $NIX_FLAKE_OS_ROOT'
 alias nhb='nh os build -H $_host --dry $NIX_FLAKE_OS_ROOT'
 alias nhuu='_nh -u $NIX_FLAKE_OS_ROOT'
-alias nhc='nh_clean'
+alias nhc='nh clean all --ask --keep 3'
 alias nls='sudo nixos-rebuild list-generations'
+alias nrb='sudo nixos-rebuild switch --rollback'
+alias ncg='sudo nix-collect-garbage'
+#
+alias nix_hist='sudo nix profile history --profile /nix/var/nix/profiles/system'
+alias nix_rb='sudo nix profile rollback --profile /nix/var/nix/profile/system'
+alias nix_act='sudo /nix/var/nix/profile/system/bin/switch-to-configuration switch'
+alias nix_roots='nix-store --gc --print-roots'
+#
 alias nixopt='sudo nix-store --gc && sudo nix-store --optimize'
 
 # only when not already inside fish

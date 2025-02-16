@@ -9,3 +9,4 @@ edc/bass
 g-plane/pnpm-shell-completion
 wfxr/forgit
 budimanjojo/tmux.fish
+oh-my-fish/plugin-foreign-env
