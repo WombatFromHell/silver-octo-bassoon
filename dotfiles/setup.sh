@@ -133,6 +133,25 @@ handle_pipewire() {
 	fi
 }
 
+handle_spicetify() {
+	local dir="$1"
+	local target="$2"
+	local bypass="$3"
+
+	if [ -z "$bypass" ] && confirm "Are you sure you want to stow $dir?"; then
+		if command -v spicetify &>/dev/null; then
+			echo -e "\nMake sure to double check your 'prefs' path at: $target/config-xpui.ini"
+			stow -R "$dir"
+			echo -e "\nSuccessfully stowed $dir!"
+		else
+			if confirm "Download and install 'spicetify'?"; then
+				curl -fsSL https://raw.githubusercontent.com/spicetify/cli/main/install.sh | sh
+				handle_spicetify "$dir" "$target" true
+			fi
+		fi
+	fi
+}
+
 handle_tmux() {
 	local dir=$1
 	local target="$2"
@@ -170,13 +189,11 @@ handle_stow() {
 		handle_scripts "$dir" "$target"
 		;;
 
-	pipewire)
-		handle_pipewire "$dir" "$target"
-		;;
+	pipewire) handle_pipewire "$dir" "$target" ;;
 
-	tmux)
-		handle_tmux "$dir" "$target"
-		;;
+	spicetify) handle_spicetify "$dir" "$target" ;;
+
+	tmux) handle_tmux "$dir" "$target" ;;
 
 	*)
 		#

@@ -17,10 +17,26 @@ if status is-interactive
         echo "$user_host:$current_dir"
     end
 
-    if command -v tmux >/dev/null
-        set -x fish_tmux_autostart true
+    if command -q tmux
+        set -x fish_tmux_autostart_once true
+        set -x fish_tmux_autoconnect true
+        set -x fish_tmux_autoquit false
+        set -x fish_tmux_detached true
     else
         set -x fish_tmux_autostart false
+    end
+
+    if command -q zoxide
+        zoxide init fish | source
+    end
+    if command -q direnv
+        set -x DIRENV_LOG_FORMAT ""
+        direnv hook fish | source
+    end
+
+    set -l cargo_fish_path "$HOME/.cargo/env.fish"
+    if test -f "$cargo_fish_path"
+        source "$cargo_fish_path"
     end
 end
 
@@ -49,7 +65,7 @@ function view_tarzst
         set tar_opts tv
     end
 
-    if command -v unzstd >/dev/null
+    if command -q unzstd
         unzstd -c "$file" | tar $tar_opts
     else
         echo "Error: zstd must be accessible in PATH for view_tarzst to work!"
@@ -178,7 +194,7 @@ set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
 set -x CARGO_HOME $HOME/.cargo
 
 set --erase fish_user_paths
-fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/nvim/mason/bin /usr/local/bin ~/.rd/bin ~/.nix-profile/bin $RUSTUP_HOME
+fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/nvim/mason/bin /usr/local/bin ~/.rd/bin ~/.nix-profile/bin $RUSTUP_HOME ~/.spicetify
 
 set EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --color=auto -A
 set pure_shorten_prompt_current_directory_length 1
@@ -259,19 +275,3 @@ alias nix_act='sudo /nix/var/nix/profile/system/bin/switch-to-configuration swit
 alias nix_roots='nix-store --gc --print-roots'
 #
 alias nixopt='sudo nix-store --gc && sudo nix-store --optimize'
-
-# only when not already inside fish
-if command -q zoxide
-    zoxide init fish | source
-end
-if command -q direnv
-    set -x DIRENV_LOG_FORMAT ""
-    direnv hook fish | source
-end
-set -l cargo_fish_path "$HOME/.cargo/env.fish"
-if test -f "$cargo_fish_path"
-    source "$cargo_fish_path"
-end
-# if test (ps -o comm= -p $fish_pid) != fish
-#     # do things here only when NOT already inside fish
-# end
