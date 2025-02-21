@@ -216,7 +216,7 @@ alias zr='zellij run'
 alias za='zellij attach'
 alias zd='zellij detach'
 # tmux shortcuts
-# alias tmls='tmux ls'
+alias tmls='tmux ls'
 # alias tmux='tmux a'
 # alias tmc='tmux a -t'
 # alias tmn='tmux new-session -A -s'
