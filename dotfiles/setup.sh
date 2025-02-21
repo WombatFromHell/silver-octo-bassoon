@@ -15,14 +15,18 @@ show_help() {
 	echo "  -h, --help        Show this help message"
 	exit 0
 }
+
 fix_perms() {
-	find . -type d -exec chmod 0755 {} \;
-	find . -type f -exec chmod 0644 {} \;
+	local filter
+	filter=(-not -type l -not -path "nix/*")
+
+	find . -type d "${filter[@]}" -exec chmod 0755 {} \;
+	find . -type f "${filter[@]}" -exec chmod 0644 {} \;
 	find . \
-		\( -type f -name "*.tmux" \
-		-o -type f -name "*.sh" \
-		-o -type f -name "tpm" \
-		-o -type f -path "scripts/*.py" \) \
+		\( -type f "${filter[@]}" -name "*.tmux" \
+		-o -type f "${filter[@]}" -name "*.sh" \
+		-o -type f "${filter[@]}" -name "tpm" \
+		-o -type f "${filter[@]}" -path "scripts/*.py" \) \
 		-exec chmod 0755 {} \;
 	echo "Fixed repo permissions..."
 }
@@ -84,7 +88,7 @@ handle_home() {
 			cp -f "$HOME/$file" "$HOME/${file}.stowed"
 			rm -f "$HOME/$file"
 		done
-		stow "$dir"
+		stow -R "$dir"
 
 		# workaround uwsm not handling env import properly
 		remove_this "$HOME/.config/uwsm"
@@ -105,6 +109,7 @@ handle_scripts() {
 		chmod +x "./$1"/*.sh
 		# just link, don't stow
 		ln -sf "$script_dir/$1" "$target"
+		echo -e "\nSuccessfully stowed $dir!"
 	fi
 }
 
@@ -121,9 +126,28 @@ handle_pipewire() {
 		sed -i \
 			"s|%PATH%|$hesuvi_tgt|g" \
 			"./$dir/$tgt/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
-		stow "$dir"
+		stow -R "$dir"
+		echo -e "\nSuccessfully stowed $dir!"
 	else
 		echo -e "\nSkipping $dir stow on $os..."
+	fi
+}
+
+handle_tmux() {
+	local dir=$1
+	local target="$2"
+
+	if confirm "Are you sure you want to stow $dir?"; then
+		if command -v git &>/dev/null; then
+			echo -e "\nWiping old '$dir' config..."
+			rm -rf ./"$dir"/.config/tmux/plugins/ "$target"
+			echo -e "\nFetching 'tpm'..."
+			git clone https://github.com/tmux-plugins/tpm ./"$dir"/.config/tmux/plugins/tpm
+			stow -R "$dir"
+			echo -e "\nSuccessfully stowed $dir!"
+		else
+			echo "Error: cannot find 'git', aborting!"
+		fi
 	fi
 }
 
@@ -150,6 +174,10 @@ handle_stow() {
 		handle_pipewire "$dir" "$target"
 		;;
 
+	tmux)
+		handle_tmux "$dir" "$target"
+		;;
+
 	*)
 		#
 		# Pre-stow actions
@@ -167,7 +195,7 @@ handle_stow() {
 		if confirm "Removing all files from $target before stowing"; then
 			remove_this "$target"
 			mkdir -p "$target"/
-			stow "$dir"
+			stow -R "$dir"
 			echo -e "\n'$dir' has been stowed!"
 
 			#

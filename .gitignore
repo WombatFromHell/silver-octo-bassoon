@@ -2,6 +2,7 @@ support
 fish_variables
 .local/bin
 monitor-session
+tmux/plugins
 
 .smb-credentials
 .smb-secrets

@@ -216,12 +216,12 @@ alias zr='zellij run'
 alias za='zellij attach'
 alias zd='zellij detach'
 # tmux shortcuts
-alias tmls='tmux ls'
-alias tmux='tmux a'
-alias tmc='tmux a -t'
-alias tmn='tmux new-session -A -s'
-alias tmka='tmux kill-ses -a'
-alias tmk='tmux kill-ses -t'
+# alias tmls='tmux ls'
+# alias tmux='tmux a'
+# alias tmc='tmux a -t'
+# alias tmn='tmux new-session -A -s'
+# alias tmka='tmux kill-ses -a'
+# alias tmk='tmux kill-ses -t'
 #
 # rsync shortcuts
 alias _rsync='rsync -avzL --partial --info=progress2 --update'
