@@ -182,6 +182,10 @@ handle_stow() {
 				;;
 			fish) fish -c "fisher update" ;;
 			bat) bat cache --build ;;
+			tmux)
+				remove_this "$HOME"/.tmux.conf
+				ln -sf "$HOME"/.config/tmux/tmux.conf "$HOME"/.tmux.conf
+				;;
 			esac
 		fi
 		;;

@@ -17,45 +17,10 @@ if status is-interactive
         echo "$user_host:$current_dir"
     end
 
-    # enable zellij integration
-    if test "$TERM_PROGRAM" != vscode
-        set -x ZELLIJ_AUTO_ATTACH false
-        set -x ZELLIJ_AUTO_EXIT false
-
-        if not set -q ZELLIJ
-            if test "$ZELLIJ_AUTO_ATTACH" = true
-                zellij attach -c
-            else
-                zellij
-            end
-
-            if test "$ZELLIJ_AUTO_EXIT" = true
-                kill $fish_pid
-            end
-        end
-
-        if type -q zellij
-            # Update the zellij tab name with the current process name or pwd.
-            function zellij_tab_name_update_pre --on-event fish_preexec
-                if set -q ZELLIJ
-                    set -l cmd_line (string split " " -- $argv)
-                    set -l process_name $cmd_line[1]
-                    if test -n "$process_name" -a "$process_name" != z
-                        command nohup zellij action rename-tab $process_name >/dev/null 2>&1
-                    end
-                end
-            end
-
-            function zellij_tab_name_update_post --on-event fish_postexec
-                if set -q ZELLIJ
-                    set -l cmd_line (string split " " -- $argv)
-                    set -l process_name $cmd_line[1]
-                    if test "$process_name" = z
-                        command nohup zellij action rename-tab (prompt_pwd) >/dev/null 2>&1
-                    end
-                end
-            end
-        end
+    if command -v tmux >/dev/null
+        set -x fish_tmux_autostart true
+    else
+        set -x fish_tmux_autostart false
     end
 end
 
@@ -219,7 +184,6 @@ set EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --co
 set pure_shorten_prompt_current_directory_length 1
 set pure_truncate_prompt_current_directory_keeps 0
 set fish_prompt_pwd_dir_length 3
-set fish_tmux_autostart false
 # exclude some common cli tools from done notifications
 set -U --erase __done_exclude
 set -U __done_exclude '^git (?!push|pull|fetch)'
@@ -244,12 +208,21 @@ alias sedit='sudo -E $EDITOR'
 alias mkdir='mkdir -pv'
 # zellij shortcuts
 alias zls='zellij ls'
+alias zac='zellij attach -c'
 alias zkill='zellij kill-session'
 alias zka='zellij ka'
 alias zda='zellij da'
 alias zr='zellij run'
 alias za='zellij attach'
 alias zd='zellij detach'
+# tmux shortcuts
+alias tmls='tmux ls'
+alias tmux='tmux a'
+alias tmc='tmux a -t'
+alias tmn='tmux new-session -A -s'
+alias tmka='tmux kill-ses -a'
+alias tmk='tmux kill-ses -t'
+#
 # rsync shortcuts
 alias _rsync='rsync -avzL --partial --info=progress2 --update'
 alias _rsyncd='_rsync --dry-run'
@@ -265,8 +238,6 @@ alias rsf_d='_rsyncd --exclude="*/"'
 #
 alias reflect='sudo cachyos-rate-mirrors --sync-check --country "US"'
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
-#
-alias zc='zellij attach -c'
 #
 set NIX_FLAKE_OS_ROOT $HOME/.dotfiles/nix
 set NIX_FLAKE_HM_ROOT $HOME/.dotfiles/nix/home
