@@ -20,14 +20,14 @@ fix_perms() {
 	local filter
 	filter=(-not -type l -not -path "nix/*")
 
-	find . -type d "${filter[@]}" -exec chmod 0755 {} \;
-	find . -type f "${filter[@]}" -exec chmod 0644 {} \;
-	find . \
-		\( -type f "${filter[@]}" -name "*.tmux" \
+	find . -type d "${filter[@]}" -print0 | xargs -0 chmod 0755
+	find . -type f "${filter[@]}" -print0 | xargs -0 chmod 0644
+	find . \( -type f "${filter[@]}" -name "*.tmux" \
 		-o -type f "${filter[@]}" -name "*.sh" \
 		-o -type f "${filter[@]}" -name "tpm" \
 		-o -type f "${filter[@]}" -path "scripts/*.py" \) \
-		-exec chmod 0755 {} \;
+		-print0 | xargs -0 chmod 0755
+
 	echo "Fixed repo permissions..."
 }
 
