@@ -184,6 +184,28 @@ function setup_podman_sock
     end
 end
 
+function nh_clean
+    set cmd "nh clean all --ask"
+    set args_provided 0
+
+    # Iterate over all arguments to check for relevant flags
+    for arg in $argv
+        if contains -- -k --keep -K --keep-since $arg
+            set args_provided 1
+            break
+        end
+    end
+
+    # Provide a default if no relevant args were provided
+    if test $args_provided -eq 0
+        set cmd "$cmd -k 3 -K 24h"
+    end
+
+    set cmd $cmd $argv
+    eval $cmd
+end
+
+
 set_editor
 setup_podman_sock
 set -x nvm_default_version v23.6.1
@@ -265,7 +287,7 @@ alias _nhos='nh os switch -H $_host'
 alias nhu='_nhos $NIX_FLAKE_OS_ROOT'
 alias nhb='nh os build -H $_host --dry $NIX_FLAKE_OS_ROOT'
 alias nhuu='_nh -u $NIX_FLAKE_OS_ROOT'
-alias nhc='nh clean all --ask --keep 3'
+alias nhc='nh_clean'
 alias nls='sudo nixos-rebuild list-generations'
 alias nrb='sudo nixos-rebuild switch --rollback'
 alias ncg='sudo nix-collect-garbage'
