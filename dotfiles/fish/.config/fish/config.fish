@@ -6,7 +6,7 @@ if status is-interactive && ! functions -q fisher
     curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher update
 end
 
-if status is-interactive
+status is-interactive; and begin
     # Commands to run in interactive sessions can go here
     function fish_title
         # Get the current working directory
@@ -18,12 +18,13 @@ if status is-interactive
     end
 
     if command -q tmux
-        set -x fish_tmux_autostart_once true
-        set -x fish_tmux_autoconnect true
-        set -x fish_tmux_autoquit false
-        set -x fish_tmux_detached true
+        set fish_tmux_autostart true
+        # set fish_tmux_autostart_once true
+        set fish_tmux_autoconnect true
+        set fish_tmux_autoquit false
+        set fish_tmux_detached true
     else
-        set -x fish_tmux_autostart false
+        set fish_tmux_autostart false
     end
 
     if command -q zoxide
