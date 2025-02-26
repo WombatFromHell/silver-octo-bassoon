@@ -22,11 +22,13 @@ fix_perms() {
 
 	find . -type d "${filter[@]}" -print0 | xargs -0 chmod 0755
 	find . -type f "${filter[@]}" -print0 | xargs -0 chmod 0644
-	find . \( -type f "${filter[@]}" -name "*.tmux" \
-		-o -type f "${filter[@]}" -name "*.sh" \
-		-o -type f "${filter[@]}" -name "tpm" \
-		-o -type f "${filter[@]}" -path "scripts/*.py" \) \
-		-print0 | xargs -0 chmod 0755
+	find . \( \
+		-type f -name "*.tmux" \
+		-o -type f -name "*.sh" \
+		-o -type f -name "tpm" \
+		-o -path "./tmux/.config/tmux/plugins/tpm/bindings/*" \
+		-o -path "./scripts/*.py" \
+		\) "${filter[@]}" -print0 | xargs -0 chmod 0755
 
 	echo "Fixed repo permissions..."
 }
@@ -245,7 +247,7 @@ do_post_stow() {
 	bat) bat cache --build ;;
 	tmux)
 		remove_this "$HOME"/.tmux.conf
-		ln -sf "$HOME"/.config/tmux/tmux.conf "$HOME"/.tmux.conf
+		ln -sf "$HOME"/.dotfiles/tmux/.config/tmux/tmux.conf "$HOME"/.tmux.conf
 		;;
 	esac
 }
