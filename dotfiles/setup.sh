@@ -37,6 +37,25 @@ confirm() {
 	[[ "$response" == "y" || "$response" == "Y" ]]
 }
 
+check_program() {
+	local program=$1
+	local message=${2:-"Error: $program is required, skipping..."}
+	if ! command -v "$program" &>/dev/null; then
+		echo "$message"
+		return 1
+	else
+		return 0
+	fi
+}
+
+which_early_bail() {
+	if ! check_program "$1"; then
+		return 1
+	else
+		return 0
+	fi
+}
+
 check_for_os() {
 	if echo "$OS" | grep -q "NixOS"; then
 		echo "NixOS"
@@ -59,23 +78,16 @@ remove_this() {
 }
 
 fetch_nix() {
-	GIT=$(command -v git)
-	NIX=$(command -v nix)
-	if [[ -z "$GIT" ]]; then
-		echo "Error: cannot find 'git', might not be installed?"
-		exit 1
-	fi
-	if [[ -z "$NIX" ]]; then
-		echo "Warning: cannot find 'nix', might not be installed?"
-		exit 1
-	fi
+	cmds=("git" "nix")
+	for c in "${cmds[@]}"; do
+		if ! check_program "$c" "Error: cannot find '$c'!"; then
+			return 1
+		fi
+	done
 	git clone git@github.com:WombatFromHell/automatic-palm-tree.git "$script_dir"/nix
 }
 
 handle_home() {
-	local dir=$1
-	local target=$2
-
 	if confirm "Are you sure you want to stow $HOME?"; then
 		local files=(
 			".gitconfig"
@@ -88,37 +100,36 @@ handle_home() {
 			cp -f "$HOME/$file" "$HOME/${file}.stowed"
 			rm -f "$HOME/$file"
 		done
-		stow -R "$dir"
-
-		# workaround uwsm not handling env import properly
-		remove_this "$HOME/.config/uwsm"
-		mkdir -p "$HOME/.config/uwsm"
-		ln -sf "/.profile" "$HOME/.config/uwsm/env"
+		stow -R "home"
 		echo -e "\n$HOME has been stowed!"
+		return 0
+	else
+		return 1
 	fi
 }
 
 handle_scripts() {
 	local dir=$1
-	local target=$2
+	local target="$HOME/.local/bin/scripts"
 
 	if confirm "Are you sure you want to stow $dir?"; then
-		local target="$HOME/.local/bin/scripts"
 		remove_this "$target"
+		# make sure the parent exists
 		mkdir -p "$(dirname "$target")"
 		chmod +x "./$1"/*.sh
 		# just link, don't stow
 		ln -sf "$script_dir/$1" "$target"
 		echo -e "\nSuccessfully stowed $dir!"
+		return 0
+	else
+		return 1
 	fi
 }
 
 handle_pipewire() {
 	local dir=$1
 	local target=$2
-
-	local os
-	os=$(check_for_os)
+	local os=$3
 
 	if [[ "$os" == "Linux" ]] && confirm "Are you sure you want to stow $dir?"; then
 		local tgt=".config/pipewire"
@@ -128,12 +139,16 @@ handle_pipewire() {
 			"./$dir/$tgt/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
 		stow -R "$dir"
 		echo -e "\nSuccessfully stowed $dir!"
+		return 0
 	else
 		echo -e "\nSkipping $dir stow on $os..."
+		return 1
 	fi
 }
 
 handle_spicetify() {
+	check_program "spicetify"
+
 	local dir="$1"
 	local target="$2"
 	local bypass="$3"
@@ -143,98 +158,127 @@ handle_spicetify() {
 			echo -e "\nMake sure to double check your 'prefs' path at: $target/config-xpui.ini"
 			stow -R "$dir"
 			echo -e "\nSuccessfully stowed $dir!"
+			return 0
 		else
 			if confirm "Download and install 'spicetify'?"; then
 				curl -fsSL https://raw.githubusercontent.com/spicetify/cli/main/install.sh | sh
 				handle_spicetify "$dir" "$target" true
+			else
+				return 1
 			fi
 		fi
+	else
+		return 1
 	fi
 }
 
 handle_tmux() {
+	check_program "tmux"
+
 	local dir=$1
 	local target="$2"
 
 	if confirm "Are you sure you want to stow $dir?"; then
-		if command -v git &>/dev/null; then
+		if check_program "git" "Error: 'git' command not found!"; then
 			echo -e "\nWiping old '$dir' config..."
 			rm -rf ./"$dir"/.config/tmux/plugins/ "$target"
 			echo -e "\nFetching 'tpm'..."
 			git clone https://github.com/tmux-plugins/tpm ./"$dir"/.config/tmux/plugins/tpm
 			stow -R "$dir"
 			echo -e "\nSuccessfully stowed $dir!"
+			return 0
 		else
-			echo "Error: cannot find 'git', aborting!"
+			return 1
 		fi
+	else
+		return 1
+	fi
+}
+
+do_pre_stow() {
+	local dir=$1
+	local target=$2
+	local os=$3
+
+	case "$dir" in
+	hypr) which_early_bail "hyprland" ;;
+	MangoHud) which_early_bail "mangohud" ;;
+	topgrade.d) which_early_bail "topgrade" ;;
+
+	home) handle_home "$os" ;;
+	pipewire) handle_pipewire "$dir" "$target" "$os" ;;
+	scripts) handle_scripts "$os" ;;
+	systemd)
+		# exclude systemd on non-Linux OS'
+		if [[ "$os" != "Linux" ]]; then
+			echo -e "\nSkipping $dir stow on $os..."
+			return 1
+		fi
+		;;
+
+	nix) return 1 ;;
+	spicetify) handle_spicetify "$dir" "$target" ;;
+	tmux) handle_tmux "$dir" "$target" "$os" ;;
+
+	*) which_early_bail "$dir" ;;
+	esac
+}
+
+do_post_stow() {
+	local dir=$1
+	local target=$2
+	local os=$3
+
+	case "$dir" in
+	home)
+		if [ "$os" == "NixOS" ]; then
+			# let nix flake determine global profile vars
+			remove_this "$HOME"/.profile
+		elif check_program "uwsm" "Error: 'uwsm' not found, skipping!"; then
+			# workaround uwsm not handling env import properly
+			remove_this "$HOME/.config/uwsm"
+			mkdir -p "$HOME/.config/uwsm"
+			ln -sf "$HOME/.profile" "$HOME/.config/uwsm/env"
+		fi
+		;;
+	fish) fish -c "fisher update" ;;
+	bat) bat cache --build ;;
+	tmux)
+		remove_this "$HOME"/.tmux.conf
+		ln -sf "$HOME"/.config/tmux/tmux.conf "$HOME"/.tmux.conf
+		;;
+	esac
+}
+
+do_stow() {
+	local dir=$1
+	local target=$2
+	local os=$3
+
+	if confirm "Removing all files from $target before stowing"; then
+		remove_this "$target"
+		mkdir -p "$target"/
+		stow -R "$dir"
+		echo -e "\n'$dir' has been stowed!"
+		return 0
+	else
+		return 1
 	fi
 }
 
 handle_stow() {
 	local dir=$1
 	local target="$HOME/.config/$dir"
-
 	local os
 	os=$(check_for_os)
 
-	case "$dir" in
-
-	home)
-		target="$HOME"
-		handle_home "$dir" "$target"
-		;;
-
-	scripts)
-		target="$HOME/.local/bin/scripts"
-		handle_scripts "$dir" "$target"
-		;;
-
-	pipewire) handle_pipewire "$dir" "$target" ;;
-
-	spicetify) handle_spicetify "$dir" "$target" ;;
-
-	tmux) handle_tmux "$dir" "$target" ;;
-
-	*)
-		#
-		# Pre-stow actions
-		#
-		case "$dir" in
-		systemd)
-			# exclude systemd on non-Linux OS'
-			if [[ "$os" != "Linux" ]]; then
-				echo -e "\nSkipping $dir stow on $os..."
-				return
-			fi
-			;;
-		esac
-
-		if confirm "Removing all files from $target before stowing"; then
-			remove_this "$target"
-			mkdir -p "$target"/
-			stow -R "$dir"
-			echo -e "\n'$dir' has been stowed!"
-
-			#
-			# Post-stow actions
-			#
-			case "$dir" in
-			home)
-				if [ "$os" == "NixOS" ]; then
-					# let nix flake determine global profile vars
-					remove_this "$HOME"/.profile
-				fi
-				;;
-			fish) fish -c "fisher update" ;;
-			bat) bat cache --build ;;
-			tmux)
-				remove_this "$HOME"/.tmux.conf
-				ln -sf "$HOME"/.config/tmux/tmux.conf "$HOME"/.tmux.conf
-				;;
-			esac
-		fi
-		;;
-	esac
+	if ! do_pre_stow "$dir" "$target" "$os"; then
+		return
+	fi
+	if ! do_stow "$dir" "$target" "$os"; then
+		return
+	fi
+	do_post_stow "$dir" "$target" "$os"
 }
 
 main() {
