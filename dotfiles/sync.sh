@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 LOCAL="."
-REMOTE="/mnt/home/GDrive/Backups/linux-config/backups/dotfiles/"
+REMOTE="$HOME/Backups/linux-config/backups/dotfiles/"
 
 _CMD=(rsync -avzL --checksum --partial --update --info=progress2)
 EXCLUDES=(
