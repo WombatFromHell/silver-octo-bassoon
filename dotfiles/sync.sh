@@ -3,7 +3,7 @@
 LOCAL="."
 REMOTE="$HOME/Backups/linux-config/backups/dotfiles/"
 
-_CMD=(rsync -avzL --checksum --partial --update --info=progress2)
+_CMD=(rsync -avL --checksum --update)
 EXCLUDES=(
 	--exclude=__pycache__/
 	--exclude=pipewire/
@@ -11,11 +11,7 @@ EXCLUDES=(
 	--exclude='hrir.wav'
 	--exclude='nix/'
 	--exclude='tmux/plugins/*'
-	--exclude='hardware-configuration.nix'
 )
-DOWN_CMD=("${_CMD[@]}" "${EXCLUDES[@]}")
-UP_CMD=("${DOWN_CMD[@]}" "--delete")
-EQ_CMD=("${DOWN_CMD[@]}" "--stats" "--dry-run")
 
 script_dir="$(dirname "$(readlink -f "$0")")"
 if [[ "$(pwd -P)" != "$script_dir" ]]; then
@@ -33,7 +29,7 @@ if ! [ -r "$REMOTE" ]; then
 fi
 
 help() {
-	echo "Usage: $0 [--swap]"
+	echo "Usage: $0 [--help | --swap | --force]"
 	exit 1
 }
 
@@ -48,6 +44,10 @@ confirm() {
 }
 
 equality() {
+	if [ "$FORCE" -eq 1 ]; then
+		return 1
+	fi
+
 	local result
 	result=$(
 		"${EQ_CMD[@]}" "$@" |
@@ -64,25 +64,67 @@ equality() {
 }
 
 do_sync() {
-	echo "==== PERFORMING A DRY RUN ===="
-	"${UP_CMD[@]}" "--dry-run" "${@}"
+	local pipe_cmd
+	pipe_cmd=$(printf " | %s" "${SUFFIX[@]}")
+	pipe_cmd=${pipe_cmd:3} # Remove the leading " | "
+
+	if [ "$FORCE" -eq 1 ]; then
+		echo "==== PERFORMING A HARD DRY RUN ===="
+		UP_CMD=("${UP_CMD[@]}" "-WI")
+	else
+		echo "==== PERFORMING A DRY RUN ===="
+	fi
+
+	"${UP_CMD[@]}" "--dry-run" "$@" | eval "$pipe_cmd"
 	if echo && confirm "Confirm syncing: $1 => $2"; then
-		"${UP_CMD[@]}" "$@"
-		# echo "Would normally do: ${UP_CMD[*]} $*"
+		"${UP_CMD[@]}" "$@" | eval "$pipe_cmd"
 	fi
 }
 
 sync() {
-	[ "$swap" == true ] && TARGETS=("$2" "$1") || TARGETS=("$1" "$2")
+	if [ "$SWAP" -eq 1 ]; then
+		TARGETS=("$2" "$1")
+	else
+		TARGETS=("$1" "$2")
+	fi
+
 	if ! equality "${TARGETS[@]}"; then
 		do_sync "${TARGETS[@]}"
 	fi
 }
 
-if [ "$1" == "--help" ]; then
-	help
-elif [ "$1" == "--swap" ]; then
-	swap=true
+SWAP=0
+FORCE=0
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	--help)
+		help
+		;;
+	--swap)
+		shift
+		SWAP=1
+		;;
+	--force)
+		shift
+		FORCE=1
+		;;
+	*)
+		echo "Invalid argument: $1"
+		help
+		;;
+	esac
+done
+
+if [ "$FORCE" -eq 1 ]; then
+	# strip out "--checksum" and "--update"
+	_CMD=("${_CMD[@]:0:3}" "--force" "-WI")
+	DOWN_CMD=("${_CMD[@]}" "--delete" "${EXCLUDES[@]}")
+	UP_CMD=("${DOWN_CMD[@]}")
+else
+	DOWN_CMD=("${_CMD[@]}" "${EXCLUDES[@]}")
+	UP_CMD=("${DOWN_CMD[@]}" "--delete")
 fi
+EQ_CMD=("${DOWN_CMD[@]}" "--stats" "--dry-run")
+SUFFIX=("grep -v '/$'" "grep -v '^sending incremental file list$'")
 
 sync "$LOCAL" "$REMOTE"
