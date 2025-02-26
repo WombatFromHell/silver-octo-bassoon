@@ -1,7 +1,4 @@
-#!/usr/bin/env python3
-"""
-Unit tests for the desktop file modifier script.
-"""
+#!/usr/bin/env -S python3 -m unittest
 
 import os
 import unittest
@@ -22,6 +19,17 @@ class TestDesktopFileModifier(unittest.TestCase):
         self.sample_content = """[Desktop Entry]
 Name=Brave Web Browser
 Exec=/usr/bin/brave
+Exec=/usr/bin/brave-something-else
+Terminal=false
+Type=Application
+Icon=brave
+Categories=Network;WebBrowser;
+"""
+
+        # Sample with existing string
+        self.existing_string_content = """[Desktop Entry]
+Name=Brave Web Browser
+Exec=env MOZ_ENABLE_WAYLAND=1 /usr/bin/brave --incognito
 Terminal=false
 Type=Application
 Icon=brave
@@ -32,6 +40,13 @@ Categories=Network;WebBrowser;
         self.test_file = os.path.join(self.test_dir, "test.desktop")
         with open(self.test_file, "w", encoding="utf-8") as f:
             f.write(self.sample_content)
+
+        # Create a file with existing string
+        self.existing_string_file = os.path.join(
+            self.test_dir, "existing_string.desktop"
+        )
+        with open(self.existing_string_file, "w", encoding="utf-8") as f:
+            f.write(self.existing_string_content)
 
         # Create a file without Exec= line
         self.no_exec_file = os.path.join(self.test_dir, "no_exec.desktop")
@@ -56,7 +71,7 @@ Categories=Network;WebBrowser;
 
         # Check function return
         self.assertTrue(success)
-        self.assertTrue("Modified Exec line" in message)
+        self.assertTrue("Modified 2 Exec lines" in message)
 
         # Check that backup file was created
         self.assertTrue(os.path.exists(f"{self.test_file}.bak"))
@@ -73,6 +88,39 @@ Categories=Network;WebBrowser;
             backup_content = f.read()
         self.assertEqual(backup_content, self.sample_content)
 
+    def test_multiple_exec_lines(self):
+        """Test modification of multiple Exec lines in a .desktop file."""
+        insert_string = "test="
+        success, message = modify_desktop_file(self.test_file, insert_string)
+
+        self.assertTrue(success)
+        self.assertTrue("Modified 2 Exec lines" in message)
+
+        with open(self.test_file, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        expected_line1 = f"Exec={insert_string}/usr/bin/brave"
+        expected_line2 = f"Exec={insert_string}/usr/bin/brave-something-else"
+        self.assertTrue(expected_line1 in content)
+        self.assertTrue(expected_line2 in content)
+
+    def test_string_already_exists(self):
+        """Test behavior when the string to insert already exists in the file."""
+        insert_string = "env MOZ_ENABLE_WAYLAND=1 "
+        success, message = modify_desktop_file(self.existing_string_file, insert_string)
+
+        # Should fail with a warning
+        self.assertFalse(success)
+        self.assertTrue("already exists" in message)
+
+        # Check that no backup file was created
+        self.assertFalse(os.path.exists(f"{self.existing_string_file}.bak"))
+
+        # Check file content was not modified
+        with open(self.existing_string_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertEqual(content, self.existing_string_content)
+
     def test_empty_insert_string(self):
         """Test with an empty insert string."""
         success, _ = modify_desktop_file(self.test_file, "")
@@ -81,7 +129,8 @@ Categories=Network;WebBrowser;
         with open(self.test_file, "r", encoding="utf-8") as f:
             content = f.read()
 
-        self.assertTrue("Exec=/usr/bin" in content)
+        self.assertTrue("Exec=/usr/bin/brave" in content)
+        self.assertTrue("Exec=/usr/bin/brave-something-else" in content)
 
     def test_no_exec_line(self):
         """Test behavior when file has no Exec= line."""
@@ -98,8 +147,10 @@ Categories=Network;WebBrowser;
         with open(self.test_file, "r", encoding="utf-8") as f:
             content = f.read()
 
-        expected_line = f"Exec={special_chars}/usr/bin"
-        self.assertTrue(expected_line in content)
+        expected_line1 = f"Exec={special_chars}/usr/bin/brave"
+        expected_line2 = f"Exec={special_chars}/usr/bin/brave-something-else"
+        self.assertTrue(expected_line1 in content)
+        self.assertTrue(expected_line2 in content)
 
 
 if __name__ == "__main__":
