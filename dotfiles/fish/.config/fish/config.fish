@@ -236,6 +236,8 @@ alias ll='eza $EZA_STANDARD_OPTIONS --long'
 alias ls='eza $EZA_STANDARD_OPTIONS'
 alias lt='eza $EZA_STANDARD_OPTIONS --tree'
 alias llt='eza $EZA_STANDARD_OPTIONS --long --tree'
+alias treed='eza $EZA_STANDARD_OPTIONS -DTA -L 1'
+alias tree='eza $EZA_STANDARD_OPTIONS -TA -L 1'
 #
 alias vi='$EDITOR'
 alias vim='$EDITOR'
