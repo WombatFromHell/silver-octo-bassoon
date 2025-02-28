@@ -9,7 +9,7 @@ import glob
 from pathlib import PurePath
 
 import unittest
-import test_generic_backup
+import generic_backup_tests
 
 # Use tomllib if available (Python 3.11+), otherwise fall back to the external toml package
 if sys.version_info >= (3, 11):
