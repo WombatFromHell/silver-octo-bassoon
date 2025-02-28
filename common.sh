@@ -15,13 +15,9 @@ cache_creds() {
 }
 
 confirm() {
-	read -r -p "$1 (Y/n) " response
+	read -r -p "$1 (y/N) " response
 	case "$response" in
-	[nN])
-		echo "Action aborted..."
-		return 1
-		;;
-	[yY] | "")
+	[yY])
 		return 0
 		;;
 	*)
