@@ -236,11 +236,13 @@ do_post_stow() {
 		if [ "$os" == "NixOS" ]; then
 			# let nix flake determine global profile vars
 			remove_this "$HOME"/.profile
+			echo -e "\nDetected NixOS, removed ~/.profile to avoid clobbering env..."
 		elif check_program "uwsm" "Error: 'uwsm' not found, skipping!"; then
 			# workaround uwsm not handling env import properly
 			remove_this "$HOME/.config/uwsm"
 			mkdir -p "$HOME/.config/uwsm"
 			ln -sf "$HOME/.profile" "$HOME/.config/uwsm/env"
+			echo -e "\nDetected 'uwsm', linked ~/.profile to ~/.config/uwsm/env..."
 		fi
 		;;
 	fish) fish -c "fisher update" ;;

@@ -281,7 +281,6 @@ alias reflect='sudo cachyos-rate-mirrors --sync-check --country "US"'
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
 #
 set NIX_FLAKE_OS_ROOT $HOME/.dotfiles/nix
-set NIX_FLAKE_HM_ROOT $HOME/.dotfiles/nix/home
 alias nixconf='$EDITOR $NIX_FLAKE_OS_ROOT'
 #
 set _host (hostname)
@@ -291,7 +290,8 @@ alias nhb='nh os build -H $_host --dry $NIX_FLAKE_OS_ROOT'
 alias nhuu='_nh -u $NIX_FLAKE_OS_ROOT'
 alias nhc='nh_clean'
 alias nls='sudo nixos-rebuild list-generations'
-alias nrb='sudo nixos-rebuild switch --rollback'
+alias nrbb='sudo nixos-rebuild boot --flake $NIX_FLAKE_OS_ROOT#$_host'
+alias nrrb='sudo nixos-rebuild switch --rollback'
 alias ncg='sudo nix-collect-garbage'
 #
 alias nix_hist='sudo nix profile history --profile /nix/var/nix/profiles/system'
