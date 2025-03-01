@@ -125,17 +125,25 @@ setup_package_manager() {
 }
 
 setup_neovim() {
-	curl -sfSLO --output-dir "/tmp/" https://github.com/MordechaiHadad/bob/releases/download/v4.0.3/bob-linux-x86_64.zip
-	unzip "/var/tmp/bob-linux-x86_64.zip" -d "/tmp/"
-	$CP "/var/tmp/bob-linux-x86_64/bob" "$HOME"/.local/bin/
-	chmod 0755 "$HOME"/.local/bin/bob
-	"$HOME"/.local/bin/bob use nightly
+	local url="https://github.com/MordechaiHadad/bob/releases/download/v4.0.3/bob-linux-x86_64.zip"
+	local outdir="/tmp"
+	local outpath="$outdir/bob-linux-x86_64"
+	local basedir="$HOME/.local"
+	local target="$basedir/bin"
+	local global_target="/usr/local/bin"
 
-	sudo rm -f /usr/local/bin/nvim &&
-		sudo ln -sf "$HOME"/.local/share/bob/nvim-bin/nvim /usr/local/bin/nvim
+	curl -sfSLO --output-dir "$outdir" "$url"
+	unzip "${outpath}.zip" -d "$outdir"
+	$CP "${outpath}/bob" "$target"
+	chmod 0755 "$target"/bob
+	"$target"/bob use nightly
+
+	rm -rf "$outpath" &&
+		sudo rm -f "$global_target"/nvim &&
+		sudo ln -sf "$basedir"/share/bob/nvim-bin/nvim "$global_target"/nvim
 
 	if confirm "Wipe any existing neovim config and download our distribution?"; then
-		rm -rf "$HOME"/.config/nvim "$HOME"/.local/share/nvim "$HOME"/.local/cache/nvim "$HOME"/.local/state/nvim
+		rm -rf "$HOME"/.config/nvim "$basedir"/share/nvim "$basedir"/cache/nvim "$basedir"/state/nvim
 		git clone git@github.com:WombatFromHell/lazyvim.git "$HOME"/.config/nvim
 	fi
 }
