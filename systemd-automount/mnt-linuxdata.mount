@@ -2,7 +2,7 @@
 Description=Optional "linuxdata" Disk Mount
 
 [Mount]
-What=/dev/disk/by-uuid/00ce9421-9338-4d99-b57e-ac55cc0c08c2
+What=/dev/disk/by-uuid/45710fdb-8f12-432e-998b-9dce7dfaeadd
 Where=/mnt/linuxdata
 Type=ext4
 Options=noatime,x-systemd.mount-timeout=5,x-gvfs-show

@@ -4,19 +4,15 @@ source ./common.sh
 cache_creds
 
 main() {
-	# Run the installation steps with confirmations
 	run_if_confirmed "Add kernel args for OpenRGB Gigabyte Mobo support?" setup_kernel_args
 	run_if_confirmed "Setup SSH/GPG keys and config?" setup_ssh_gpg
 	run_if_confirmed "Setup external mounts?" setup_external_mounts
 	run_if_confirmed "Perform user-specific customizations?" setup_user_customizations
 	run_if_confirmed "Perform assembly and customization of Distrobox containers?" setup_distrobox
 	run_if_confirmed "Setup Flatpak repo and add common apps?" setup_flatpak
-	run_if_confirmed "Fix libva-nvidia-driver for Flatpak version of Firefox?" fix_firefox_video
-
 	echo "Finished!"
 }
 
-# Wrapper function to run a task if confirmed
 run_if_confirmed() {
 	local prompt="$1"
 	local func="$2"
@@ -49,7 +45,6 @@ setup_external_mounts() {
 	local mount_dirs=("Downloads" "FTPRoot" "home" "linuxgames" "linuxdata")
 	local mount_types=("automount" "mount")
 
-	# Create systemd mount units
 	for mount_type in "${mount_types[@]}"; do
 		for dir in "${mount_dirs[@]}"; do
 			sed 's/mnt\//var\/mnt\//g' "./systemd-automount/mnt-$dir.$mount_type" >"./systemd-automount/var-mnt-$dir.$mount_type"
@@ -59,51 +54,39 @@ setup_external_mounts() {
 	done
 
 	rm ./systemd-automount/var-mnt*.*mount
-
-	# Setup swap file
 	sed 's/mnt\//var\/mnt\//g' ./systemd-automount/mnt-linuxgames-Games-swapfile.swap \
 		>./systemd-automount/var-mnt-linuxgames-Games-swapfile.swap
 	$CP ./systemd-automount/var-mnt-linuxgames-Games-swapfile.swap /etc/systemd/system/ &&
 		sudo chown root:root /etc/systemd/system/*.swap &&
 		rm ./systemd-automount/var-mnt-linuxgames-Games-swapfile.swap
 
-	# SMB credentials setup
 	$CP "$SUPPORT"/.smb-credentials /etc/ &&
 		sudo chown root:root /etc/.smb-credentials &&
 		sudo chmod 0400 /etc/.smb-credentials &&
 		sudo systemctl daemon-reload
 
-	# Enable swap
 	sudo systemctl enable --now var-mnt-linuxgames-Games-swapfile.swap
 }
 
 setup_user_customizations() {
-	# Copy user files
 	$CP -r "$SUPPORT"/bin/ "$HOME"/.local/bin/ &&
 		$CP -r "$SUPPORT"/.gitconfig "$HOME"/
 
-	# System config updates
 	sudo cat ./etc/environment | sudo tee -a /etc/environment
-	$CP ./etc-X11/Xwrapper.config /etc/X11/ &&
-		$CP ./etc-xorg.conf.d/20-nvidia.conf /etc/X11/xorg.conf.d/
 
-	# Scripts setup
-	$CP ./usr-local-bin/*.sh /usr/local/bin/ &&
-		sudo chown root:root /usr/local/bin/*.sh &&
-		sudo chmod 0755 /usr/local/bin/*.sh
+	$CP ./usr-local-bin/*.* /usr/local/bin/ &&
+		sudo chown root:root /usr/local/bin/*.* &&
+		sudo chmod 0755 /usr/local/bin/*.*
 
-	# System services setup
 	$CP ./etc-systemd/system/* /etc/systemd/system/ &&
 		sudo chown root:root /etc/systemd/system/{fix-wakeups.service,nvidia-tdp.*} &&
 		sudo systemctl daemon-reload &&
 		sudo systemctl enable --now fix-wakeups.service &&
 		sudo systemctl enable --now nvidia-tdp.service
 
-	# Systemd suspend configuration
 	sudo rsync -rvh --chown=root:root --chmod=D755,F644 ./etc-systemd/system/systemd-{homed,suspend}.service.d /etc/systemd/system/ &&
 		sudo systemctl daemon-reload
 
-	# User services setup
 	mkdir -p "$HOME"/.config/systemd/user/
 	$CP ./systemd-user/*.service "$HOME"/.config/systemd/user/
 	systemctl --user daemon-reload &&
@@ -111,10 +94,17 @@ setup_user_customizations() {
 	systemctl --user enable --now on-session-state.service
 	systemctl --user enable --now openrgb-lightsout.service
 
-	# Run optional customizations
 	run_if_confirmed "Install common user fonts?" install_fonts
 	setup_package_manager
 	run_if_confirmed "Install customized NeoVim config?" setup_neovim
+	run_if_confirmed "Install AppImages?" install_appimages
+}
+
+install_appimages() {
+	appimages_path="$HOME/AppImages"
+	mkdir -p "$appimages_path" &&
+		$CP "$SUPPORT"/appimages/*.* "$appimages_path/" &&
+		chmod 0755 "$appimages_path"/*.*
 }
 
 install_fonts() {
@@ -124,40 +114,34 @@ install_fonts() {
 }
 
 setup_package_manager() {
-	if confirm "Install Brew and some common utils?"; then
-		if command -v brew >/dev/null; then
-			brew install eza fd ripgrep fzf bat lazygit
-		else
-			echo "Error! Cannot find 'brew'!"
-			exit 1
-		fi
+	local brew
+	brew="$(check_cmd "brew")"
+
+	if [ -n "$brew" ] && confirm "Install Brew and some common utils?"; then
+		"$brew" install eza fd rdfind ripgrep fzf bat lazygit fish
 	elif confirm "Install Nix as an alternative to Brew?"; then
-		chmod +x "$SUPPORT"/lix-installer
-		"$SUPPORT"/lix-installer install ostree
-		echo && echo "Reminder: deploy dotfiles and do a 'home-manager switch'!"
+		curl --proto '=https' --tlsv1.2 -sSf -L https://install.lix.systems/lix | sh -s -- install ostree
 	fi
 }
 
 setup_neovim() {
-	rm -rf "$HOME"/.config/nvim "$HOME"/.local/share/nvim "$HOME"/.local/cache/nvim
-	git clone git@github.com:WombatFromHell/lazyvim.git "$HOME"/.config/nvim
+	curl -sfSLO --output-dir "/tmp/" https://github.com/MordechaiHadad/bob/releases/download/v4.0.3/bob-linux-x86_64.zip
+	unzip "/var/tmp/bob-linux-x86_64.zip" -d "/tmp/"
+	$CP "/var/tmp/bob-linux-x86_64/bob" "$HOME"/.local/bin/
+	chmod 0755 "$HOME"/.local/bin/bob
+	"$HOME"/.local/bin/bob use nightly
 
-	# Install AppImages
-	appimages_path="$HOME/AppImages"
-	mkdir -p "$appimages_path" &&
-		$CP "$SUPPORT"/appimages/*.* "$appimages_path/" &&
-		chmod 0755 "$appimages_path"/*.*
+	sudo rm -f /usr/local/bin/nvim &&
+		sudo ln -sf "$HOME"/.local/share/bob/nvim-bin/nvim /usr/local/bin/nvim
 
-	# Link neovim
-	nvim_local_path="$HOME/AppImages/nvim.appimage"
-	sudo ln -sf "$nvim_local_path" /usr/local/bin/nvim &&
-		ln -sf "$nvim_local_path" "$HOME"/.local/bin/nvim
+	if confirm "Wipe any existing neovim config and download our distribution?"; then
+		rm -rf "$HOME"/.config/nvim "$HOME"/.local/share/nvim "$HOME"/.local/cache/nvim "$HOME"/.local/state/nvim
+		git clone git@github.com:WombatFromHell/lazyvim.git "$HOME"/.config/nvim
+	fi
 }
 
 setup_distrobox() {
 	chmod +x ./distrobox/*.sh
-
-	# Setup development container
 	distrobox assemble create --file ./distrobox/distrobox-assemble-devbox.ini &&
 		./distrobox/brave-export-fix.sh
 }
@@ -165,18 +149,14 @@ setup_distrobox() {
 setup_flatpak() {
 	flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
-	# Install common apps
 	flatpak install --user --noninteractive \
-		com.vysp3r.ProtonPlus \
 		com.github.zocker_160.SyncThingy
 
-	# Fix Firefox notifications
 	flatpak override --user --socket=session-bus --env=NOTIFY_IGNORE_PORTAL=1 --talk-name=org.freedesktop.Notifications org.mozilla.firefox
 
-	# Setup Brave browser if requested
 	if confirm "Install Flatpak version of Brave browser?"; then
 		flatpak install --user --noninteractive com.brave.Browser
-		chmod +x ./support/brave-flatpak-fix.sh
+		chmod 0755 ./support/brave-flatpak-fix.sh
 		./support/brave-flatpak-fix.sh
 	fi
 }

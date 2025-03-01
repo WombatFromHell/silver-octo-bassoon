@@ -1,0 +1,13 @@
+gpu_id = 0
+temp_thresholds = [48, 58, 72, 86]
+fan_speeds = [46, 55, 62, 80]
+fan_speed_floor = 46
+fan_speed_ceiling = 100
+hysteresis = 3
+sampling_window_size = 10
+global_delay = 2
+fan_dwell_time = 10
+smooth_mode = false
+smooth_mode_incr_weight = 1.0
+smooth_mode_decr_weight = 2.0
+smooth_mode_max_fan_step = 10

@@ -1,13 +1,11 @@
 [Unit]
-Description=Set NVIDIA power limit
-Wants=default.service
-After=default.service
+Description=NVIDIA Power Limit Service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/nvidia-pm.sh low
-ExecStop=/usr/local/bin/nvidia-pm.sh undo
+ExecStart=/usr/local/bin/nvidia-pm.py
+ExecStop=/usr/local/bin/nvidia-pm.py undo
 RemainAfterExit=yes
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target

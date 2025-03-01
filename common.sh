@@ -27,6 +27,16 @@ confirm() {
 	esac
 }
 
+check_cmd() {
+	local cmd
+	cmd="$(which command -v "$1")"
+	if [ -n "$cmd" ]; then
+		echo "$cmd"
+	else
+		return 1
+	fi
+}
+
 update_grub_cmdline() {
 	local text_to_add="$1"
 	local target_file="/etc/default/grub"

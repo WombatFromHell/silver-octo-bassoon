@@ -1,8 +1,0 @@
-[Unit]
-Description=Automount SSDDATA1 disk
-
-[Automount]
-Where=/mnt/SSDDATA1
-
-[Install]
-WantedBy=multi-user.target

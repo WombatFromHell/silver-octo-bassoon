@@ -1,0 +1,10 @@
+[Unit]
+Description=Veridian Controller User Fan Service
+
+[Service]
+ExecStart=/usr/local/bin/veridian-controller -f /etc/veridian-controller.toml
+TimeoutStopSec=10
+Type=simple
+
+[Install]
+WantedBy=multi-user.target
