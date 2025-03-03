@@ -9,7 +9,9 @@
             "name": "HOMENAS",
             "pathMappings": [],
             "expandedDirFilters": [],
-            "lastSaveDirs": [],
+            "lastSaveDirs": [
+                ""
+            ],
             "intervals": {
                 "session": 60,
                 "torrents": 5,
@@ -21,12 +23,12 @@
     "app": {
         "window": {
             "size": [
-                1024,
+                1055,
                 800
             ],
             "position": [
-                0,
-                0
+                1344,
+                138
             ]
         },
         "showTabStrip": true,
@@ -112,7 +114,7 @@
                     "rateDownload": 58,
                     "rateUpload": 53,
                     "status": 43,
-                    "addedDate": 1,
+                    "addedDate": 32,
                     "peersSendingToUs": 46,
                     "peersGettingFromUs": 48,
                     "uploadRatio": 42,
@@ -123,8 +125,16 @@
             "filetree": {
                 "columns": [],
                 "columnVisibility": {},
-                "columnOrder": [],
-                "columnSizes": {},
+                "columnOrder": [
+                    "name",
+                    "size",
+                    "done",
+                    "percent",
+                    "priority"
+                ],
+                "columnSizes": {
+                    "name": 247
+                },
                 "sortBy": []
             },
             "filetreebrief": {

@@ -3,16 +3,6 @@
 source ./common.sh
 cache_creds
 
-main() {
-	run_if_confirmed "Add kernel args for OpenRGB Gigabyte Mobo support?" setup_kernel_args
-	run_if_confirmed "Setup SSH/GPG keys and config?" setup_ssh_gpg
-	run_if_confirmed "Setup external mounts?" setup_external_mounts
-	run_if_confirmed "Perform user-specific customizations?" setup_user_customizations
-	run_if_confirmed "Perform assembly and customization of Distrobox containers?" setup_distrobox
-	run_if_confirmed "Setup Flatpak repo and add common apps?" setup_flatpak
-	echo "Finished!"
-}
-
 run_if_confirmed() {
 	local prompt="$1"
 	local func="$2"
@@ -27,18 +17,13 @@ setup_kernel_args() {
 }
 
 setup_ssh_gpg() {
-	# SSH setup
 	$CP "$SUPPORT"/.ssh/{id_rsa,id_rsa.pub,config} "$HOME"/.ssh/ &&
 		sudo chown -R "$USER:$USER" "$HOME"/.ssh
 	chmod 0400 "$HOME"/.ssh/{id_rsa,id_rsa.pub}
 
-	# GPG setup
 	gpg --list-keys &&
 		gpg --import "$SUPPORT"/.ssh/gnupg-keys/public-key.asc &&
 		gpg --import "$SUPPORT"/.ssh/gnupg-keys/private-key.asc
-
-	$CP "$SUPPORT"/.gnupg/gpg-agent.conf "$HOME"/.gnupg/ &&
-		gpg-connect-agent reloadagent /bye
 }
 
 setup_external_mounts() {
@@ -69,14 +54,15 @@ setup_external_mounts() {
 }
 
 setup_user_customizations() {
-	$CP -r "$SUPPORT"/bin/ "$HOME"/.local/bin/ &&
-		$CP -r "$SUPPORT"/.gitconfig "$HOME"/
+	$CP -r "$SUPPORT"/bin/ "$HOME"/.local/bin/
 
-	sudo cat ./etc/environment | sudo tee -a /etc/environment
+	sudo cp -f /etc/environment /etc/environment.bak
+	sudo cp -f ./etc/environment /etc/environment
 
-	$CP ./usr-local-bin/*.* /usr/local/bin/ &&
-		sudo chown root:root /usr/local/bin/*.* &&
-		sudo chmod 0755 /usr/local/bin/*.*
+	mkdir -p /usr/local/bin &&
+		$CP ./usr-local-bin/* /usr/local/bin/ &&
+		sudo chown root:root /usr/local/bin/* &&
+		sudo chmod 0755 /usr/local/bin/*
 
 	$CP ./etc-systemd/system/* /etc/systemd/system/ &&
 		sudo chown root:root /etc/systemd/system/{fix-wakeups.service,nvidia-tdp.*} &&
@@ -84,15 +70,10 @@ setup_user_customizations() {
 		sudo systemctl enable --now fix-wakeups.service &&
 		sudo systemctl enable --now nvidia-tdp.service
 
-	sudo rsync -rvh --chown=root:root --chmod=D755,F644 ./etc-systemd/system/systemd-{homed,suspend}.service.d /etc/systemd/system/ &&
-		sudo systemctl daemon-reload
-
 	mkdir -p "$HOME"/.config/systemd/user/
 	$CP ./systemd-user/*.service "$HOME"/.config/systemd/user/
-	systemctl --user daemon-reload &&
-		chmod 0755 "$HOME"/.local/bin/*
-	systemctl --user enable --now on-session-state.service
-	systemctl --user enable --now openrgb-lightsout.service
+	systemctl --user daemon-reload
+	chmod 0755 "$HOME"/.local/bin/*
 
 	run_if_confirmed "Install common user fonts?" install_fonts
 	setup_package_manager
@@ -103,22 +84,22 @@ setup_user_customizations() {
 install_appimages() {
 	appimages_path="$HOME/AppImages"
 	mkdir -p "$appimages_path" &&
-		$CP "$SUPPORT"/appimages/*.* "$appimages_path/" &&
-		chmod 0755 "$appimages_path"/*.*
+		$CP "$SUPPORT"/appimages/*.AppImage "$appimages_path/" &&
+		chmod 0755 "$appimages_path"/*.AppImage
 }
 
 install_fonts() {
 	mkdir -p ~/.fonts &&
-		tar xvzf "$SUPPORT"/fonts.tar.gz -C ~/.fonts/ &&
-		fc-cache -fv
+		tar xzf "$SUPPORT"/fonts.tar.gz -C ~/.fonts/ &&
+		fc-cache -f
 }
 
 setup_package_manager() {
 	local brew
-	brew="$(check_cmd "brew")"
+	brew="$(which brew)"
 
 	if [ -n "$brew" ] && confirm "Install Brew and some common utils?"; then
-		"$brew" install eza fd rdfind ripgrep fzf bat lazygit fish
+		"$brew" install eza fd rdfind ripgrep fzf bat lazygit fish stow zoxide
 	elif confirm "Install Nix as an alternative to Brew?"; then
 		curl --proto '=https' --tlsv1.2 -sSf -L https://install.lix.systems/lix | sh -s -- install ostree
 	fi
@@ -160,22 +141,44 @@ setup_flatpak() {
 	flatpak install --user --noninteractive \
 		com.github.zocker_160.SyncThingy
 
-	flatpak override --user --socket=session-bus --env=NOTIFY_IGNORE_PORTAL=1 --talk-name=org.freedesktop.Notifications org.mozilla.firefox
-
 	if confirm "Install Flatpak version of Brave browser?"; then
 		flatpak install --user --noninteractive com.brave.Browser
 		chmod 0755 ./support/brave-flatpak-fix.sh
-		./support/brave-flatpak-fix.sh
+		"$SUPPORT"/brave-flatpak-fix.sh
 	fi
+
+	run_if_confirmed "Fix Firefox Flatpak overrides (for misc support)?" fix_firefox_overrides
 }
 
-fix_firefox_video() {
+fix_firefox_overrides() {
+	flatpak override --user --reset org.mozilla.firefox
+	flatpak override --user --socket=session-bus --env=NOTIFY_IGNORE_PORTAL=1 --talk-name=org.freedesktop.Notifications org.mozilla.firefox
+
 	outdir="$HOME/.var/app/org.mozilla.firefox/dri"
 	mkdir -p "$outdir" && rm -rf "$outdir"/*.* || exit 1
-	unzip "$SUPPORT"/libva-nvidia-driver_git-0.0.13.zip -d "$outdir"
-	flatpak override --user --env=LIBVA_DRIVERS_PATH="$outdir" org.mozilla.firefox
-	flatpak --system --noninteractive remove org.mozilla.firefox &&
-		flatpak --user --noninteractive install org.mozilla.firefox org.freedesktop.Platform.ffmpeg-full
+	$CP /usr/lib64/dri/nvidia_drv_video.so "$outdir"
+
+	flatpak --system --noninteractive install \
+		runtime/org.freedesktop.Platform.ffmpeg-full//23.08
+
+	flatpak override --user \
+		--env=MOZ_DISABLE_RDD_SANDBOX=1 \
+		--env=LIBVA_DRIVERS_PATH="$outdir" \
+		--env=LIBVA_DRIVER_NAME=nvidia \
+		--env=NVD_BACKEND=direct \
+		org.mozilla.firefox
+
+	flatpak override --user --filesystem=xdg-run/app/org.keepassxc.KeePassXC org.mozilla.firefox
+}
+
+main() {
+	run_if_confirmed "Add kernel args for OpenRGB Gigabyte Mobo support?" setup_kernel_args
+	run_if_confirmed "Setup SSH/GPG keys and config?" setup_ssh_gpg
+	run_if_confirmed "Setup external mounts?" setup_external_mounts
+	run_if_confirmed "Perform user-specific customizations?" setup_user_customizations
+	run_if_confirmed "Perform assembly and customization of Distrobox containers?" setup_distrobox
+	run_if_confirmed "Setup Flatpak repo and add common apps?" setup_flatpak
+	echo "Finished!"
 }
 
 main

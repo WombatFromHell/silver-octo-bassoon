@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 LOCAL="."
-REMOTE="$HOME/Backups/linux-config/backups/dotfiles/"
+# REMOTE="$HOME/Backups/linux-config/backups/dotfiles/"
+REMOTE="$HOME/Backups/dotfiles/"
 
 _CMD=(rsync -avL --checksum --update)
 EXCLUDES=(
@@ -10,6 +11,7 @@ EXCLUDES=(
 	--exclude='*.wants/'
 	--exclude='hrir.wav'
 	--exclude='nix/'
+	--exclude='logs/'
 	--exclude='tmux/plugins/*'
 )
 

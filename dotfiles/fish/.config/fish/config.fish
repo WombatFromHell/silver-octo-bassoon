@@ -50,7 +50,6 @@ function yy
     rm -f -- "$tmp"
 end
 
-
 function view_tarzst
     if test -z "$argv[1]"
         echo "Usage: view_tarzst <file.tar.zst> [tar-options]"
@@ -73,7 +72,6 @@ function view_tarzst
         return 1
     end
 end
-
 
 function to_clip
     $argv 2>&1 | tee /dev/tty | wl-copy
@@ -114,53 +112,6 @@ end
 function snap_clean_full
     custom_snap_clean root number
     custom_snap_clean home number
-end
-
-function update_neovim
-    set -l appimage_path "$HOME/AppImages/neovim.AppImage"
-    set -l local_sha_path "$appimage_path.sha256sum"
-    set -l remote_url "https://github.com/neovim/neovim/releases/download/nightly/nvim.appimage"
-    set -l remote_sha_url "$remote_url.sha256sum"
-
-    if not set -l remote_sha (curl -s "$remote_sha_url")
-        echo "Error: Failed to fetch remote SHA256 sum"
-        return 1
-    end
-
-    set remote_sha (echo "$remote_sha" | awk '{print $1}')
-
-    if not test -f "$local_sha_path"
-        set -l local_sha ""
-    else
-        set -l local_sha (cat "$local_sha_path")
-    end
-
-    if test "$remote_sha" != "$local_sha"
-        echo "New Neovim nightly version available. Updating..."
-
-        if test -f "$appimage_path"
-            mv "$appimage_path" "$appimage_path.bak"
-        end
-
-        if not curl -L "$remote_url" -o "$appimage_path"
-            echo "Error: Failed to download Neovim AppImage"
-            # Restore backup if download fails
-            if test -f "$appimage_path.bak"
-                mv "$appimage_path.bak" "$appimage_path"
-            end
-            return 1
-        end
-
-        chmod +x "$appimage_path"
-        ln -sf "$appimage_path" "$HOME/.local/bin/nvim"
-        rsync -vh "$appimage_path" "$local_sha_path" "$HOME/Backups/linux-config/backups/support/appimages/"
-
-        echo "$remote_sha" >"$local_sha_path"
-
-        echo "Neovim nightly updated successfully"
-    else
-        echo "Neovim nightly is already up to date"
-    end
 end
 
 function set_editor
@@ -204,7 +155,6 @@ function nh_clean
     set cmd $cmd $argv
     eval $cmd
 end
-
 
 set_editor
 setup_podman_sock
@@ -265,7 +215,7 @@ alias tmls='tmux ls'
 # alias tmk='tmux kill-ses -t'
 #
 # rsync shortcuts
-alias _rsync='rsync -avzL --partial --info=progress2 --update'
+alias _rsync='rsync -avL --partial --update'
 alias _rsyncd='_rsync --dry-run'
 #
 alias rsud='_rsync --delete'

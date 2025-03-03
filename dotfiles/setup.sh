@@ -79,6 +79,16 @@ remove_this() {
 	fi
 }
 
+stow_this() {
+	if stow -R "$1"; then
+		echo "Successfully stowed '$1'!"
+		return 0
+	else
+		echo "Error: failed to stow '$1'!"
+		return 1
+	fi
+}
+
 fetch_nix() {
 	cmds=("git" "nix")
 	for c in "${cmds[@]}"; do
@@ -102,12 +112,34 @@ handle_home() {
 			cp -f "$HOME/$file" "$HOME/${file}.stowed"
 			rm -f "$HOME/$file"
 		done
-		stow -R "home"
-		echo -e "\n$HOME has been stowed!"
-		return 0
-	else
+		if stow_this "home"; then
+			return 2
+		else
+			return 1
+		fi
+	fi
+	return 1
+}
+
+handle_openrgb() {
+	export PATH="$PATH:$HOME/.local/bin:/usr/local/bin"
+
+	local dir=$1
+	local target="$HOME/.config/$dir"
+
+	if ! check_program "openrgb"; then
+		return 1
+	elif [ -n "$flatpak" ] && ! ("$flatpak" list | grep -q org.openrgb.OpenRGB); then
+		echo "Error: flatpak was detected, but 'org.openrgb.OpenRGB' not found!"
 		return 1
 	fi
+
+	if confirm "Are you sure you want to stow $dir?"; then
+		remove_this "$target"
+		stow_this "$dir"
+		return 2
+	fi
+	return 1
 }
 
 handle_scripts() {
@@ -118,11 +150,10 @@ handle_scripts() {
 		remove_this "$target"
 		# make sure the parent exists
 		mkdir -p "$(dirname "$target")"
-		chmod +x "./$1"/*.sh
+		chmod +x "./$1"/*.*
 		# just link, don't stow
-		ln -sf "$script_dir/$1" "$target"
-		echo -e "\nSuccessfully stowed $dir!"
-		return 0
+		ln -sf "$(pwd)/scripts" "$target"
+		return 2
 	else
 		return 1
 	fi
@@ -139,11 +170,13 @@ handle_pipewire() {
 		sed -i \
 			"s|%PATH%|$hesuvi_tgt|g" \
 			"./$dir/$tgt/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
-		stow -R "$dir"
-		echo -e "\nSuccessfully stowed $dir!"
-		return 0
+		if stow_this "$dir"; then
+			return 2
+		else
+			return 1
+		fi
 	else
-		echo -e "\nSkipping $dir stow on $os..."
+		echo "Skipping $dir stow on $os..."
 		return 1
 	fi
 }
@@ -153,18 +186,21 @@ handle_spicetify() {
 
 	local dir="$1"
 	local target="$2"
-	local bypass="$3"
+	local bypass="${3:-1}"
 
-	if [ -z "$bypass" ] && confirm "Are you sure you want to stow $dir?"; then
+	if [ "$bypass" -eq 0 ] || confirm "Are you sure you want to stow $dir?"; then
 		if command -v spicetify &>/dev/null; then
-			echo -e "\nMake sure to double check your 'prefs' path at: $target/config-xpui.ini"
-			stow -R "$dir"
-			echo -e "\nSuccessfully stowed $dir!"
+			echo "Make sure to double check your 'prefs' path at: $target/config-xpui.ini"
+			stow_this "$dir"
 			return 0
 		else
 			if confirm "Download and install 'spicetify'?"; then
-				curl -fsSL https://raw.githubusercontent.com/spicetify/cli/main/install.sh | sh
-				handle_spicetify "$dir" "$target" true
+				if command -v "brew" &>/dev/null; then
+					brew install spicetify
+				else
+					curl -fsSL https://raw.githubusercontent.com/spicetify/cli/main/install.sh | sh
+				fi
+				handle_spicetify "$dir" "$target" 0
 			else
 				return 1
 			fi
@@ -182,19 +218,15 @@ handle_tmux() {
 
 	if confirm "Are you sure you want to stow $dir?"; then
 		if check_program "git" "Error: 'git' command not found!"; then
-			echo -e "\nWiping old '$dir' config..."
+			echo "Wiping old '$dir' config..."
 			rm -rf ./"$dir"/.config/tmux/plugins/ "$target"
-			echo -e "\nFetching 'tpm'..."
+			echo "Fetching 'tpm'..."
 			git clone https://github.com/tmux-plugins/tpm ./"$dir"/.config/tmux/plugins/tpm
-			stow -R "$dir"
-			echo -e "\nSuccessfully stowed $dir!"
+			stow_this "$dir"
 			return 0
-		else
-			return 1
 		fi
-	else
-		return 1
 	fi
+	return 1
 }
 
 do_pre_stow() {
@@ -209,16 +241,17 @@ do_pre_stow() {
 
 	home) handle_home "$os" ;;
 	pipewire) handle_pipewire "$dir" "$target" "$os" ;;
-	scripts) handle_scripts "$os" ;;
+	scripts) handle_scripts "$dir" ;;
 	systemd)
 		# exclude systemd on non-Linux OS'
 		if [[ "$os" != "Linux" ]]; then
-			echo -e "\nSkipping $dir stow on $os..."
+			echo "Skipping $dir stow on $os..."
 			return 1
 		fi
 		;;
 
 	nix) return 1 ;;
+	OpenRGB) handle_openrgb "$dir" ;;
 	spicetify) handle_spicetify "$dir" "$target" ;;
 	tmux) handle_tmux "$dir" "$target" "$os" ;;
 
@@ -235,20 +268,25 @@ do_post_stow() {
 	home)
 		if [ "$os" == "NixOS" ]; then
 			# let nix flake determine global profile vars
-			remove_this "$HOME"/.profile
-			echo -e "\nDetected NixOS, removed ~/.profile to avoid clobbering env..."
+			remove_this "$HOME/.profile"
+			echo "Detected NixOS, removed ~/.profile to avoid clobbering env..."
 		elif check_program "uwsm" "Error: 'uwsm' not found, skipping!"; then
 			# workaround uwsm not handling env import properly
 			remove_this "$HOME/.config/uwsm"
-			mkdir -p "$HOME/.config/uwsm"
+			mkdir -p "$HOME"/.config/uwsm
 			ln -sf "$HOME/.profile" "$HOME/.config/uwsm/env"
-			echo -e "\nDetected 'uwsm', linked ~/.profile to ~/.config/uwsm/env..."
+			echo "Detected 'uwsm', linked ~/.profile to ~/.config/uwsm/env..."
+			#
+			# workaround for trguing.json
+			remove_this "$HOME/.config/trguing.json"
+			ln -sf "$(realpath "./$dir/.config/trguing.json")" "$(realpath "$HOME/.config/trguing.json")"
+			echo "Linked to realpath of 'trguing.json'..."
 		fi
 		;;
 	fish) fish -c "fisher update" ;;
 	bat) bat cache --build ;;
 	tmux)
-		remove_this "$HOME"/.tmux.conf
+		remove_this "$HOME/.tmux.conf"
 		ln -sf "$HOME"/.dotfiles/tmux/.config/tmux/tmux.conf "$HOME"/.tmux.conf
 		;;
 	esac
@@ -259,11 +297,10 @@ do_stow() {
 	local target=$2
 	local os=$3
 
-	if confirm "Removing all files from $target before stowing"; then
+	if confirm "Removing all files from $target before stowing '$dir'"; then
 		remove_this "$target"
 		mkdir -p "$target"/
-		stow -R "$dir"
-		echo -e "\n'$dir' has been stowed!"
+		stow_this "$dir"
 		return 0
 	else
 		return 1
@@ -273,16 +310,25 @@ do_stow() {
 handle_stow() {
 	local dir=$1
 	local target="$HOME/.config/$dir"
+	local skip=0
 	local os
 	os=$(check_for_os)
 
 	if ! do_pre_stow "$dir" "$target" "$os"; then
-		return
+		return 1
+	elif [ $? -eq 2 ]; then
+		skip=1
 	fi
-	if ! do_stow "$dir" "$target" "$os"; then
-		return
+	if [ "$skip" -eq 0 ] && ! do_stow "$dir" "$target" "$os"; then
+		return 1
+	elif [ $? -eq 2 ]; then
+		skip=1
 	fi
-	do_post_stow "$dir" "$target" "$os"
+	if [ "$skip" -eq 0 ] && ! do_post_stow "$dir" "$target" "$os"; then
+		return 1
+	else
+		return 0
+	fi
 }
 
 main() {
