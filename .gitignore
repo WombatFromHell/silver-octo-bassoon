@@ -1,8 +1,8 @@
 support
-fish_variables
-.local/bin
 monitor-session
-tmux/plugins
+dotfiles/systemd/**/user/*.wants/**
+dotfiles/tmux/.config/tmux/plugins/**
 
+fish_variables
 .smb-credentials
 .smb-secrets
