@@ -131,8 +131,8 @@ setup_neovim() {
 
 setup_distrobox() {
 	chmod +x ./distrobox/*.sh
-	distrobox assemble create --file ./distrobox/distrobox-assemble-devbox.ini &&
-		./distrobox/brave-export-fix.sh
+	distrobox assemble create --file ./distrobox/distrobox-assemble-devbox.ini
+	# ./distrobox/brave-export-fix.sh
 }
 
 setup_flatpak() {

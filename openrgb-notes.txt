@@ -1,4 +1,0 @@
-!IMPORTANT!
----
-ADD to "GRUB_CMDLINE_LINUX_DEFAULT" if on a Gigabyte motherboard:
-acpi_enforce_resources=lax

@@ -1,7 +1,0 @@
-# local mounts
-UUID="986caee7-003e-4978-ba9d-f35ffd8f007c" /mnt/linuxgames ext4   defaults,noatime 0 0
-UUID="922098CB2098B7A5"			    /mnt/SSDDATA1   ntfs   defaults,noatime,uid=1000,gid=1000,rw,exec 0 0
-# network mounts
-//192.168.1.153/Downloads		    /mnt/HOMENAS-Downloads cifs x-systemd.automount,noauto,x-systemd.idle-timeout=60,x-systemd.device-timeout=5s,x-systemd.mount-timeout=5s,credentials=/etc/.smb-credentials,uid=1000,gid=1000,file_mode=0644,dir_mode=0755,comment=x-gvfs-show 0 0
-//192.168.1.153/home			    /mnt/HOMENAS-home cifs x-systemd.automount,noauto,x-systemd.idle-timeout=60,x-systemd.device-timeout=5s,x-systemd.mount-timeout=5s,credentials=/etc/.smb-credentials,uid=1000,gid=1000,file_mode=0644,dir_mode=0755,comment=x-gvfs-show 0 0
-//192.168.1.153/FTPRoot			    /mnt/HOMENAS-FTPRoot cifs x-systemd.automount,noauto,x-systemd.idle-timeout=60,x-systemd.device-timeout=5s,x-systemd.mount-timeout=5s,credentials=/etc/.smb-credentials,uid=1000,gid=1000,file_mode=0644,dir_mode=0755,comment=x-gvfs-show 0 0
