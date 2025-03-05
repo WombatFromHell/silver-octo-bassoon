@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
 LOCAL="."
-# REMOTE="$HOME/Backups/linux-config/backups/dotfiles/"
-REMOTE="$HOME/Backups/dotfiles/"
+REMOTE="$HOME/Backups/linux-config/backups/dotfiles/"
 
 _CMD=(rsync -avL --checksum --update)
 EXCLUDES=(
