@@ -197,7 +197,7 @@ alias cat='bat'
 alias edit='$EDITOR'
 alias sedit='sudo -E $EDITOR'
 alias mkdir='mkdir -pv'
-alias gpgconfr='gpgconf --kill gpg-agent; gpgconf --launch gpg-agent'
+alias gpgconfr='gpgconf -K all; gpg-connect-agent reloadagent /bye'
 # zellij shortcuts
 alias zls='zellij ls'
 alias zac='zellij attach -c'

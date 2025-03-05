@@ -6,8 +6,9 @@ REMOTE="$HOME/Backups/dotfiles/"
 
 _CMD=(rsync -avL --checksum --update)
 EXCLUDES=(
-	--exclude=__pycache__/
-	--exclude=pipewire/
+	--exclude='__pycache__/'
+	--exclude='pipewire/'
+	--exclude='monitor-session/'
 	--exclude='*.wants/'
 	--exclude='hrir.wav'
 	--exclude='nix/'
