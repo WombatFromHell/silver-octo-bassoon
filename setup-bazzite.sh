@@ -75,6 +75,8 @@ setup_user_customizations() {
 	systemctl --user daemon-reload
 	chmod 0755 "$HOME"/.local/bin/*
 
+	$CP ./etc-sudoers.d/tuned /etc/sudoers.d/tuned
+
 	run_if_confirmed "Install common user fonts?" install_fonts
 	setup_package_manager
 	run_if_confirmed "Install customized NeoVim config?" setup_neovim
