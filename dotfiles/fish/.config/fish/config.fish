@@ -6,7 +6,7 @@ if status is-interactive && ! functions -q fisher
     curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher update
 end
 
-status is-interactive; and begin
+if status is-interactive
     # Commands to run in interactive sessions can go here
     function fish_title
         # Get the current working directory
@@ -167,7 +167,7 @@ set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
 set -x CARGO_HOME $HOME/.cargo
 
 set --erase fish_user_paths
-fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/nvim/mason/bin /usr/local/bin ~/.rd/bin ~/.nix-profile/bin $RUSTUP_HOME ~/.spicetify
+fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.nix-profile/bin ~/.local/share/nvim/mason/bin /usr/local/bin ~/.rd/bin $RUSTUP_HOME ~/.spicetify
 
 set EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --color=auto -A
 set pure_shorten_prompt_current_directory_length 1
@@ -197,7 +197,6 @@ alias cat='bat'
 alias edit='$EDITOR'
 alias sedit='sudo -E $EDITOR'
 alias mkdir='mkdir -pv'
-alias gpgconfr='gpgconf -K all; gpg-connect-agent reloadagent /bye'
 # zellij shortcuts
 alias zls='zellij ls'
 alias zac='zellij attach -c'
@@ -231,7 +230,7 @@ alias rsf_d='_rsyncd --exclude="*/"'
 alias reflect='sudo cachyos-rate-mirrors --sync-check --country "US"'
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
 #
-set NIX_FLAKE_OS_ROOT $HOME/.dotfiles/nix
+set NIX_FLAKE_OS_ROOT $HOME/.nix
 alias nixconf='$EDITOR $NIX_FLAKE_OS_ROOT'
 #
 set _host (hostname)
@@ -245,9 +244,18 @@ alias nrbb='sudo nixos-rebuild boot --flake $NIX_FLAKE_OS_ROOT#$_host'
 alias nrrb='sudo nixos-rebuild switch --rollback'
 alias ncg='sudo nix-collect-garbage'
 #
+set _hmpath (realpath $NIX_FLAKE_OS_ROOT)
+set _hmsuf --flake $_hmpath#$_host
+alias _hmnix='nix run home-manager/master -- init'
+alias hmb='home-manager build --dry-run $_hmsuf'
+alias hms='home-manager switch $_hmsuf'
+alias hmls='home-manager generations'
+alias hmrm='home-manager remove-generations'
+#
 alias nix_hist='sudo nix profile history --profile /nix/var/nix/profiles/system'
 alias nix_rb='sudo nix profile rollback --profile /nix/var/nix/profile/system'
 alias nix_act='sudo /nix/var/nix/profile/system/bin/switch-to-configuration switch'
 alias nix_roots='nix-store --gc --print-roots'
 #
-alias nixopt='sudo nix-store --gc && sudo nix-store --optimize'
+alias nixosopt='sudo nix-store --gc && sudo nix-store --optimize'
+alias nixopt='nix-store --gc && nix-store --optimize'

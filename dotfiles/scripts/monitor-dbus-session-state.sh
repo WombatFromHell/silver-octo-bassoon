@@ -1,18 +1,8 @@
 #!/usr/bin/env bash
 
-DATE="$(check_dep date)"
-TEE="$(check_dep tee)"
-GAWK="$(check_dep awk)"
-DBUSMON="$(check_dep dbus-monitor)"
-DBUSSEND="$(check_dep dbus-send)"
-
-# Path to the script to run when the signal is received
-SCRIPT_PATH="$(which on-session.py)"
-LOG_FILE="/tmp/unlock_monitor.log"
-
 check_dep() {
 	local prog
-	prog="$(command -v "$1")"
+	prog="$(which "$1")"
 	if [ -n "$prog" ]; then
 		echo "$prog"
 	else
@@ -20,6 +10,16 @@ check_dep() {
 		exit 1
 	fi
 }
+
+DATE="$(check_dep date)"
+TEE="$(check_dep tee)"
+GAWK="$(check_dep awk)"
+DBUSMON="$(check_dep dbus-monitor)"
+DBUSSEND="$(check_dep dbus-send)"
+
+# Path to the script to run when the signal is received
+SCRIPT_PATH="$(check_dep on-session.py)"
+LOG_FILE="/tmp/unlock_monitor.log"
 
 log() {
 	echo "$("$DATE" '+%Y-%m-%d %H:%M:%S') - $1" | "$TEE" -a "$LOG_FILE"

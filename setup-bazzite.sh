@@ -24,12 +24,6 @@ setup_ssh_gpg() {
 	gpg --list-keys &&
 		gpg --import "$SUPPORT"/.ssh/gnupg-keys/public-key.asc &&
 		gpg --import "$SUPPORT"/.ssh/gnupg-keys/private-key.asc
-
-	# try to workaround gpg-agent pinentry issue
-	cp -f "$HOME"/.gnupg/gpg-agent.conf "$HOME"/.gnupg/gpg-agent.conf.bak
-	echo "pinentry-program $(which pinentry-qt)" >"$HOME"/.gnupg/gpg-agent.conf &&
-		gpgconf -K all &&
-		gpg-connect-agent reloadagent /bye
 }
 
 setup_external_mounts() {
@@ -145,7 +139,8 @@ setup_flatpak() {
 	flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
 	flatpak install --user --noninteractive \
-		com.github.zocker_160.SyncThingy
+		com.github.zocker_160.SyncThingy \
+		net.agalwood.Motrix
 
 	if confirm "Install Flatpak version of Brave browser?"; then
 		flatpak install --user --noninteractive com.brave.Browser

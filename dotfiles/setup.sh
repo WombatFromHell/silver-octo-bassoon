@@ -153,6 +153,9 @@ handle_scripts() {
 		chmod +x "./$1"/*.*
 		# just link, don't stow
 		ln -sf "$(pwd)/scripts" "$target"
+		echo "Linking 'fish.sh' in /usr/local/bin for compatibility ..."
+		remove_this /usr/local/bin/fish.sh
+		sudo ln -sf "$HOME"/.local/bin/scripts/fish.sh /usr/local/bin/fish.sh
 		return 2
 	else
 		return 1

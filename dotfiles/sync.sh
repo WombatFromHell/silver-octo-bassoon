@@ -8,11 +8,13 @@ EXCLUDES=(
 	--exclude='__pycache__/'
 	--exclude='pipewire/'
 	--exclude='monitor-session/'
-	--exclude='*.wants/'
-	--exclude='hrir.wav'
 	--exclude='nix/'
 	--exclude='logs/'
+	--exclude='*.wants/'
 	--exclude='tmux/plugins/*'
+	--exclude='hrir.wav'
+	--exclude='tray.target'
+	--exclude='gpg-agent*'
 )
 
 script_dir="$(dirname "$(readlink -f "$0")")"
