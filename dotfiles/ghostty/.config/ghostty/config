@@ -1,6 +1,7 @@
 gtk-tabs-location = hidden
-font-family = "JetBrainsMono Nerd Font"
-font-size = 11
+# font-family = "JetBrainsMono Nerd Font"
+font-family = "IosevkaTerm Nerd Font"
+font-size = 13
 theme = dark:catppuccin-mocha,light:catppuccin-latte
 # window-decoration = false
 # shell-integration = fish
