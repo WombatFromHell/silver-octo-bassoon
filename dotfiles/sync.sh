@@ -5,7 +5,6 @@ REMOTE="$HOME/Backups/linux-config/backups/dotfiles/"
 _CMD=(rsync -avL --checksum --update)
 EXCLUDES=(
 	--exclude='__pycache__/'
-	--exclude='pipewire/'
 	--exclude='monitor-session/'
 	--exclude='nix/'
 	--exclude='logs/'
@@ -14,6 +13,7 @@ EXCLUDES=(
 	--exclude='hrir.wav'
 	--exclude='tray.target'
 	--exclude='gpg-agent*'
+	--exclude='sink-virtual-surround-7.1-hesuvi.conf'
 )
 
 script_dir="$(dirname "$(readlink -f "$0")")"
@@ -82,6 +82,7 @@ do_sync() {
 	"${UP_CMD[@]}" "--dry-run" "$@" | eval "$pipe_cmd"
 	if echo && confirm "Confirm syncing: $1 => $2"; then
 		"${UP_CMD[@]}" "$@" | eval "$pipe_cmd"
+		echo
 	fi
 }
 

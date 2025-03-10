@@ -6,3 +6,4 @@ dotfiles/Configs/tmux/.config/tmux/plugins/**
 fish_variables
 .smb-credentials
 .smb-secrets
+sink-virtual-surround-7.1-hesuvi.conf

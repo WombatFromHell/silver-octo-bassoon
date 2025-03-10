@@ -189,10 +189,18 @@ handle_pipewire() {
 
 	if [[ "$os" == "Linux" ]] && confirm "Are you sure you want to stow $dir?"; then
 		local tgt=".config/pipewire"
-		local hesuvi_tgt="$HOME/$tgt/hrir.wav"
+		local hesuvi_tgt
+		hesuvi_tgt="$HOME/$tgt/hrir.wav"
+
+		mkdir -p "$ROOT/$dir/$tgt/filter-chain.conf.d/"
+		cp -f \
+			"$ROOT/$dir/$tgt/virtual-surround-template.conf" \
+			"$ROOT/$dir/$tgt/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
+		# tranpose our real HRIR filter path in place of "%PATH%"
 		sed -i \
 			"s|%PATH%|$hesuvi_tgt|g" \
 			"$ROOT/$dir/$tgt/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
+
 		if stow_this "$dir"; then
 			return 2
 		else
