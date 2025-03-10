@@ -188,18 +188,18 @@ handle_pipewire() {
 	local os=$3
 
 	if [[ "$os" == "Linux" ]] && confirm "Are you sure you want to stow $dir?"; then
-		local tgt=".config/pipewire"
-		local hesuvi_tgt
-		hesuvi_tgt="$HOME/$tgt/hrir.wav"
+		local conf_root=".config/pipewire"
+		local conf_path="$conf_root/pipewire.conf.d/virtual-spatializer-7.1.conf"
+		local local_root="$ROOT/$dir"
+		local sofa_path
+		sofa_path="$(realpath "$local_root")/$conf_root/kemar.sofa"
 
-		mkdir -p "$ROOT/$dir/$tgt/filter-chain.conf.d/"
+		mkdir -p "$(dirname "$ROOT/$dir/$conf_path")"
 		cp -f \
-			"$ROOT/$dir/$tgt/virtual-surround-template.conf" \
-			"$ROOT/$dir/$tgt/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
-		# tranpose our real HRIR filter path in place of "%PATH%"
-		sed -i \
-			"s|%PATH%|$hesuvi_tgt|g" \
-			"$ROOT/$dir/$tgt/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
+			"$local_root/$conf_root/spatializer-template.conf" \
+			"$local_root/$conf_path"
+		# tranpose our real SOFA filter path in place of "%PATH%"
+		sed -i "s|%PATH%|$sofa_path|g" "$local_root/$conf_path"
 
 		if stow_this "$dir"; then
 			return 2

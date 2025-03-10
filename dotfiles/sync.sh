@@ -8,12 +8,12 @@ EXCLUDES=(
 	--exclude='monitor-session/'
 	--exclude='nix/'
 	--exclude='logs/'
+	--exclude='pipewire.conf.d/'
 	--exclude='*.wants/'
 	--exclude='tmux/plugins/*'
 	--exclude='hrir.wav'
 	--exclude='tray.target'
 	--exclude='gpg-agent*'
-	--exclude='sink-virtual-surround-7.1-hesuvi.conf'
 )
 
 script_dir="$(dirname "$(readlink -f "$0")")"

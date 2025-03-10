@@ -2,8 +2,8 @@ support
 monitor-session
 dotfiles/Configs/systemd/**/user/*.wants/**
 dotfiles/Configs/tmux/.config/tmux/plugins/**
+pipewire.conf.d
 
 fish_variables
 .smb-credentials
 .smb-secrets
-sink-virtual-surround-7.1-hesuvi.conf
