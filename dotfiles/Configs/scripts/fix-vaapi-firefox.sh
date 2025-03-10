@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+DRI_PATH=${HOME}/.var/app/org.mozilla.firefox/dri
 
 echo "Clearing firefox flatpak overrides"
 flatpak override --user --reset org.mozilla.firefox
@@ -12,14 +13,14 @@ mkdir -p "$outdir" && rm -rf "$outdir"/*.* || exit 1
 cp -f /usr/lib64/dri/nvidia_drv_video.so "$outdir"
 
 flatpak --system --noninteractive install \
-	runtime/org.freedesktop.Platform.ffmpeg-full//23.08
+    runtime/org.freedesktop.Platform.ffmpeg-full//23.08
 
 flatpak override --user \
-	--env=MOZ_DISABLE_RDD_SANDBOX=1 \
-	--env=LIBVA_DRIVERS_PATH="$outdir" \
-	--env=LIBVA_DRIVER_NAME=nvidia \
-	--env=NVD_BACKEND=direct \
-	org.mozilla.firefox
+    --env=MOZ_DISABLE_RDD_SANDBOX=1 \
+    --env=LIBVA_DRIVERS_PATH="$outdir" \
+    --env=LIBVA_DRIVER_NAME=nvidia \
+    --env=NVD_BACKEND=direct \
+    org.mozilla.firefox
 
 cat <<"EOF"
 

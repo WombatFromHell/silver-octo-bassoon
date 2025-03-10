@@ -1,7 +1,7 @@
 support
 monitor-session
-dotfiles/systemd/**/user/*.wants/**
-dotfiles/tmux/.config/tmux/plugins/**
+dotfiles/Configs/systemd/**/user/*.wants/**
+dotfiles/Configs/tmux/.config/tmux/plugins/**
 
 fish_variables
 .smb-credentials

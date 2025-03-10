@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 LOCAL="."
 REMOTE="$HOME/Backups/linux-config/backups/dotfiles/"
 
@@ -19,7 +18,7 @@ EXCLUDES=(
 
 script_dir="$(dirname "$(readlink -f "$0")")"
 if [[ "$(pwd -P)" != "$script_dir" ]]; then
-	echo "Error: script must be run from the same directory as the dotfiles!"
+	echo "Error: script must be run from the dotfile root directory!"
 	exit 1
 fi
 
@@ -75,6 +74,7 @@ do_sync() {
 	if [ "$FORCE" -eq 1 ]; then
 		echo "==== PERFORMING A HARD DRY RUN ===="
 		UP_CMD=("${UP_CMD[@]}" "-WI")
+		echo "DEBUG: ${UP_CMD[*]}"
 	else
 		echo "==== PERFORMING A DRY RUN ===="
 	fi
