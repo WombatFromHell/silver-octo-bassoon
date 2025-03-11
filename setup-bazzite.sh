@@ -77,6 +77,10 @@ setup_user_customizations() {
 
 	$CP ./etc-sudoers.d/tuned /etc/sudoers.d/tuned
 
+	$CP ./etc-default/grub /etc/default/grub &&
+		sudo touch /boot/grub2/.grub2-blscfg-supported &&
+		ujust regenerate-grub
+
 	# setup a Trash dir in /var for yazi (just in case)
 	var_trash_path="/var/.Trash-$(id -u)"
 	sudo mkdir -p "$var_trash_path" &&
