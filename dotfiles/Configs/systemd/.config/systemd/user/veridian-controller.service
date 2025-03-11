@@ -4,8 +4,6 @@ Description=Veridian Controller Fan Monitoring Service
 [Service]
 Type=simple
 ExecStart=%h/.local/bin/veridian-controller
-Restart=on-failure
-RestartSec=5
 TimeoutStopSec=10
 
 [Install]

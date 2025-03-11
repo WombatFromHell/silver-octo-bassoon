@@ -56,8 +56,14 @@ setup_external_mounts() {
 setup_user_customizations() {
 	$CP -r "$SUPPORT"/bin/ "$HOME"/.local/bin/
 
-	sudo cp -f /etc/environment /etc/environment.bak
-	sudo cp -f ./etc/environment /etc/environment
+	env_path="/etc/environment"
+	sudo cp -f "${env_path}" "${env_path}".bak
+	sudo cp -f ."${env_path}" "${env_path}"
+
+	jswake="/etc/xdg/autostart/joystickwake.desktop"
+	if [ -f "$jswake" ]; then
+		rm -f "$jswake" # remove bazzite's joystickwake autostart
+	fi
 
 	mkdir -p /usr/local/bin &&
 		$CP ./usr-local-bin/* /usr/local/bin/ &&
@@ -77,6 +83,7 @@ setup_user_customizations() {
 
 	$CP ./etc-sudoers.d/tuned /etc/sudoers.d/tuned
 
+	# fix duplicate ostree entries in grub
 	$CP ./etc-default/grub /etc/default/grub &&
 		sudo touch /boot/grub2/.grub2-blscfg-supported &&
 		ujust regenerate-grub

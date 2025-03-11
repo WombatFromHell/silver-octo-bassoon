@@ -1,0 +1,9 @@
+[Unit]
+Description=JoystickWake Service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/scripts/bazzite-joystickwake.sh
+
+[Install]
+WantedBy=graphical-session.target
