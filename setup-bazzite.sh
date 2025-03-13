@@ -84,7 +84,7 @@ setup_user_customizations() {
 	$CP ./etc-sudoers.d/tuned /etc/sudoers.d/tuned
 
 	# enable it87 support for Gigabyte motherboards
-	$CP ./etc-modprobe.d/it87.conf /etc/modprobe.d/
+	# $CP ./etc-modprobe.d/it87.conf /etc/modprobe.d/
 
 	# fix duplicate ostree entries in grub
 	$CP ./etc-default/grub /etc/default/grub &&
