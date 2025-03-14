@@ -2,11 +2,17 @@
 #     fenv "source $HOME/.profile"
 # end
 
-if status is-interactive && ! functions -q fisher
+function update_fisher
     curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher update
 end
 
+if status is-interactive && ! functions -q fisher
+    update_fisher
+end
+
 if status is-interactive
+    set -Ux fish_greeting # disable initial fish greeting
+
     # Commands to run in interactive sessions can go here
     function fish_title
         # Get the current working directory
@@ -259,3 +265,8 @@ alias nix_roots='nix-store --gc --print-roots'
 #
 alias nixosopt='sudo nix-store --gc && sudo nix-store --optimize'
 alias nixopt='nix-store --gc && nix-store --optimize'
+
+# keep this at the bottom
+if command -q starship
+    starship init fish | source
+end
