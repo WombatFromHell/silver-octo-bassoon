@@ -90,7 +90,7 @@ remove_this() {
 
 stow_this() {
 	tuckr rm "$1"
-	if tuckr add "$1"; then
+	if tuckr add -f -y "$1"; then
 		echo "Successfully stowed '$1'!"
 		return 0
 	else
@@ -121,16 +121,14 @@ handle_home() {
 
 	# Confirm with the user
 	if confirm "Are you sure you want to stow '$HOME'?"; then
-		for item in "$src_dir"/*; do
-			if [ -f "$item" ]; then
-				local src
-				src="$(realpath "$item")"
-				local dst
-				dst="$(realpath "$HOME")"
-				# Backup root dotfiles before linking anything
-				cp -f "$dst/$item" "$dst/${item}.stowed"
-				remove_this "$HOME/$item"
-				ln -sf "$src" "$dst/$item"
+		for item in "$src_dir"/* "$src_dir"/.*; do
+			local filename
+			filename="$(basename "$item")"
+			local tgt="$HOME/$filename"
+			if [ -f "$item" ] && [ -e "$tgt" ]; then
+				# Backup existing/conflicting dotfiles before stowing anything
+				cp -f "$tgt" "${tgt}.stowed"
+				remove_this "$tgt"
 			fi
 		done
 		stow_this "home"
@@ -257,14 +255,17 @@ handle_tmux() {
 		remove_this "$HOME/.config/$dir"
 		cp -f "$HOME/.tmux.conf" "$HOME/.tmux.conf.stowed"
 		remove_this "$HOME/.tmux.conf"
+		ln -sf "$(realpath $ROOT)/tmux/.config/tmux/tmux.conf" "$HOME"/.tmux.conf
+		echo "Linked 'tmux.conf' to '$HOME/.tmux.conf'..."
 		if [ ! -d "$ROOT/$dir/$tpm_root/tpm" ]; then
 			echo "Fetching 'tpm'..."
 			git clone https://github.com/tmux-plugins/tpm "$ROOT/$dir/$tpm_root/tpm"
 		fi
 		stow_this "$dir"
 		return 2
+	else
+		return 1
 	fi
-	return 1
 }
 
 do_pre_stow() {
@@ -329,13 +330,12 @@ do_post_stow() {
 		ln -sf "$(realpath "$SCRIPTS_DIR")/openrgb-load.sh" "$MONITOR_SCRIPTS"/openrgb-load.sh
 		echo "Linked monitor-session scripts to '$MONITOR_SCRIPTS'..."
 		;;
-	fish) fish -c "fisher update" ;;
-	bat) bat cache --build ;;
-	tmux)
-		remove_this "$HOME/.tmux.conf"
-		ln -sf "$HOME"/.dotfiles/tmux/.config/tmux/tmux.conf "$HOME"/.tmux.conf
-		echo "Linked tmux config to '$HOME/.tmux.conf'..."
+	fish)
+		if [[ "$SHELL" == *fish* ]]; then
+			fish -c "source $HOME/.config/fish/config.fish && update_fisher"
+		fi
 		;;
+	bat) bat cache --build ;;
 	esac
 }
 
@@ -357,22 +357,20 @@ do_stow() {
 handle_stow() {
 	local dir=$1
 	local target="$HOME/.config/$dir"
-	local skip=0
+	local result=0
 	local os
 	os=$(check_for_os)
 
 	if ! do_pre_stow "$dir" "$target" "$os"; then
-		return 1
-	elif [ $? -eq 2 ]; then
-		skip=1
-	fi
-	if [ "$skip" -eq 0 ] && ! do_stow "$dir" "$target" "$os"; then
+		result="$?"
 		return 1
 	fi
-	if [ "$skip" -eq 0 ] && ! do_post_stow "$dir" "$target" "$os"; then
+	if [ "$result" -eq 0 ] && ! do_stow "$dir" "$target" "$os"; then
+		result="$?"
 		return 1
-	else
-		return 0
+	fi
+	if [ "$result" -eq 0 ] && ! do_post_stow "$dir" "$target" "$os"; then
+		return 1
 	fi
 }
 
