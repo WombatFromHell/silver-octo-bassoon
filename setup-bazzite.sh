@@ -164,14 +164,20 @@ setup_flatpak() {
 		net.agalwood.Motrix \
 		io.github.peazip.PeaZip
 
-	# pin PeaZip to v10.0.0 for compatibility reasons
-	flatpak --user upgrade --noninteractive \
-		io.github.peazip.PeaZip --commit=04aea5bd3a84ddd5ddb032ef08c2e5214e3cc2448bdce155d446d30a84185278 &&
-		flatpak --user mask --noninteractive io.github.peazip.PeaZip
+	if confirm "Install Flatpak version of PeaZip with Dolphin integration?"; then
+		flatpak --user install --noninteractive \
+			io.github.peazip.PeaZip
+		# pin PeaZip to v10.0.0 for compatibility reasons
+		flatpak --user upgrade --noninteractive \
+			io.github.peazip.PeaZip --commit=04aea5bd3a84ddd5ddb032ef08c2e5214e3cc2448bdce155d446d30a84185278 &&
+			flatpak --user mask --noninteractive io.github.peazip.PeaZip
+		chmod 0755 "$SUPPORT"/fix-peazip-dolphin-integration.sh
+		"$SUPPORT"/fix-peazip-dolphin-integration.sh
+	fi
 
 	if confirm "Install Flatpak version of Brave browser?"; then
 		flatpak install --user --noninteractive com.brave.Browser
-		chmod 0755 ./support/brave-flatpak-fix.sh
+		chmod 0755 "$SUPPORT"/brave-flatpak-fix.sh
 		"$SUPPORT"/brave-flatpak-fix.sh
 	fi
 
