@@ -161,48 +161,49 @@ setup_flatpak() {
 
 	flatpak install --user --noninteractive \
 		com.github.zocker_160.SyncThingy \
-		net.agalwood.Motrix \
-		io.github.peazip.PeaZip
+		net.agalwood.Motrix
 
 	if confirm "Install Flatpak version of PeaZip with Dolphin integration?"; then
+		local peazip_app="io.github.peazip.PeaZip"
 		flatpak --user install --noninteractive \
-			io.github.peazip.PeaZip
+			"$peazip_app"
+
 		# pin PeaZip to v10.0.0 for compatibility reasons
 		flatpak --user upgrade --noninteractive \
-			io.github.peazip.PeaZip --commit=04aea5bd3a84ddd5ddb032ef08c2e5214e3cc2448bdce155d446d30a84185278 &&
-			flatpak --user mask --noninteractive io.github.peazip.PeaZip
-		chmod 0755 "$SUPPORT"/fix-peazip-dolphin-integration.sh
-		"$SUPPORT"/fix-peazip-dolphin-integration.sh
+			"$peazip_app" --commit=04aea5bd3a84ddd5ddb032ef08c2e5214e3cc2448bdce155d446d30a84185278 &&
+			flatpak --user mask --noninteractive "$peazip_app"
+
+		local peazip_fix="./dotfiles/Configs/scripts/fix-peazip-dolphin-integration.sh"
+		if [ -r "$peazip_fix" ]; then
+			chmod 0755 "$peazip_fix"
+			"$peazip_fix"
+		fi
 	fi
 
 	if confirm "Install Flatpak version of Brave browser?"; then
-		flatpak install --user --noninteractive com.brave.Browser
-		chmod 0755 "$SUPPORT"/brave-flatpak-fix.sh
-		"$SUPPORT"/brave-flatpak-fix.sh
+		local chromium_app="com.brave.Browser"
+		flatpak install --user --noninteractive "$chromium_app"
+
+		local chromium_fix="./dotfiles/Configs/scripts/fix-vaapi-chromium-flatpak.sh"
+		if [ -r "$chromium_fix" ]; then
+			chmod 0755 "$chromium_fix"
+			"$chromium_fix" --user --app "$chromium_app"
+		else
+			echo "Error: unable to find '$chromium_fix', aborting!"
+			return
+		fi
 	fi
 
-	run_if_confirmed "Fix Firefox Flatpak overrides (for misc support)?" fix_firefox_overrides
-}
-
-fix_firefox_overrides() {
-	flatpak override --user --reset org.mozilla.firefox
-	flatpak override --user --socket=session-bus --env=NOTIFY_IGNORE_PORTAL=1 --talk-name=org.freedesktop.Notifications org.mozilla.firefox
-
-	outdir="$HOME/.var/app/org.mozilla.firefox/dri"
-	mkdir -p "$outdir" && rm -rf "$outdir"/*.* || exit 1
-	$CP /usr/lib64/dri/nvidia_drv_video.so "$outdir"
-
-	flatpak --system --noninteractive install \
-		runtime/org.freedesktop.Platform.ffmpeg-full//23.08
-
-	flatpak override --user \
-		--env=MOZ_DISABLE_RDD_SANDBOX=1 \
-		--env=LIBVA_DRIVERS_PATH="$outdir" \
-		--env=LIBVA_DRIVER_NAME=nvidia \
-		--env=NVD_BACKEND=direct \
-		org.mozilla.firefox
-
-	flatpak override --user --filesystem=xdg-run/app/org.keepassxc.KeePassXC org.mozilla.firefox
+	if confirm "Fix Firefox Flatpak overrides (for nvidia-vaapi and KeepassXC support)?"; then
+		local firefox_fix="./dotfiles/Configs/scripts/fix-vaapi-firefox.sh"
+		if [ -r "$firefox_fix" ]; then
+			chmod 0755 "$firefox_fix"
+			"$firefox_fix"
+		else
+			echo "Error: unable to find '$firefox_fix', aborting!"
+			return
+		fi
+	fi
 }
 
 main() {

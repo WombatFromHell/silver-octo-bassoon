@@ -1,26 +1,36 @@
 #!/usr/bin/env bash
-DRI_PATH=${HOME}/.var/app/org.mozilla.firefox/dri
+
+FIREFOX_APP="org.mozilla.firefox"
 
 echo "Clearing firefox flatpak overrides"
-flatpak override --user --reset org.mozilla.firefox
+flatpak override --user --reset "$FIREFOX_APP"
 
 echo "Adding firefox flatpak overrides"
-flatpak override --user --socket=session-bus --env=NOTIFY_IGNORE_PORTAL=1 --talk-name=org.freedesktop.Notifications org.mozilla.firefox
-flatpak override --user --filesystem=xdg-run/app/org.keepassxc.KeePassXC org.mozilla.firefox
+flatpak override --user --socket=session-bus --env=NOTIFY_IGNORE_PORTAL=1 --talk-name=org.freedesktop.Notifications "$FIREFOX_APP"
+flatpak override --user --filesystem=xdg-run/app/org.keepassxc.KeePassXC "$FIREFOX_APP"
 
-outdir="$HOME/.var/app/org.mozilla.firefox/dri"
+outdir="$HOME/.var/app/$FIREFOX_APP/dri"
+dri_lib="/usr/lib64/dri/nvidia_drv_video.so"
+if ! [ -r "$dri_lib" ]; then
+	echo "Error: unable to access '$dri_lib'!"
+	exit 1
+fi
+
 mkdir -p "$outdir" && rm -rf "$outdir"/*.* || exit 1
-cp -f /usr/lib64/dri/nvidia_drv_video.so "$outdir"
+if ! cp -f "$dri_lib" "$outdir"; then
+	echo "Error: unable to copy '$dri_lib' to '$outdir'!"
+	exit 1
+fi
 
 flatpak --system --noninteractive install \
-    runtime/org.freedesktop.Platform.ffmpeg-full//23.08
+	runtime/org.freedesktop.Platform.ffmpeg-full//23.08
 
 flatpak override --user \
-    --env=MOZ_DISABLE_RDD_SANDBOX=1 \
-    --env=LIBVA_DRIVERS_PATH="$outdir" \
-    --env=LIBVA_DRIVER_NAME=nvidia \
-    --env=NVD_BACKEND=direct \
-    org.mozilla.firefox
+	--env=MOZ_DISABLE_RDD_SANDBOX=1 \
+	--env=LIBVA_DRIVERS_PATH="$outdir" \
+	--env=LIBVA_DRIVER_NAME=nvidia \
+	--env=NVD_BACKEND=direct \
+	"$FIREFOX_APP"
 
 cat <<"EOF"
 
