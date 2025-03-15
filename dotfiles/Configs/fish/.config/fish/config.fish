@@ -35,6 +35,7 @@ if status is-interactive
 
     if command -q zoxide
         zoxide init fish | source
+        alias cd='z'
     end
     if command -q direnv
         set -x DIRENV_LOG_FORMAT ""
