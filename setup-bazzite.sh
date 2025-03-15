@@ -161,7 +161,13 @@ setup_flatpak() {
 
 	flatpak install --user --noninteractive \
 		com.github.zocker_160.SyncThingy \
-		net.agalwood.Motrix
+		net.agalwood.Motrix \
+		io.github.peazip.PeaZip
+
+	# pin PeaZip to v10.0.0 for compatibility reasons
+	flatpak --user upgrade --noninteractive \
+		io.github.peazip.PeaZip --commit=04aea5bd3a84ddd5ddb032ef08c2e5214e3cc2448bdce155d446d30a84185278 &&
+		flatpak --user mask --noninteractive io.github.peazip.PeaZip
 
 	if confirm "Install Flatpak version of Brave browser?"; then
 		flatpak install --user --noninteractive com.brave.Browser
