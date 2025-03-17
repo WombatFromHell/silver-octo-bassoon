@@ -3,64 +3,12 @@
 source ./common.sh
 cache_creds
 
-run_if_confirmed() {
-	local prompt="$1"
-	local func="$2"
-
-	if confirm "$prompt"; then
-		$func
-	fi
-}
-
-setup_kernel_args() {
-	rpm-ostree kargs --append=amd_pstate=active --append=acpi_enforce_resources=lax
-}
-
-setup_ssh_gpg() {
-	$CP "$SUPPORT"/.ssh/{id_rsa,id_rsa.pub,config} "$HOME"/.ssh/ &&
-		sudo chown -R "$USER:$USER" "$HOME"/.ssh
-	chmod 0400 "$HOME"/.ssh/{id_rsa,id_rsa.pub}
-
-	gpg --list-keys &&
-		gpg --import "$SUPPORT"/.ssh/gnupg-keys/public-key.asc &&
-		gpg --import "$SUPPORT"/.ssh/gnupg-keys/private-key.asc
-}
-
-setup_external_mounts() {
-	local mount_dirs=("Downloads" "FTPRoot" "home" "linuxgames" "linuxdata")
-	local mount_types=("automount" "mount")
-
-	for mount_type in "${mount_types[@]}"; do
-		for dir in "${mount_dirs[@]}"; do
-			sed 's/mnt\//var\/mnt\//g' "./systemd-automount/mnt-$dir.$mount_type" >"./systemd-automount/var-mnt-$dir.$mount_type"
-			$CP "./systemd-automount/var-mnt-$dir.$mount_type" /etc/systemd/system/ &&
-				sudo mkdir -p "/var/mnt/$dir"
-		done
-	done
-
-	rm ./systemd-automount/var-mnt*.*mount
-	sed 's/mnt\//var\/mnt\//g' ./systemd-automount/mnt-linuxgames-Games-swapfile.swap \
-		>./systemd-automount/var-mnt-linuxgames-Games-swapfile.swap
-	$CP ./systemd-automount/var-mnt-linuxgames-Games-swapfile.swap /etc/systemd/system/ &&
-		sudo chown root:root /etc/systemd/system/*.swap &&
-		rm ./systemd-automount/var-mnt-linuxgames-Games-swapfile.swap
-
-	$CP "$SUPPORT"/.smb-credentials /etc/ &&
-		sudo chown root:root /etc/.smb-credentials &&
-		sudo chmod 0400 /etc/.smb-credentials &&
-		sudo systemctl daemon-reload
-
-	sudo systemctl enable --now var-mnt-linuxgames-Games-swapfile.swap
-}
-
 setup_user_customizations() {
-	$CP -r "$SUPPORT"/bin/ "$HOME"/.local/bin/
-
-	env_path="/etc/environment"
+	local env_path="/etc/environment"
 	sudo cp -f "${env_path}" "${env_path}".bak
 	sudo cp -f ."${env_path}" "${env_path}"
 
-	jswake="/etc/xdg/autostart/joystickwake.desktop"
+	local jswake="/etc/xdg/autostart/joystickwake.desktop"
 	if [ -f "$jswake" ]; then
 		rm -f "$jswake" # remove bazzite's joystickwake autostart
 	fi
@@ -83,15 +31,13 @@ setup_user_customizations() {
 
 	$CP ./etc-sudoers.d/tuned /etc/sudoers.d/tuned
 
-	# enable it87 support for Gigabyte motherboards
-	# $CP ./etc-modprobe.d/it87.conf /etc/modprobe.d/
-
 	# fix duplicate ostree entries in grub
 	$CP ./etc-default/grub /etc/default/grub &&
 		sudo touch /boot/grub2/.grub2-blscfg-supported &&
 		ujust regenerate-grub
 
 	# setup a Trash dir in /var for yazi (just in case)
+	local var_trash_path
 	var_trash_path="/var/.Trash-$(id -u)"
 	sudo mkdir -p "$var_trash_path" &&
 		sudo chown -R "$USER":"$USER" "$var_trash_path"
@@ -100,110 +46,6 @@ setup_user_customizations() {
 	setup_package_manager
 	run_if_confirmed "Install customized NeoVim config?" setup_neovim
 	run_if_confirmed "Install AppImages?" install_appimages
-}
-
-install_appimages() {
-	appimages_path="$HOME/AppImages"
-	mkdir -p "$appimages_path" &&
-		$CP "$SUPPORT"/appimages/*.AppImage "$appimages_path/" &&
-		chmod 0755 "$appimages_path"/*.AppImage
-}
-
-install_fonts() {
-	mkdir -p ~/.fonts &&
-		tar xzf "$SUPPORT"/fonts.tar.gz -C ~/.fonts/ &&
-		fc-cache -f
-}
-
-setup_package_manager() {
-	local brew
-	brew="$(which brew)"
-
-	if [ -n "$brew" ] && confirm "Install Brew and some common utils?"; then
-		"$brew" install eza fd rdfind ripgrep fzf bat lazygit fish stow zoxide
-	elif confirm "Install Nix as an alternative to Brew?"; then
-		curl --proto '=https' --tlsv1.2 -sSf -L https://install.lix.systems/lix | sh -s -- install ostree
-	fi
-}
-
-setup_neovim() {
-	local url="https://github.com/MordechaiHadad/bob/releases/download/v4.0.3/bob-linux-x86_64.zip"
-	local outdir="/tmp"
-	local outpath="$outdir/bob-linux-x86_64"
-	local basedir="$HOME/.local"
-	local target="$basedir/bin"
-	local global_target="/usr/local/bin"
-
-	curl -sfSLO --output-dir "$outdir" "$url"
-	unzip "${outpath}.zip" -d "$outdir"
-	$CP "${outpath}/bob" "$target"
-	chmod 0755 "$target"/bob
-	"$target"/bob use nightly
-
-	rm -rf "$outpath" &&
-		sudo rm -f "$global_target"/nvim &&
-		sudo ln -sf "$basedir"/share/bob/nvim-bin/nvim "$global_target"/nvim
-
-	if confirm "Wipe any existing neovim config and download our distribution?"; then
-		rm -rf "$HOME"/.config/nvim "$basedir"/share/nvim "$basedir"/cache/nvim "$basedir"/state/nvim
-		git clone git@github.com:WombatFromHell/lazyvim.git "$HOME"/.config/nvim
-	fi
-}
-
-setup_distrobox() {
-	chmod +x ./distrobox/*.sh
-	distrobox assemble create --file ./distrobox/distrobox-assemble-devbox.ini
-	# ./distrobox/brave-export-fix.sh
-}
-
-setup_flatpak() {
-	flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-
-	flatpak install --user --noninteractive \
-		com.github.zocker_160.SyncThingy \
-		net.agalwood.Motrix
-
-	if confirm "Install Flatpak version of PeaZip with Dolphin integration?"; then
-		local peazip_app="io.github.peazip.PeaZip"
-		flatpak --user install --noninteractive \
-			"$peazip_app"
-
-		# pin PeaZip to v10.0.0 for compatibility reasons
-		flatpak --user upgrade --noninteractive \
-			"$peazip_app" --commit=04aea5bd3a84ddd5ddb032ef08c2e5214e3cc2448bdce155d446d30a84185278 &&
-			flatpak --user mask --noninteractive "$peazip_app"
-
-		local peazip_fix="./dotfiles/Configs/scripts/fix-peazip-dolphin-integration.sh"
-		if [ -r "$peazip_fix" ]; then
-			chmod 0755 "$peazip_fix"
-			"$peazip_fix"
-		fi
-	fi
-
-	if confirm "Install Flatpak version of Brave browser?"; then
-		local chromium_app="com.brave.Browser"
-		flatpak install --user --noninteractive "$chromium_app"
-
-		local chromium_fix="./dotfiles/Configs/scripts/fix-vaapi-chromium-flatpak.sh"
-		if [ -r "$chromium_fix" ]; then
-			chmod 0755 "$chromium_fix"
-			"$chromium_fix" --user --app "$chromium_app"
-		else
-			echo "Error: unable to find '$chromium_fix', aborting!"
-			return
-		fi
-	fi
-
-	if confirm "Fix Firefox Flatpak overrides (for nvidia-vaapi and KeepassXC support)?"; then
-		local firefox_fix="./dotfiles/Configs/scripts/fix-vaapi-firefox.sh"
-		if [ -r "$firefox_fix" ]; then
-			chmod 0755 "$firefox_fix"
-			"$firefox_fix"
-		else
-			echo "Error: unable to find '$firefox_fix', aborting!"
-			return
-		fi
-	fi
 }
 
 main() {
