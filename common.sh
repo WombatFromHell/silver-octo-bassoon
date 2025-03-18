@@ -93,12 +93,11 @@ update_grub_cmdline() {
 
 bootstrap_arch() {
 	if [ "$OS" = "Arch" ]; then
-		sudo pacman -Sc &&
-			sudo pacman -Sy --noconfirm \
-				base-devel procps-ng curl \
-				file git unzip rsync unzip \
-				sudo which nano libssh2 curl \
-				libcurl-gnutls
+		sudo pacman -Sy --noconfirm \
+			base-devel procps-ng curl \
+			file git unzip rsync unzip \
+			sudo which nano libssh2 curl \
+			libcurl-gnutls
 	fi
 }
 
@@ -187,8 +186,8 @@ setup_chaotic_aur() {
 		sudo pacman-key --init &&
 			sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com &&
 			sudo pacman-key --lsign-key 3056513887B78AEB &&
-			sudo pacman -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' &&
-			sudo pacman -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' &&
+			sudo pacman --noconfirm -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' &&
+			sudo pacman --noconfirm -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' &&
 			sudo cp -f /etc/pacman.conf /etc/pacman.conf.pre-chaotic-aur.bak &&
 			if ! grep -q "\[chaotic-aur\]" /etc/pacman.conf; then
 				cat <<EOF | sudo tee -a "/etc/pacman.conf"
@@ -358,7 +357,7 @@ setup_system_shared() {
 					earlyoom mangohud lib32-mangohud lib32-pulseaudio \
 					fuse2 winetricks protontricks wl-clipboard
 			# enable earlyoom for safety when under memory stress
-			sudo pacman -Sy earlyoom &&
+			sudo pacman -Sy --noconfirm earlyoom &&
 				sudo systemctl disable --now systemd-oomd &&
 				sudo systemctl enable --now earlyoom
 
