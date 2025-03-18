@@ -153,16 +153,6 @@ setup_arch_btrfs() {
 	fi
 }
 
-setup_nvidia_tweaks() {
-	if [ "$OS" == "Arch" ] && confirm "Install Nvidia driver tweaks?"; then
-		sudo cp -f ./etc-X11/Xwrapper.config /etc/X11/
-		sudo cp -f ./etc-modprobe.d/nvidia.conf /etc/modprobe.d/nvidia.conf &&
-			sudo chown root:root /etc/modprobe.d/nvidia.conf
-	else
-		echo "Error: unsupported OS, skipping Nvidia tweaks!"
-	fi
-}
-
 setup_ssh_gpg() {
 	local src="$SUPPORT/.ssh"
 	local tgt="$HOME/.ssh"
@@ -206,12 +196,15 @@ install_neovim_config() {
 	local git
 	git="$(check_cmd git)"
 
-	if [ -n "$git" ] && confirm "Wipe any existing NeoVim config and download custom distribution?"; then
-		rm -rf "$HOME"/.config/nvim "$basedir"/share/nvim "$basedir"/cache/nvim "$basedir"/state/nvim
-		"$git" clone git@github.com:WombatFromHell/lazyvim.git "$HOME"/.config/nvim
-	elif [ -z "$git" ]; then
-		echo "Error: unable to find 'git', skipping NeoVim config installation!"
-	fi
+	confirm "Wipe any existing NeoVim config and download custom distribution?" &&
+		{
+			if [ -n "$git" ]; then
+				rm -rf "$HOME"/.config/nvim "$basedir"/share/nvim "$basedir"/cache/nvim "$basedir"/state/nvim
+				"$git" clone git@github.com:WombatFromHell/lazyvim.git "$HOME"/.config/nvim
+			elif [ -z "$git" ]; then
+				echo "Error: unable to find 'git', skipping NeoVim config installation!"
+			fi
+		}
 }
 setup_neovim() {
 	local url="https://github.com/MordechaiHadad/bob/releases/download/v4.0.3/bob-linux-x86_64.zip"
@@ -221,28 +214,30 @@ setup_neovim() {
 	local target="$basedir/bin"
 	local global_target="/usr/local/bin"
 
-	# install Mason Pre-reqs when in Archlinux
-	[ "$OS" == "Arch" ] && "${PACMAN[@]}" base-devel procps-ng curl file git unzip rsync
+	confirm "Install NeoVim nightly via BOB?" &&
+		{
+			# install Mason Pre-reqs when in Archlinux
+			[ "$OS" == "Arch" ] && "${PACMAN[@]}" base-devel procps-ng curl file git unzip rsync
 
-	if [ "$OS" == "Arch" ] || [ "$OS" == "Bazzite" ] &&
-		confirm "Install NeoVim nightly via BOB?"; then
-		curl -sfSLO --output-dir "$outdir" "$url"
-		unzip "${outpath}.zip" -d "$outdir"
-		$CP "${outpath}/bob" "$target"
-		chmod 0755 "$target"/bob
-		"$target"/bob use nightly
+			if [ "$OS" == "Arch" ] || [ "$OS" == "Bazzite" ]; then
+				curl -sfSLO --output-dir "$outdir" "$url"
+				unzip "${outpath}.zip" -d "$outdir"
+				$CP "${outpath}/bob" "$target"
+				chmod 0755 "$target"/bob
+				"$target"/bob use nightly
 
-		rm -rf "$outpath" &&
-			sudo rm -f "$global_target"/nvim &&
-			sudo ln -sf "$basedir"/share/bob/nvim-bin/nvim "$global_target"/nvim
+				rm -rf "$outpath" &&
+					sudo rm -f "$global_target"/nvim &&
+					sudo ln -sf "$basedir"/share/bob/nvim-bin/nvim "$global_target"/nvim
 
-		install_neovim_config
-	else
-		install_neovim_config
-	fi
+				install_neovim_config
+			else
+				install_neovim_config
+			fi
+		}
 }
 
-create_smb_creds() {
+install_smb_creds() {
 	local creds_file="/etc/.smb-credentials"
 
 	sudo rm -f "$creds_file"
@@ -256,42 +251,63 @@ create_smb_creds() {
 setup_external_mounts() {
 	local src="./systemd-automount"
 	local dst="/etc/systemd/system/"
-	if [ "$OS" = "Arch" ] || [ "$OS" = "Bazzite" ] &&
-		confirm "Setup external filesystem mounts?"; then
-		mkdir -p "$dst"
-		rm -f "$dst"/*.{mount,automount,swap}
 
-		unit_files=()
-		for file in "$src"/mnt-*.mount "$src"/mnt-*.automount "$src"/mnt-*.swap; do
-			[ ! -f "$file" ] && continue # skip to next if unreadable
+	confirm "Setup external filesystem mounts?" &&
+		{
+			if [ "$OS" = "Arch" ] || [ "$OS" = "Bazzite" ]; then
+				mkdir -p "$dst"
+				rm -f "$dst"/*.{mount,automount,swap}
 
-			basename=$(basename "$file")
+				unit_files=()
+				for file in "$src"/mnt-*.mount "$src"/mnt-*.automount "$src"/mnt-*.swap; do
+					[ ! -f "$file" ] && continue # skip to next if unreadable
+
+					basename=$(basename "$file")
+					if [ "$OS" = "Bazzite" ]; then
+						# create new filename with var-mnt prefix
+						new_basename="var-${basename/mnt-/}"
+						temp_file="$(mktemp)"
+						sed 's#/mnt/#/var/mnt/#g' "$file" >"$temp_file"
+						# copy modified file to destination
+						$CP "$temp_file" "$dst/$new_basename"
+						rm "$temp_file"
+						work_files+=("$new_basename")
+					elif [ "$OS" = "Arch" ]; then
+						$CP "$file" "$dst/$basename" # just copy
+						if [[ "$basename" == *.automount* ]] || [[ "$basename" == *.swap* ]]; then
+							unit_files+=("$basename") # only include automounts and swap
+						fi
+					else
+						echo "Error: unsupported OS, skipping systemd mounts!"
+						return 1
+					fi
+				done
+
+				if [ "${#unit_files[@]}" -gt 0 ]; then
+					install_smb_creds &&
+						sudo systemctl daemon-reload &&
+						sudo systemctl enable --now "${unit_files[@]}"
+				fi
+			fi
+		}
+}
+
+setup_grub_args() {
+	confirm "Modify kernel args for Gigabyte Mobo ARGB support?" &&
+		{
 			if [ "$OS" = "Bazzite" ]; then
-				# create new filename with var-mnt prefix
-				new_basename="var-${basename/mnt-/}"
-				temp_file="$(mktemp)"
-				sed 's#/mnt/#/var/mnt/#g' "$file" >"$temp_file"
-				# copy modified file to destination
-				$CP "$temp_file" "$dst/$new_basename"
-				rm "$temp_file"
-				work_files+=("$new_basename")
-			elif [ "$OS" = "Arch" ]; then
-				$CP "$file" "$dst/$basename" # just copy
-				if [[ "$basename" == *.automount* ]] || [[ "$basename" == *.swap* ]]; then
-					unit_files+=("$basename") # only include automounts and swap
+				rpm-ostree kargs --append=amd_pstate=active --append=acpi_enforce_resources=lax
+			elif [ "$OS" == "Arch" ]; then
+				# enable AMD Ryzen Pstate and enable OpenRGB for Gigabyte mobos (on patched kernels)
+				local rgb_grub_arg="amd_pstate=active acpi_enforce_resources=lax"
+				if update_grub_cmdline "$rgb_grub_arg" -eq 0; then
+					sudo grub-mkconfig -o /boot/grub/grub.cfg
 				fi
 			else
-				echo "Error: unsupported OS, skipping systemd mounts!"
-				return 1
+				echo "Error: unsupported OS, skipping grub args!"
+				return
 			fi
-		done
-
-		if [ "${#unit_files[@]}" -gt 0 ]; then
-			create_smb_creds &&
-				sudo systemctl daemon-reload &&
-				sudo systemctl enable --now "${unit_files[@]}"
-		fi
-	fi
+		}
 }
 
 install_appimages() {
@@ -302,17 +318,30 @@ install_appimages() {
 }
 install_fonts() {
 	local font_archive="$SUPPORT/fonts.tar.gz"
-
-	if [ -r "$font_archive" ] && confirm "Install common user fonts?"; then
-		mkdir -p ~/.fonts &&
-			tar xzf "$font_archive" -C ~/.fonts/ &&
-			fc-cache -f
+	confirm "Install common user fonts?" &&
+		{
+			if [ -r "$font_archive" ]; then
+				mkdir -p ~/.fonts &&
+					tar xzf "$font_archive" -C ~/.fonts/ &&
+					fc-cache -f
+			else
+				echo "Error: unable to find '$font_archive', skipping fonts!"
+				return
+			fi
+		}
+}
+install_nvidia_tweaks() {
+	if [ "$OS" == "Arch" ] && confirm "Install Nvidia driver tweaks?"; then
+		local dst="/etc/modprobe.d/nvidia.conf"
+		sudo rm -f "$dst"
+		sudo cp -f ./etc-modprobe.d/nvidia.conf "$dst"
 	else
-		echo "Error: unable to find '$font_archive', skipping fonts!"
-		return
+		echo "Error: unsupported OS, skipping Nvidia tweaks!"
 	fi
 }
 setup_system_shared() {
+	! confirm "Install some common packages and tweaks?" && return
+
 	# OS-specific tweaks
 	case "$OS" in
 	"Bazzite")
@@ -336,62 +365,29 @@ setup_system_shared() {
 		sudo mkdir -p "$var_trash_path" &&
 			sudo chown -R "$USER":"$USER" "$var_trash_path"
 
-		confirm "Modify kernel args for Gigabyte Mobo ARGB support?" &&
-			rpm-ostree kargs --append=amd_pstate=active --append=acpi_enforce_resources=lax
+		setup_grub_args
 		;;
 
 	"Arch")
-		! confirm "Install some common packages and tweaks?" && return
-
 		local zram_path="/etc/systemd/zram-generator.conf"
 		sudo cp -f "$zram_path" "${zram_path}".bak &&
 			sudo cp -f ./etc-systemd/zram-generator.conf "$zram_path"
 
 		sudo cp -f ./etc-udev-rules.d/*.rules /etc/udev/rules.d/
 
-		if check_cmd pacman; then
-			sudo pacman -R --noconfirm cachy-browser &&
-				"${PACMAN[@]}" \
-					fd zoxide ripgrep bat fzf fish zsh python-pip \
-					curl wget firefox steam openrgb rsync gnupg git \
-					earlyoom mangohud lib32-mangohud lib32-pulseaudio \
-					fuse2 winetricks protontricks wl-clipboard
-			# enable earlyoom for safety when under memory stress
-			"${PACMAN[@]}" earlyoom &&
-				sudo systemctl disable --now systemd-oomd &&
-				sudo systemctl enable --now earlyoom
+		sudo pacman -R --noconfirm cachy-browser
+		"${PACMAN[@]}" \
+			fd zoxide ripgrep bat fzf fish zsh python-pip \
+			curl wget firefox steam openrgb rsync gnupg git \
+			earlyoom mangohud lib32-mangohud lib32-pulseaudio \
+			fuse2 winetricks protontricks wl-clipboard
+		# enable earlyoom for safety when under memory stress
+		"${PACMAN[@]}" earlyoom &&
+			sudo systemctl disable --now systemd-oomd &&
+			sudo systemctl enable --now earlyoom
 
-			if [ -r "/proc/driver/nvidia" ] && [ "$OS" == "Arch" ]; then
-				sudo cp -f ./etc-X11/Xwrapper.config /etc/X11/
-				sudo cp -f ./etc-modprobe.d/nvidia.conf /etc/modprobe.d/nvidia.conf &&
-					sudo chown root:root /etc/modprobe.d/nvidia.conf
-			fi
-		elif check_cmd dnf; then
-			dnf copr enable -y kylegospo/bazzite-multilib
-			sudo dnf update -y &&
-				sudo dnf install -y \
-					at-spi2-core.i686 atk.i686 vulkan-loader.i686 \
-					alsa-lib.i686 fontconfig.i686 gtk2.i686 \
-					libICE.i686 libnsl.i686 libxcrypt-compat.i686 \
-					libpng12.i686 libXext.i686 libXinerama.i686 \
-					libXtst.i686 libXScrnSaver.i686 NetworkManager-libnm.i686 \
-					nss.i686 pulseaudio-libs.i686 libcurl.i686 \
-					systemd-libs.i686 libva.i686 libvdpau.i686 \
-					libdbusmenu-gtk3.i686 libatomic.i686 pipewire-alsa.i686 clinfo \
-					plasma-workspace-x11 git wget curl podman distrobox flatpak \
-					steam steam-devices mangohud.x86_64 mangohud.i686 lutris \
-					fluidsynth fluid-soundfont-gm qsynth wxGTK libFAudio \
-					wine-core.x86_64 wine-core.i686 wine-pulseaudio.x86_64 \
-					wine-pulseaudio.i686 winetricks protontricks
-		fi
-
-		if [ "$OS" == "Arch" ] && confirm "Modify kernel args for Gigabyte Mobo ARGB support?"; then
-			# enable AMD Ryzen Pstate and enable OpenRGB for Gigabyte mobos (on patched kernels)
-			local rgb_grub_arg="amd_pstate=active acpi_enforce_resources=lax"
-			if update_grub_cmdline "$rgb_grub_arg" -eq 0; then
-				sudo grub-mkconfig -o /boot/grub/grub.cfg
-			fi
-		fi
+		install_nvidia_tweaks
+		setup_grub_args
 		;;
 	esac
 
@@ -448,7 +444,7 @@ setup_package_manager() {
 	brew="$(check_cmd brew)"
 
 	case "$OS" in
-	"Bazzite" | "Darwin" | "Arch")
+	"Bazzite" | "Darwin")
 		if confirm "Install Brew and some common utils?"; then
 			[ -z "$brew" ] && brew="$(install_brew)"
 			[ -n "$brew" ] && "$brew" install eza fd rdfind ripgrep fzf bat lazygit fish zoxide
@@ -457,63 +453,68 @@ setup_package_manager() {
 		fi
 		;;
 
+	"Arch") confirm "Install Nix?" && install_nix ;;
+
 	*) echo "Error: incompatible OS, skipping package manager setup!" ;;
 	esac
 }
 
 install_peazip() {
-	if confirm "Install Flatpak version of PeaZip with Dolphin integration?"; then
-		local peazip_app="io.github.peazip.PeaZip"
+	confirm "Install Flatpak version of PeaZip with Dolphin integration?" &&
+		{
+			local peazip_app="io.github.peazip.PeaZip"
 
-		if flatpak --user install --noninteractive "$peazip_app" &&
-			[ "$OS" == "Bazzite" ]; then
-			# pin PeaZip to v10.0.0 for compatibility reasons
-			flatpak --user upgrade --noninteractive \
-				"$peazip_app" --commit=04aea5bd3a84ddd5ddb032ef08c2e5214e3cc2448bdce155d446d30a84185278 &&
-				flatpak --user mask --noninteractive "$peazip_app"
-		fi
+			if flatpak --user install --noninteractive "$peazip_app" &&
+				[ "$OS" == "Bazzite" ]; then
+				# pin PeaZip to v10.0.0 for compatibility reasons
+				flatpak --user upgrade --noninteractive \
+					"$peazip_app" --commit=04aea5bd3a84ddd5ddb032ef08c2e5214e3cc2448bdce155d446d30a84185278 &&
+					flatpak --user mask --noninteractive "$peazip_app"
+			fi
 
-		local peazip_fix="./dotfiles/Configs/scripts/fix-peazip-dolphin-integration.sh"
-		if [ -r "$peazip_fix" ]; then
-			chmod 0755 "$peazip_fix"
-			"$peazip_fix"
-		fi
-	fi
+			local peazip_fix="./dotfiles/Configs/scripts/fix-peazip-dolphin-integration.sh"
+			if [ -r "$peazip_fix" ]; then
+				chmod 0755 "$peazip_fix"
+				"$peazip_fix"
+			fi
+		}
 }
 install_brave() {
-	if confirm "Install Flatpak version of Brave browser?"; then
-		local chromium_app="com.brave.Browser"
-		flatpak install --user --noninteractive "$chromium_app"
+	confirm "Install Flatpak version of Brave browser?" &&
+		{
+			local chromium_app="com.brave.Browser"
+			flatpak install --user --noninteractive "$chromium_app"
 
-		if [ "$OS" == "Arch" ]; then
-			"${PACMAN[@]}" libva-nvidia-driver
-		fi
+			if [ "$OS" == "Arch" ]; then
+				"${PACMAN[@]}" libva-nvidia-driver
+			fi
 
-		local chromium_fix="./dotfiles/Configs/scripts/fix-vaapi-chromium-flatpak.sh"
-		if [ -r "$chromium_fix" ]; then
-			chmod 0755 "$chromium_fix"
-			"$chromium_fix" --user --app "$chromium_app"
-		else
-			echo "Error: unable to find '$chromium_fix', aborting!"
-			return 1
-		fi
-	fi
+			local chromium_fix="./dotfiles/Configs/scripts/fix-vaapi-chromium-flatpak.sh"
+			if [ -r "$chromium_fix" ]; then
+				chmod 0755 "$chromium_fix"
+				"$chromium_fix" --user --app "$chromium_app"
+			else
+				echo "Error: unable to find '$chromium_fix', aborting!"
+				return 1
+			fi
+		}
 }
 install_firefox_fix() {
-	if confirm "Fix Firefox Flatpak overrides (for nvidia-vaapi and KeepassXC support)?"; then
-		if [ "$OS" == "Arch" ]; then
-			"${PACMAN[@]}" libva-nvidia-driver
-		fi
+	confirm "Fix Firefox Flatpak overrides (for nvidia-vaapi and KeepassXC support)?" &&
+		{
+			if [ "$OS" == "Arch" ]; then
+				"${PACMAN[@]}" libva-nvidia-driver
+			fi
 
-		local firefox_fix="./dotfiles/Configs/scripts/fix-vaapi-firefox.sh"
-		if [ -r "$firefox_fix" ]; then
-			chmod 0755 "$firefox_fix"
-			"$firefox_fix"
-		else
-			echo "Error: unable to find '$firefox_fix', aborting!"
-			return 1
-		fi
-	fi
+			local firefox_fix="./dotfiles/Configs/scripts/fix-vaapi-firefox.sh"
+			if [ -r "$firefox_fix" ]; then
+				chmod 0755 "$firefox_fix"
+				"$firefox_fix"
+			else
+				echo "Error: unable to find '$firefox_fix', aborting!"
+				return 1
+			fi
+		}
 }
 setup_flatpak() {
 	# pre-install common Flatpaks
@@ -538,41 +539,47 @@ setup_distrobox() {
 	local distrobox
 	distrobox="$(check_cmd distrobox)"
 
-	if [ -n "$distrobox" ] && confirm "Perform assembly and customization of Distrobox containers?"; then
-		chmod +x ./distrobox/*.sh
-		# distrobox assemble create --file ./distrobox/distrobox-assemble-archcli.ini
-		distrobox assemble create --file ./distrobox/distrobox-assemble-devbox.ini
-		# ./distrobox/brave-export-fix.sh
-		#
-	# distrobox assemble create --file ./distrobox/distrobox-assemble-fedcli.ini &&
-	# distrobox enter fedcli -- bash -c ./distrobox/distrobox-setup-fedcli.sh
-	elif [ -z "$distrobox" ] && [ "$OS" == "Arch" ] && confirm "Attempt to install distrobox?"; then
-		"${PACMAN[@]}" distrobox &&
-			setup_distrobox
-	elif [ -z "$distrobox" ]; then
-		echo "Error: 'distrobox' not found, skipping distrobox setup!"
-	fi
+	confirm "Perform assembly and customization of Distrobox containers?" &&
+		{
+			if [ -n "$distrobox" ]; then
+				chmod +x ./distrobox/*.sh
+				# distrobox assemble create --file ./distrobox/distrobox-assemble-archcli.ini
+				distrobox assemble create --file ./distrobox/distrobox-assemble-devbox.ini
+				# ./distrobox/brave-export-fix.sh
+				#
+			# distrobox assemble create --file ./distrobox/distrobox-assemble-fedcli.ini &&
+			# distrobox enter fedcli -- bash -c ./distrobox/distrobox-setup-fedcli.sh
+			elif [ -z "$distrobox" ] && [ "$OS" == "Arch" ] && confirm "Attempt to install distrobox?"; then
+				"${PACMAN[@]}" distrobox &&
+					setup_distrobox
+			elif [ -z "$distrobox" ]; then
+				echo "Error: 'distrobox' not found, skipping distrobox setup!"
+			fi
+		}
 }
 
 setup_qemu() {
-	# provide a way to pre-install libvirt/qemu
-	if [ "$OS" == "Arch" ] && confirm "Setup libvirt/qemu with vfio passthrough support?"; then
-		"${PACMAN[@]}" libvirt qemu-desktop swtpm
+	confirm "Setup libvirt/qemu with vfio passthrough support?" &&
+		{
+			# provide a way to pre-install libvirt/qemu
+			if [ "$OS" == "Arch" ]; then
+				"${PACMAN[@]}" libvirt qemu-desktop swtpm
 
-		# add qemu specific kargs for passthrough if they don't already exist
-		vm_grub_arg="kvm.ignore_msrs=1 kvm.report_ignored_msrs=0 amd_iommu=on iommy=pt rd.driver.pre=vfio_pci vfio_pci.disable_vga=1"
-		if update_grub_cmdline "$vm_grub_arg" -eq 0; then
-			sudo grub-mkconfig -o /boot/grub/grub.cfg
-		fi
+				# add qemu specific kargs for passthrough if they don't already exist
+				vm_grub_arg="kvm.ignore_msrs=1 kvm.report_ignored_msrs=0 amd_iommu=on iommy=pt rd.driver.pre=vfio_pci vfio_pci.disable_vga=1"
+				if update_grub_cmdline "$vm_grub_arg" -eq 0; then
+					sudo grub-mkconfig -o /boot/grub/grub.cfg
+				fi
 
-		# install qemu hooks and reload libvirtd
-		sudo mkdir -p /etc/libvirt/hooks &&
-			sudo tar -xvzf "$SUPPORT"/vfio-hooks.tar.gz -C /etc/libvirt/hooks &&
-			sudo systemctl restart libvirtd
+				# install qemu hooks and reload libvirtd
+				sudo mkdir -p /etc/libvirt/hooks &&
+					sudo tar -xvzf "$SUPPORT"/vfio-hooks.tar.gz -C /etc/libvirt/hooks &&
+					sudo systemctl restart libvirtd
 
-		# add current user to libvirt group
-		sudo usermod -aG libvirt "$USER"
-	else
-		echo "Error: incompatible OS detected, skipping libvirt/qemu setup!"
-	fi
+				# add current user to libvirt group
+				sudo usermod -aG libvirt "$USER"
+			else
+				echo "Error: incompatible OS detected, skipping libvirt/qemu setup!"
+			fi
+		}
 }
