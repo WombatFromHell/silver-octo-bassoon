@@ -278,7 +278,7 @@ setup_external_mounts() {
 			elif [ "$OS" = "Arch" ]; then
 				$CP "$file" "$dst/$basename" # just copy
 				if [[ "$basename" == *.automount* ]] || [[ "$basename" == *.swap* ]]; then
-					unit_files+=("$basename")
+					unit_files+=("$basename") # only include automounts and swap
 				fi
 			else
 				echo "Error: unsupported OS, skipping systemd mounts!"

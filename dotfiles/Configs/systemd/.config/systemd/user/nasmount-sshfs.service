@@ -1,0 +1,17 @@
+[Unit]
+Description=Mount SSHFS for remote host
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=PATH=/bin:/sbin:/usr/bin:/usr/sbin
+ExecStart=sshfs -p 2222 -o reconnect,IdentityFile=~/.ssh/id_rsa,idmap=user nxxel@192.168.1.153:/share/homes/nxxel %h/.nas-home
+ExecStartPost=ln -sf %h/.nas-home/GDrive/Backups %h/Backups
+ExecStop=fusermount -u %h/.nas-home
+ExecStopPost=rm -f %h/Backups
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target
+

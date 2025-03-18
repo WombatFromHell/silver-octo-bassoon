@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 LOCAL="."
-REMOTE="$HOME/Backups/linux-config/backups/dotfiles/"
+REMOTE="$HOME/.nas-home/Projects/silver-octo-bassoon/dotfiles"
 
 _CMD=(rsync -avL --checksum --update)
 EXCLUDES=(
@@ -132,4 +132,8 @@ fi
 EQ_CMD=("${DOWN_CMD[@]}" "--stats" "--dry-run")
 SUFFIX=("grep -v '/$'" "grep -v '^sending incremental file list$'")
 
+if ! [ -w "$REMOTE" ]; then
+	echo "Error: $REMOTE does not exist or is not writable!"
+	exit 1
+fi
 sync "$LOCAL" "$REMOTE"
