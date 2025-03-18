@@ -256,24 +256,25 @@ setup_external_mounts() {
 		{
 			if [ "$OS" = "Arch" ] || [ "$OS" = "Bazzite" ]; then
 				mkdir -p "$dst"
-				rm -f "$dst"/*.{mount,automount,swap}
 
 				unit_files=()
 				for file in "$src"/mnt-*.mount "$src"/mnt-*.automount "$src"/mnt-*.swap; do
 					[ ! -f "$file" ] && continue # skip to next if unreadable
 
 					basename=$(basename "$file")
+					sudo rm -f "$dst/$basename"
 					if [ "$OS" = "Bazzite" ]; then
 						# create new filename with var-mnt prefix
-						new_basename="var-${basename/mnt-/}"
+						new_basename="var-${basename}"
 						temp_file="$(mktemp)"
 						sed 's#/mnt/#/var/mnt/#g' "$file" >"$temp_file"
 						# copy modified file to destination
-						$CP "$temp_file" "$dst/$new_basename"
+						sudo cp -f "$temp_file" "$dst/$new_basename" &&
+							sudo chmod 0644 "$dst/$new_basename"
 						rm "$temp_file"
 						work_files+=("$new_basename")
 					elif [ "$OS" = "Arch" ]; then
-						$CP "$file" "$dst/$basename" # just copy
+						sudo cp -f "$file" "$dst/$basename" # just copy
 						if [[ "$basename" == *.automount* ]] || [[ "$basename" == *.swap* ]]; then
 							unit_files+=("$basename") # only include automounts and swap
 						fi
@@ -349,7 +350,9 @@ setup_system_shared() {
 		local jswake="/etc/xdg/autostart/joystickwake.desktop"
 		[ -f "$jswake" ] && sudo rm -f "$jswake"
 
-		sudo cp -f ./etc-sudoers.d/tuned /etc/sudoers.d/tuned
+		local tuned_path="/etc/sudoers.d/tuned"
+		sudo rm -f "$tuned_path"
+		sudo cp -f ./etc-sudoers.d/tuned "$tuned_path"
 
 		# fix duplicate ostree entries in grub
 		local grub_path="/etc/default/grub"
@@ -402,9 +405,9 @@ setup_system_shared() {
 			sudo chown root:root /usr/local/bin/* &&
 			sudo chmod 0755 /usr/local/bin/*
 
-		rm -f /etc/sysctl.d/*.conf &&
-			$CP ./etc-sysctl.d/*.conf /etc/sysctl.d/ &&
-			sudo sysctl --system
+		sudo rm -f /etc/sysctl.d/*.conf &&
+			sudo cp -f ./etc-sysctl.d/*.conf /etc/sysctl.d/ &&
+			sudo sysctl --system &>/dev/null
 
 		sudo cp -f ./etc/nvidia-pm.conf ./etc/veridian-controller.toml /etc/ &&
 			sudo cp -f ./etc-systemd/system/* /etc/systemd/system/ &&
@@ -418,7 +421,6 @@ setup_system_shared() {
 		systemctl --user daemon-reload && chmod 0755 "$HOME"/.local/bin/*
 		systemctl --user enable --now {on-session-state,openrgb-lightsout}.service
 
-		setup_external_mounts
 		setup_ssh_gpg
 		setup_chaotic_aur
 		install_appimages
@@ -431,7 +433,7 @@ setup_system_shared() {
 
 install_brew() {
 	(
-		/bin/bash -ic "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" 2>&1 | tee /dev/tty
+		bash -ic "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" 2>&1 | tee /dev/tty
 	)
 }
 install_nix() {
