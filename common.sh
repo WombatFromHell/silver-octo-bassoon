@@ -91,6 +91,17 @@ update_grub_cmdline() {
 	sudo sed -i "s/^$variable_name=\"\(.*\)\"/$variable_name=\"\1 $text_to_add\"/" "$target_file"
 }
 
+bootstrap_arch() {
+	if [ "$OS" = "Arch" ]; then
+		sudo pacman -Sc &&
+			sudo pacman -Sy --noconfirm \
+				base-devel procps-ng curl \
+				file git unzip rsync unzip \
+				sudo which nano libssh2 curl \
+				libcurl-gnutls
+	fi
+}
+
 setup_arch_btrfs() {
 	local ROOT_FS_TYPE
 	ROOT_FS_TYPE=$(df -T / | awk 'NR==2 {print $2}')
@@ -172,23 +183,20 @@ setup_ssh_gpg() {
 }
 
 setup_chaotic_aur() {
-	local pacman
-	pacman="$(which pacman)"
-
-	if [ "$OS" == "Arch" ] && [ -n "$pacman" ] && confirm "Setup Chaotic AUR?"; then
-		sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
-		sudo pacman-key --lsign-key 3056513887B78AEB
-		sudo "$pacman" -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst'
-		sudo "$pacman" -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst'
-		sudo cp -f /etc/pacman.conf /etc/pacman.conf.pre-chaotic-aur.bak
-
-		if ! grep -q "\[chaotic-aur\]" /etc/pacman.conf; then
-			cat <<EOF | sudo tee -a "/etc/pacman.conf"
+	if [ "$OS" == "Arch" ] && confirm "Setup Chaotic AUR?"; then
+		sudo pacman-key --init &&
+			sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com &&
+			sudo pacman-key --lsign-key 3056513887B78AEB &&
+			sudo pacman -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' &&
+			sudo pacman -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' &&
+			sudo cp -f /etc/pacman.conf /etc/pacman.conf.pre-chaotic-aur.bak &&
+			if ! grep -q "\[chaotic-aur\]" /etc/pacman.conf; then
+				cat <<EOF | sudo tee -a "/etc/pacman.conf"
 
 [chaotic-aur]
 Include = /etc/pacman.d/chaotic-mirrorlist
 EOF
-		fi
+			fi
 	else
 		echo "Error: incompatible OS, skipping Chaotic AUR setup!"
 	fi
@@ -215,7 +223,7 @@ setup_neovim() {
 	local global_target="/usr/local/bin"
 
 	# install Mason Pre-reqs when in Archlinux
-	[ "$OS" == "Arch" ] && sudo pacman -Sy --noconfirm base-devel procps-ng curl file git
+	[ "$OS" == "Arch" ] && sudo pacman -Sy --noconfirm base-devel procps-ng curl file git unzip rsync
 
 	if [ "$OS" == "Arch" ] || [ "$OS" == "Bazzite" ] &&
 		confirm "Install NeoVim nightly via BOB?"; then
@@ -479,6 +487,10 @@ install_brave() {
 		local chromium_app="com.brave.Browser"
 		flatpak install --user --noninteractive "$chromium_app"
 
+		if [ "$OS" == "Arch" ]; then
+			sudo pacman -Sy --noconfirm libva-nvidia-driver
+		fi
+
 		local chromium_fix="./dotfiles/Configs/scripts/fix-vaapi-chromium-flatpak.sh"
 		if [ -r "$chromium_fix" ]; then
 			chmod 0755 "$chromium_fix"
@@ -491,6 +503,10 @@ install_brave() {
 }
 install_firefox_fix() {
 	if confirm "Fix Firefox Flatpak overrides (for nvidia-vaapi and KeepassXC support)?"; then
+		if [ "$OS" == "Arch" ]; then
+			sudo pacman -Sy --noconfirm libva-nvidia-driver
+		fi
+
 		local firefox_fix="./dotfiles/Configs/scripts/fix-vaapi-firefox.sh"
 		if [ -r "$firefox_fix" ]; then
 			chmod 0755 "$firefox_fix"
