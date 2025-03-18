@@ -2,6 +2,7 @@
 
 SUPPORT="./support"
 CP="sudo rsync -vhP --chown=$USER:$USER --chmod=D755,F644"
+PACMAN=(sudo pacman -Sy --needed --noconfirm)
 
 # cache credentials
 cache_creds() {
@@ -38,7 +39,7 @@ run_if_confirmed() {
 
 check_cmd() {
 	local cmd
-	cmd="$(which command -v "$1")"
+	cmd="$(command -v "$1")"
 	if [ -n "$cmd" ]; then
 		echo "$cmd"
 	else
@@ -93,10 +94,9 @@ update_grub_cmdline() {
 
 bootstrap_arch() {
 	if [ "$OS" = "Arch" ]; then
-		sudo pacman -Sy --noconfirm \
-			base-devel procps-ng curl \
+		"${PACMAN[@]}" base-devel procps-ng curl \
 			file git unzip rsync unzip \
-			sudo which nano libssh2 curl \
+			sudo nano libssh2 curl \
 			libcurl-gnutls
 	fi
 }
@@ -121,7 +121,7 @@ setup_arch_btrfs() {
 			sudo btrfs sub cr "$btrfs_mount"/@snapshots
 		echo "UUID=$ROOT_FS_UUID /.snapshots btrfs subvol=/@snapshots/root,defaults,noatime,compress=zstd,commit=120 0 0" | sudo tee -a /etc/fstab
 
-		sudo pacman -Sy --noconfirm grub-btrfs snap-pac inotify-tools
+		"${PACMAN[@]}" grub-btrfs snap-pac inotify-tools
 
 		sudo snapper -c root create-config / &&
 			sudo mv "$btrfs_mount/@/.snapshots" "$btrfs_mount/@snapshots/root"
@@ -204,7 +204,7 @@ EOF
 install_neovim_config() {
 	local basedir="$HOME/.local"
 	local git
-	git="$(which git)"
+	git="$(check_cmd git)"
 
 	if [ -n "$git" ] && confirm "Wipe any existing NeoVim config and download custom distribution?"; then
 		rm -rf "$HOME"/.config/nvim "$basedir"/share/nvim "$basedir"/cache/nvim "$basedir"/state/nvim
@@ -222,7 +222,7 @@ setup_neovim() {
 	local global_target="/usr/local/bin"
 
 	# install Mason Pre-reqs when in Archlinux
-	[ "$OS" == "Arch" ] && sudo pacman -Sy --noconfirm base-devel procps-ng curl file git unzip rsync
+	[ "$OS" == "Arch" ] && "${PACMAN[@]}" base-devel procps-ng curl file git unzip rsync
 
 	if [ "$OS" == "Arch" ] || [ "$OS" == "Bazzite" ] &&
 		confirm "Install NeoVim nightly via BOB?"; then
@@ -351,13 +351,13 @@ setup_system_shared() {
 
 		if check_cmd pacman; then
 			sudo pacman -R --noconfirm cachy-browser &&
-				sudo pacman -Sy --noconfirm \
+				"${PACMAN[@]}" \
 					fd zoxide ripgrep bat fzf fish zsh python-pip \
 					curl wget firefox steam openrgb rsync gnupg git \
 					earlyoom mangohud lib32-mangohud lib32-pulseaudio \
 					fuse2 winetricks protontricks wl-clipboard
 			# enable earlyoom for safety when under memory stress
-			sudo pacman -Sy --noconfirm earlyoom &&
+			"${PACMAN[@]}" earlyoom &&
 				sudo systemctl disable --now systemd-oomd &&
 				sudo systemctl enable --now earlyoom
 
@@ -434,8 +434,9 @@ setup_system_shared() {
 }
 
 install_brew() {
-	bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" &&
-		which brew
+	(
+		/bin/bash -ic "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" 2>&1 | tee /dev/tty
+	)
 }
 install_nix() {
 	local nix=""
@@ -444,10 +445,10 @@ install_nix() {
 }
 setup_package_manager() {
 	local brew
-	brew="$(which brew)"
+	brew="$(check_cmd brew)"
 
 	case "$OS" in
-	"Bazzite" | "Darwin")
+	"Bazzite" | "Darwin" | "Arch")
 		if confirm "Install Brew and some common utils?"; then
 			[ -z "$brew" ] && brew="$(install_brew)"
 			[ -n "$brew" ] && "$brew" install eza fd rdfind ripgrep fzf bat lazygit fish zoxide
@@ -455,8 +456,6 @@ setup_package_manager() {
 			install_nix
 		fi
 		;;
-
-	"Arch") confirm "Install Nix as an alternative to Brew?" && install_nix ;;
 
 	*) echo "Error: incompatible OS, skipping package manager setup!" ;;
 	esac
@@ -487,7 +486,7 @@ install_brave() {
 		flatpak install --user --noninteractive "$chromium_app"
 
 		if [ "$OS" == "Arch" ]; then
-			sudo pacman -Sy --noconfirm libva-nvidia-driver
+			"${PACMAN[@]}" libva-nvidia-driver
 		fi
 
 		local chromium_fix="./dotfiles/Configs/scripts/fix-vaapi-chromium-flatpak.sh"
@@ -503,7 +502,7 @@ install_brave() {
 install_firefox_fix() {
 	if confirm "Fix Firefox Flatpak overrides (for nvidia-vaapi and KeepassXC support)?"; then
 		if [ "$OS" == "Arch" ]; then
-			sudo pacman -Sy --noconfirm libva-nvidia-driver
+			"${PACMAN[@]}" libva-nvidia-driver
 		fi
 
 		local firefox_fix="./dotfiles/Configs/scripts/fix-vaapi-firefox.sh"
@@ -519,7 +518,7 @@ install_firefox_fix() {
 setup_flatpak() {
 	# pre-install common Flatpaks
 	if confirm "Setup Flatpak and add common apps?"; then
-		[ "$OS" == "Arch" ] && sudo pacman -Sy --noconfirm flatpak
+		[ "$OS" == "Arch" ] && "${PACMAN[@]}" flatpak
 
 		flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 		flatpak install --user --noninteractive \
@@ -537,7 +536,7 @@ setup_flatpak() {
 
 setup_distrobox() {
 	local distrobox
-	distrobox="$(which distrobox)"
+	distrobox="$(check_cmd distrobox)"
 
 	if [ -n "$distrobox" ] && confirm "Perform assembly and customization of Distrobox containers?"; then
 		chmod +x ./distrobox/*.sh
@@ -548,7 +547,7 @@ setup_distrobox() {
 	# distrobox assemble create --file ./distrobox/distrobox-assemble-fedcli.ini &&
 	# distrobox enter fedcli -- bash -c ./distrobox/distrobox-setup-fedcli.sh
 	elif [ -z "$distrobox" ] && [ "$OS" == "Arch" ] && confirm "Attempt to install distrobox?"; then
-		sudo pacman -Sy --noconfirm distrobox &&
+		"${PACMAN[@]}" distrobox &&
 			setup_distrobox
 	elif [ -z "$distrobox" ]; then
 		echo "Error: 'distrobox' not found, skipping distrobox setup!"
@@ -558,7 +557,7 @@ setup_distrobox() {
 setup_qemu() {
 	# provide a way to pre-install libvirt/qemu
 	if [ "$OS" == "Arch" ] && confirm "Setup libvirt/qemu with vfio passthrough support?"; then
-		sudo pacman -Sy --noconfirm libvirt qemu-desktop swtpm
+		"${PACMAN[@]}" libvirt qemu-desktop swtpm
 
 		# add qemu specific kargs for passthrough if they don't already exist
 		vm_grub_arg="kvm.ignore_msrs=1 kvm.report_ignored_msrs=0 amd_iommu=on iommy=pt rd.driver.pre=vfio_pci vfio_pci.disable_vga=1"
