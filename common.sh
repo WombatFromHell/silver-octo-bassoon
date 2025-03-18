@@ -545,8 +545,6 @@ setup_distrobox() {
 				chmod +x ./distrobox/*.sh
 				# distrobox assemble create --file ./distrobox/distrobox-assemble-archcli.ini
 				distrobox assemble create --file ./distrobox/distrobox-assemble-devbox.ini
-				# ./distrobox/brave-export-fix.sh
-				#
 			# distrobox assemble create --file ./distrobox/distrobox-assemble-fedcli.ini &&
 			# distrobox enter fedcli -- bash -c ./distrobox/distrobox-setup-fedcli.sh
 			elif [ -z "$distrobox" ] && [ "$OS" == "Arch" ] && confirm "Attempt to install distrobox?"; then
