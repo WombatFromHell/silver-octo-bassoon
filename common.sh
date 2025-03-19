@@ -257,12 +257,23 @@ setup_external_mounts() {
 			if [ "$OS" = "Arch" ] || [ "$OS" = "Bazzite" ]; then
 				mkdir -p "$dst"
 
+				echo "Attempting to remove existing mount units (if any)..."
+				for unit in "$dst"/*.mount "$dst"/*.automount "$dst"/*.swap; do
+					local unit_basename
+					unit_basename="$(basename "$unit")"
+
+					if [[ "$unit_basename" == *.automount* ]] || [[ "$unit_basename" == *.swap* ]]; then
+						sudo systemctl disable "$(basename "$unit")" &&
+							sudo systemctl stop "$(basename "$unit")"
+					fi
+					sudo rm -f "$unit"
+				done
+
 				unit_files=()
 				for file in "$src"/mnt-*.mount "$src"/mnt-*.automount "$src"/mnt-*.swap; do
 					[ ! -f "$file" ] && continue # skip to next if unreadable
 
 					basename=$(basename "$file")
-					sudo rm -f "$dst/$basename"
 					if [ "$OS" = "Bazzite" ]; then
 						# create new filename with var-mnt prefix
 						new_basename="var-${basename}"
@@ -272,7 +283,7 @@ setup_external_mounts() {
 						sudo cp -f "$temp_file" "$dst/$new_basename" &&
 							sudo chmod 0644 "$dst/$new_basename"
 						rm "$temp_file"
-						work_files+=("$new_basename")
+						unit_files+=("$new_basename")
 					elif [ "$OS" = "Arch" ]; then
 						sudo cp -f "$file" "$dst/$basename" # just copy
 						if [[ "$basename" == *.automount* ]] || [[ "$basename" == *.swap* ]]; then
@@ -287,7 +298,10 @@ setup_external_mounts() {
 				if [ "${#unit_files[@]}" -gt 0 ]; then
 					install_smb_creds &&
 						sudo systemctl daemon-reload &&
-						sudo systemctl enable --now "${unit_files[@]}"
+						sudo systemctl enable "${unit_files[@]}" &&
+						sudo systemctl start "${unit_files[@]}"
+				else
+					echo "Error: no unit files found, skipping systemd mounts!"
 				fi
 			fi
 		}
