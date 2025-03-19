@@ -518,22 +518,55 @@ install_firefox_fix() {
 			fi
 		}
 }
+install_obs() {
+	confirm "Install Flatpak version of OBS Studio?" &&
+		{
+			flatpak install --user --noninteractive \
+				org.freedesktop.Platform.VulkanLayer.OBSVkCapture \
+				com.obsproject.Studio.Plugin.OBSVkCapture \
+				com.obsproject.Studio.Plugin.Gstreamer \
+				com.obsproject.Studio.Plugin.GStreamerVaapi \
+				com.obsproject.Studio
+		}
+}
 setup_flatpak() {
 	# pre-install common Flatpaks
 	if confirm "Setup Flatpak and add common apps?"; then
 		[ "$OS" == "Arch" ] && "${PACMAN[@]}" flatpak
 
+		# remove existing flatpaks
+		local installed_flatpaks=()
+		while IFS= read -r app; do
+			installed_flatpaks+=("$app")
+		done < <(flatpak list --app --columns=application | tail -n +1)
+		sudo flatpak remove --unused
+
 		flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 		flatpak install --user --noninteractive \
-			org.gtk.Gtk3theme.Adwaita-dark \
-			com.github.tchx84.Flatseal \
 			com.github.zocker_160.SyncThingy \
-			it.mijorus.gearlever \
-			com.vysp3r.ProtonPlus
+			com.spotify.Client \
+			net.agalwood.Motrix \
+			com.vysp3r.ProtonPlus \
+			com.usebottles.bottles \
+			org.freedesktop.Platform.VulkanLayer.MangoHud
+
+		if [ "$OS" == "Bazzite" ]; then
+			flatpak install --noninteractive \
+				org.gtk.Gtk3theme.Adwaita-dark \
+				com.github.tchx84.Flatseal \
+				it.mijorus.gearlever \
+				org.kde.filelight \
+				org.kde.gwenview \
+				org.kde.haruna \
+				org.kde.kcalc \
+				org.kde.okular \
+				com.github.Matoking.protontricks
+		fi
 
 		install_peazip
 		install_brave
 		install_firefox_fix
+		install_obs
 	fi
 }
 
