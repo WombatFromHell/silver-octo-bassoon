@@ -482,6 +482,15 @@ install_nix() {
 		bash -ic "$(curl --proto '=https' --tlsv1.2 -fsSL https://install.determinate.systems/nix)" -- install "${nix:+$nix}"
 	)
 }
+install_nix_flake() {
+	local nix
+	nix="$(check_cmd nix)"
+
+	if [ -n "$nix" ] && confirm "Install 'home-manager' and custom Nix flake?"; then
+		"$nix" run home-manager/master -- init --switch "$(realpath "$HOME")/.config/home-manager"
+		git clone https://github.com/WombatFromHell/automatic-palm-tree.git "$HOME"/.nix
+	fi
+}
 setup_package_manager() {
 	local brew
 	brew="$(check_cmd brew)"
@@ -494,10 +503,13 @@ setup_package_manager() {
 			setup_neovim # use BOB for Neovim
 		elif confirm "Install Nix as an alternative to Brew?"; then
 			install_nix
+			install_nix_flake
 		fi
 		;;
 
-	"Arch" | "CachyOS") confirm "Install Nix?" && install_nix ;;
+	"Arch" | "CachyOS")
+		confirm "Install Nix?" && install_nix && install_nix_flake
+		;;
 
 	*) echo "Error: incompatible OS, skipping package manager setup!" ;;
 	esac
