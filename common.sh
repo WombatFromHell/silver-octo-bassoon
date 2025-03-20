@@ -478,7 +478,9 @@ install_nix() {
 	"Arch" | "CachyOS") nix="linux" ;;
 	*) ;;
 	esac
-	curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install "${nix:+$nix}"
+	(
+		bash -ic "$(curl --proto '=https' --tlsv1.2 -fsSL https://install.determinate.systems/nix)" -- install "${nix:+$nix}"
+	)
 }
 setup_package_manager() {
 	local brew
