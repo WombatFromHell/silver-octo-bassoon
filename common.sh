@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+shopt -s nullglob
+
 SUPPORT="./support"
 CP="sudo rsync -vhP --chown=$USER:$USER --chmod=D755,F644"
 PACMAN=(sudo pacman -Sy --needed --noconfirm)
@@ -296,31 +298,48 @@ install_smb_creds() {
 
 	echo "Samba credentials saved to: $creds_file"
 }
+remove_existing_mounts() {
+	local dst="/etc/systemd/system"
+
+	echo "Attempting to remove existing mount units (if any)..."
+	for unit in "$dst"/*mnt-*.mount "$dst"/*mnt-*.automount "$dst"/*mnt-*.swap; do
+		if ! [ -e "$unit" ]; then
+			echo "Couldn't find glob for: $unit, skipping..."
+			continue # bail if our glob fails
+		fi
+
+		local unit_basename
+		unit_basename="$(basename "$unit")"
+
+		if [[ "$unit_basename" == *.automount || "$unit_basename" == *.swap ]]; then
+			echo "Processing unit: '$unit' for removal..."
+			sudo systemctl disable "$(basename "$unit")"
+			sudo systemctl stop "$(basename "$unit")"
+		fi
+		sudo rm -f "$unit"
+	done
+	sudo systemctl daemon-reload
+	echo "Done removing existing mount units..."
+}
 setup_external_mounts() {
 	local src="./systemd-automount"
-	local dst="/etc/systemd/system/"
+	local dst="/etc/systemd/system"
 
 	confirm "Setup external filesystem mounts?" &&
 		{
+			remove_existing_mounts
+
 			if [ "$OS" = "Arch" ] || [ "$OS" = "Bazzite" ]; then
 				mkdir -p "$dst"
 
-				echo "Attempting to remove existing mount units (if any)..."
-				for unit in "$dst"/*.mount "$dst"/*.automount "$dst"/*.swap; do
-					local unit_basename
-					unit_basename="$(basename "$unit")"
-
-					if [[ "$unit_basename" == *.automount* ]] || [[ "$unit_basename" == *.swap* ]]; then
-						sudo systemctl disable "$(basename "$unit")" &&
-							sudo systemctl stop "$(basename "$unit")"
-					fi
-					sudo rm -f "$unit"
-				done
-
 				unit_files=()
 				for file in "$src"/mnt-*.mount "$src"/mnt-*.automount "$src"/mnt-*.swap; do
-					[ ! -f "$file" ] && continue # skip to next if unreadable
+					if ! [ -e "$file" ]; then
+						echo "Couldn't find unit: $file, skipping..."
+						continue
+					fi
 
+					echo "Processing unit: '$file'..."
 					basename=$(basename "$file")
 					if [ "$OS" = "Bazzite" ]; then
 						# create new filename with var-mnt prefix
@@ -331,13 +350,26 @@ setup_external_mounts() {
 						sudo cp -f "$temp_file" "$dst/$new_basename" &&
 							sudo chmod 0644 "$dst/$new_basename"
 						rm "$temp_file"
-						unit_files+=("$new_basename")
-					elif [ "$OS" = "Arch" ]; then
-						sudo cp -f "$file" "$dst/$basename" # just copy
-						if [[ "$basename" == *.automount* ]]; then
+
+						if [[ "$new_basename" == *.automount ]]; then
+							echo "Adding unit for enablement: '$new_basename'..."
 							if check_mount_device "${file%.*}.mount"; then
+								echo "Adding automount unit for enablement: '$new_basename'..."
+								unit_files+=("$new_basename")
+							elif [[ "$new_basename" == *.swap ]] && check_mount_device "$file"; then
+								echo "Adding swap unit for enablement: '$basename'..."
+								unit_files+=("$new_basename")
+							fi
+						fi
+					elif [ "$OS" = "Arch" ]; then
+						sudo cp -f "$file" "$dst/$basename"
+
+						if [[ "$basename" == *.automount ]]; then
+							if check_mount_device "${file%.*}.mount"; then
+								echo "Adding automount unit for enablement: '$basename'..."
 								unit_files+=("$basename") # only include existing automounts and swap
-							elif [[ "$basename" == *.swap* ]] && check_mount_device "$file"; then
+							elif [[ "$basename" == *.swap ]] && check_mount_device "$file"; then
+								echo "Adding swap unit for enablement: '$basename'..."
 								unit_files+=("$basename")
 							fi
 						fi
