@@ -55,7 +55,7 @@ check_os() {
 	fallback="$(uname -a | cut -d' ' -f1)"
 
 	local supported
-	supported=("Arch" "Bazzite")
+	supported=("Arch" "Bazzite" "CachyOS")
 
 	for distro in "${supported[@]}"; do
 		if [[ "$os" == "$distro" ]]; then
@@ -93,7 +93,7 @@ update_grub_cmdline() {
 }
 
 bootstrap_arch() {
-	if [ "$OS" = "Arch" ]; then
+	if [ "$OS" = "Arch" ] || [ "$OS" = "CachyOS" ]; then
 		"${PACMAN[@]}" base-devel procps-ng curl \
 			file git unzip rsync unzip \
 			sudo nano libssh2 curl \
@@ -172,7 +172,7 @@ setup_ssh_gpg() {
 }
 
 setup_chaotic_aur() {
-	if [ "$OS" == "Arch" ] && confirm "Setup Chaotic AUR?"; then
+	if [ "$OS" == "Arch" ] || [ "$OS" = "CachyOS" ] && confirm "Setup Chaotic AUR?"; then
 		sudo pacman-key --init &&
 			sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com &&
 			sudo pacman-key --lsign-key 3056513887B78AEB &&
@@ -217,9 +217,9 @@ setup_neovim() {
 	confirm "Install NeoVim nightly via BOB?" &&
 		{
 			# install Mason Pre-reqs when in Archlinux
-			[ "$OS" == "Arch" ] && "${PACMAN[@]}" base-devel procps-ng curl file git unzip rsync
+			[ "$OS" == "Arch" ] || [ "$OS" = "CachyOS" ] && "${PACMAN[@]}" base-devel procps-ng curl file git unzip rsync
 
-			if [ "$OS" == "Arch" ] || [ "$OS" == "Bazzite" ]; then
+			if [ "$OS" == "Arch" ] || [ "$OS" = "CachyOS" ] || [ "$OS" == "Bazzite" ]; then
 				curl -sfSLO --output-dir "$outdir" "$url"
 				unzip "${outpath}.zip" -d "$outdir"
 				$CP "${outpath}/bob" "$target"
@@ -254,7 +254,7 @@ setup_external_mounts() {
 
 	confirm "Setup external filesystem mounts?" &&
 		{
-			if [ "$OS" = "Arch" ] || [ "$OS" = "Bazzite" ]; then
+			if [ "$OS" = "Arch" ] || [ "$OS" = "CachyOS" ] || [ "$OS" = "Bazzite" ]; then
 				mkdir -p "$dst"
 
 				echo "Attempting to remove existing mount units (if any)..."
@@ -284,7 +284,7 @@ setup_external_mounts() {
 							sudo chmod 0644 "$dst/$new_basename"
 						rm "$temp_file"
 						unit_files+=("$new_basename")
-					elif [ "$OS" = "Arch" ]; then
+					elif [ "$OS" = "Arch" ] || [ "$OS" = "CachyOS" ]; then
 						sudo cp -f "$file" "$dst/$basename" # just copy
 						if [[ "$basename" == *.automount* ]] || [[ "$basename" == *.swap* ]]; then
 							unit_files+=("$basename") # only include automounts and swap
@@ -312,7 +312,7 @@ setup_grub_args() {
 		{
 			if [ "$OS" = "Bazzite" ]; then
 				rpm-ostree kargs --append=amd_pstate=active --append=acpi_enforce_resources=lax
-			elif [ "$OS" == "Arch" ]; then
+			elif [ "$OS" == "Arch" ] || [ "$OS" = "CachyOS" ]; then
 				# enable AMD Ryzen Pstate and enable OpenRGB for Gigabyte mobos (on patched kernels)
 				local rgb_grub_arg="amd_pstate=active acpi_enforce_resources=lax"
 				if update_grub_cmdline "$rgb_grub_arg" -eq 0; then
@@ -346,7 +346,7 @@ install_fonts() {
 		}
 }
 install_nvidia_tweaks() {
-	if [ "$OS" == "Arch" ] && confirm "Install Nvidia driver tweaks?"; then
+	if [ "$OS" == "Arch" ] || [ "$OS" = "CachyOS" ] && confirm "Install Nvidia driver tweaks?"; then
 		local dst="/etc/modprobe.d/nvidia.conf"
 		sudo rm -f "$dst"
 		sudo cp -f ./etc-modprobe.d/nvidia.conf "$dst"
@@ -385,7 +385,7 @@ setup_system_shared() {
 		setup_grub_args
 		;;
 
-	"Arch")
+	"Arch" | "CachyOS")
 		local zram_path="/etc/systemd/zram-generator.conf"
 		sudo cp -f "$zram_path" "${zram_path}".bak &&
 			sudo cp -f ./etc-systemd/zram-generator.conf "$zram_path"
@@ -409,7 +409,7 @@ setup_system_shared() {
 	esac
 
 	# Common things only supported on non-NixOS Linux
-	if [ "$OS" == "Bazzite" ] || [ "$OS" == "Arch" ]; then
+	if [ "$OS" == "Bazzite" ] || [ "$OS" == "Arch" ] || [ "$OS" = "CachyOS" ]; then
 		local env_path="/etc/environment"
 		sudo cp -f "$env_path" "${env_path}".bak &&
 			$CP ."${env_path}" "$env_path"
@@ -469,7 +469,7 @@ setup_package_manager() {
 		fi
 		;;
 
-	"Arch") confirm "Install Nix?" && install_nix ;;
+	"Arch" | "CachyOS") confirm "Install Nix?" && install_nix ;;
 
 	*) echo "Error: incompatible OS, skipping package manager setup!" ;;
 	esac
@@ -501,7 +501,7 @@ install_brave() {
 			local chromium_app="com.brave.Browser"
 			flatpak install --user --noninteractive "$chromium_app"
 
-			if [ "$OS" == "Arch" ]; then
+			if [ "$OS" == "Arch" ] || [ "$OS" = "CachyOS" ]; then
 				"${PACMAN[@]}" libva-nvidia-driver
 			fi
 
@@ -518,7 +518,7 @@ install_brave() {
 install_firefox_fix() {
 	confirm "Fix Firefox Flatpak overrides (for nvidia-vaapi and KeepassXC support)?" &&
 		{
-			if [ "$OS" == "Arch" ]; then
+			if [ "$OS" == "Arch" ] || [ "$OS" = "CachyOS" ]; then
 				"${PACMAN[@]}" libva-nvidia-driver
 			fi
 
@@ -546,7 +546,7 @@ install_obs() {
 setup_flatpak() {
 	# pre-install common Flatpaks
 	if confirm "Setup Flatpak and add common apps?"; then
-		[ "$OS" == "Arch" ] && "${PACMAN[@]}" flatpak
+		[ "$OS" == "Arch" ] || [ "$OS" = "CachyOS" ] && "${PACMAN[@]}" flatpak
 
 		# remove existing flatpaks
 		local installed_flatpaks=()
@@ -588,17 +588,21 @@ setup_distrobox() {
 	local distrobox
 	distrobox="$(check_cmd distrobox)"
 
+	if [ -z "$distrobox" ] &&
+		[ "$OS" == "Arch" ] || [ "$OS" = "CachyOS" ] &&
+		confirm "Attempt to install distrobox?"; then
+		"${PACMAN[@]}" distrobox
+	fi
+
 	confirm "Perform assembly and customization of Distrobox containers?" &&
 		{
 			if [ -n "$distrobox" ]; then
 				chmod +x ./distrobox/*.sh
 				# distrobox assemble create --file ./distrobox/distrobox-assemble-archcli.ini
 				distrobox assemble create --file ./distrobox/distrobox-assemble-devbox.ini
-			# distrobox assemble create --file ./distrobox/distrobox-assemble-fedcli.ini &&
-			# distrobox enter fedcli -- bash -c ./distrobox/distrobox-setup-fedcli.sh
-			elif [ -z "$distrobox" ] && [ "$OS" == "Arch" ] && confirm "Attempt to install distrobox?"; then
-				"${PACMAN[@]}" distrobox &&
-					setup_distrobox
+				# distrobox assemble create --file ./distrobox/distrobox-assemble-fedcli.ini &&
+				# distrobox enter fedcli -- bash -c ./distrobox/distrobox-setup-fedcli.sh
+				el
 			elif [ -z "$distrobox" ]; then
 				echo "Error: 'distrobox' not found, skipping distrobox setup!"
 			fi
@@ -609,7 +613,7 @@ setup_qemu() {
 	confirm "Setup libvirt/qemu with vfio passthrough support?" &&
 		{
 			# provide a way to pre-install libvirt/qemu
-			if [ "$OS" == "Arch" ]; then
+			if [ "$OS" == "Arch" ] || [ "$OS" = "CachyOS" ]; then
 				"${PACMAN[@]}" libvirt qemu-desktop swtpm
 
 				# add qemu specific kargs for passthrough if they don't already exist
