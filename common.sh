@@ -406,6 +406,14 @@ setup_grub_args() {
 				echo "Error: unsupported OS, skipping grub args!"
 				return
 			fi
+
+			local local_bin="/usr/local/bin"
+			sudo mkdir -p "$local_bin"
+			echo "Installing a fix for S3 suspend on Gigabyte motherboards..."
+			sudo cp -f ./usr-local-bin/fix-wakeups.sh "$local_bin"/ &&
+				sudo chmod 0755 "$local_bin"/fix-wakeups.sh &&
+				sudo cp -f ./etc-systemd/system/fix-wakeups.service /etc/systemd/system/ &&
+				sudo systemctl daemon-reload && sudo systemctl enable fix-wakeups.service
 		}
 }
 
@@ -429,14 +437,38 @@ install_fonts() {
 			fi
 		}
 }
+install_openrgb() {
+	confirm "Install OpenRGB?" &&
+		{
+			if [ "$OS" == "Arch" ]; then
+				"${PACMAN[@]}" openrgb
+			elif [ "$OS" == "Bazzite" ]; then
+				sudo cp -f ./etc-udev-rules.d/60-openrgb.rules /etc/udev/rules.d/
+				sudo cp -f "$SUPPORT"/appimages/openrgb.AppImage /usr/local/bin/
+				sudo chmod 0755 /usr/local/bin/openrgb.AppImage
+				sudo ln -s /usr/local/bin/openrgb.AppImage /usr/local/bin/openrgb
+				sudo udevadm control --reload-rules && sudo udevadm trigger
+			else
+				echo "Error: unsupported OS, skipping OpenRGB!"
+			fi
+		}
+}
 install_nvidia_tweaks() {
-	if [ "$OS" == "Arch" ] && confirm "Install Nvidia driver tweaks?"; then
+	! confirm "Install Nvidia driver tweaks and fan/power control?" && return
+
+	if [ -e "/proc/driver/nvidia" ] && [ "$OS" == "Arch" ]; then
 		local dst="/etc/modprobe.d/nvidia.conf"
+		local local_bin="/usr/local/bin"
+		sudo mkdir -p "$local_bin"
+
 		sudo rm -f "$dst"
 		sudo cp -f ./etc-modprobe.d/nvidia.conf "$dst"
 	else
 		echo "Error: unsupported OS, skipping Nvidia tweaks!"
 	fi
+
+	sudo cp -f "$local_bin"/nvidia-pm.py "$local_bin"/veridian-controller "$local_bin"/
+	sudo cp -f ./etc/nvidia-pm.conf ./etc/veridian-controller.toml /etc/
 }
 setup_system_shared() {
 	! confirm "Install some common packages and tweaks?" && return
@@ -465,11 +497,9 @@ setup_system_shared() {
 		var_trash_path="/var/.Trash-$(id -u)"
 		sudo mkdir -p "$var_trash_path" &&
 			sudo chown -R "$USER":"$USER" "$var_trash_path"
-
-		setup_grub_args
 		;;
 
-	"Arch" | "CachyOS")
+	"Arch")
 		local zram_path="/etc/systemd/zram-generator.conf"
 		sudo cp -f "$zram_path" "${zram_path}".bak &&
 			sudo cp -f ./etc-systemd/zram-generator.conf "$zram_path"
@@ -478,7 +508,6 @@ setup_system_shared() {
 
 		sudo pacman -R --noconfirm cachy-browser
 		"${PACMAN[@]}" \
-			fd zoxide ripgrep bat fzf fish zsh python-pip \
 			curl wget firefox steam openrgb rsync gnupg git \
 			earlyoom mangohud lib32-mangohud lib32-pulseaudio \
 			fuse2 winetricks protontricks wl-clipboard
@@ -486,9 +515,6 @@ setup_system_shared() {
 		"${PACMAN[@]}" earlyoom &&
 			sudo systemctl disable --now systemd-oomd &&
 			sudo systemctl enable --now earlyoom
-
-		install_nvidia_tweaks
-		setup_grub_args
 		;;
 	esac
 
@@ -498,7 +524,7 @@ setup_system_shared() {
 		sudo cp -f "$env_path" "${env_path}".bak &&
 			$CP ."${env_path}" "$env_path"
 
-		mkdir -p /usr/local/bin/ &&
+		mkdir -p /usr/local/bin/ "$HOME"/.local/bin/ &&
 			sudo cp -f ./usr-local-bin/* /usr/local/bin/ &&
 			sudo chown root:root /usr/local/bin/* &&
 			sudo chmod 0755 /usr/local/bin/*
@@ -507,20 +533,16 @@ setup_system_shared() {
 			sudo cp -f ./etc-sysctl.d/*.conf /etc/sysctl.d/ &&
 			sudo sysctl --system &>/dev/null
 
-		sudo cp -f ./etc/nvidia-pm.conf ./etc/veridian-controller.toml /etc/ &&
-			sudo cp -f ./etc-systemd/system/* /etc/systemd/system/ &&
-			sudo chown root:root /etc/systemd/system/fix-wakeups.service &&
-			sudo systemctl daemon-reload &&
-			sudo systemctl enable --now {fix-wakeups,nvidia-tdp,veridian-controller}.service
-
 		# enable some secondary user-specific services
 		mkdir -p "$HOME"/.config/systemd/user/ "$HOME"/.local/bin/
 		$CP ./systemd-user/*.service "$HOME"/.config/systemd/user/
-		systemctl --user daemon-reload && chmod 0755 "$HOME"/.local/bin/*
-		systemctl --user enable --now {on-session-state,openrgb-lightsout}.service
+		chmod 0755 "$HOME"/.local/bin/*
 
+		setup_grub_args
 		setup_ssh_gpg
 		setup_chaotic_aur
+		install_nvidia_tweaks
+		install_openrgb
 		install_appimages
 		install_fonts
 	else
@@ -541,6 +563,7 @@ install_nix() {
 	"Arch" | "CachyOS") nix="linux" ;;
 	*) ;;
 	esac
+
 	(
 		bash -ic "$(curl --proto '=https' --tlsv1.2 -fsSL https://install.determinate.systems/nix)" -- install "${nix:+$nix}"
 	)
@@ -570,7 +593,7 @@ setup_package_manager() {
 		fi
 		;;
 
-	"Arch" | "CachyOS")
+	"Arch")
 		confirm "Install Nix?" && install_nix && install_nix_flake
 		;;
 
