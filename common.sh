@@ -87,11 +87,44 @@ check_os() {
 }
 OS="$(check_os)"
 
+update_sysdboot_cmdline() {
+	local target_file="$1"
+	local text_to_add="$2"
+	local backup_file="${target_file}.bak"
+
+	local is_systemd_boot
+	is_systemd_boot="$(sudo ls -l /boot/loader/ &>/dev/null)"
+	is_systemd_boot="$?"
+	if ! [ "$is_systemd_boot" -eq 0 ]; then
+		echo "Error: systemd-boot not detected, skipping update!"
+		return 1
+	fi
+
+	if ! sudo cp -f "$target_file" "$backup_file"; then
+		echo "Error: Failed to create backup file."
+		return 1
+	fi
+	if sudo grep -q "$text_to_add" "$target_file"; then
+		echo "Text already exists in $target_file. No changes made."
+		return 1
+	fi
+	sudo sed -i "/^options / s/$/ $text_to_add/" "$target_file"
+	echo "Successfully updated systemd-boot kernel parameters."
+}
+
 update_grub_cmdline() {
 	local text_to_add="$1"
 	local target_file="/etc/default/grub"
 	local backup_file="${target_file}.bak"
 	local variable_name="GRUB_CMDLINE_LINUX_DEFAULT"
+
+	local is_grub_boot
+	is_grub_boot="$(sudo ls -l /boot/grub*/ &>/dev/null)"
+	is_grub_boot="$?"
+	if ! [ "$is_grub_boot" -eq 0 ]; then
+		echo "Error: GRUB not detected, skipping update!"
+		return 1
+	fi
 
 	# Create a backup of the target file
 	if ! sudo cp -f "$target_file" "$backup_file"; then
@@ -99,12 +132,17 @@ update_grub_cmdline() {
 		return 1
 	fi
 	# Check if the text already exists in the target file
-	if grep -q "$text_to_add" "$target_file"; then
+	if sudo grep -q "$text_to_add" "$target_file"; then
 		echo "Text already exists in $target_file. No changes made."
 		return 1
 	fi
 
-	sudo sed -i "s/^$variable_name=\"\(.*\)\"/$variable_name=\"\1 $text_to_add\"/" "$target_file"
+	if sudo sed -i "s/^$variable_name=\"\(.*\)\"/$variable_name=\"\1 $text_to_add\"/" "$target_file"; then
+		sudo grub-mkconfig -o /boot/grub/grub.cfg
+		return 0
+	else
+		return 1
+	fi
 }
 
 bootstrap_arch() {
@@ -391,17 +429,17 @@ setup_external_mounts() {
 		}
 }
 
-setup_grub_args() {
+setup_kernel_args() {
 	confirm "Modify kernel args for Gigabyte Mobo ARGB support?" &&
 		{
 			if [ "$OS" = "Bazzite" ]; then
 				rpm-ostree kargs --append=amd_pstate=active --append=acpi_enforce_resources=lax
 			elif [ "$OS" == "Arch" ]; then
+				local sysdboot_entry="/boot/loader/entries/linux-cachyos.conf"
 				# enable AMD Ryzen Pstate and enable OpenRGB for Gigabyte mobos (on patched kernels)
 				local rgb_grub_arg="amd_pstate=active acpi_enforce_resources=lax"
-				if update_grub_cmdline "$rgb_grub_arg" -eq 0; then
-					sudo grub-mkconfig -o /boot/grub/grub.cfg
-				fi
+				update_grub_cmdline "$rgb_grub_arg"
+				update_sysdboot_cmdline "$sysdboot_entry" "$rgb_grub_arg"
 			else
 				echo "Error: unsupported OS, skipping grub args!"
 				return
@@ -538,7 +576,7 @@ setup_system_shared() {
 		$CP ./systemd-user/*.service "$HOME"/.config/systemd/user/
 		chmod 0755 "$HOME"/.local/bin/*
 
-		setup_grub_args
+		setup_kernel_args
 		setup_ssh_gpg
 		setup_chaotic_aur
 		install_nvidia_tweaks
