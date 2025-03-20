@@ -258,6 +258,33 @@ setup_neovim() {
 		}
 }
 
+check_mount_device() {
+	local mount_file="$1"
+
+	if ! [ -r "$mount_file" ]; then
+		echo "Error: File '$mount_file' does not exist or is unreadable!"
+		return 1
+	fi
+
+	while IFS= read -r line; do
+		# Check for lines starting with "What="
+		if [[ "$line" =~ ^\s*What= ]]; then
+			# Extract the device path after "What="
+			device_path=$(echo "$line" | cut -d'=' -f2 | xargs)
+			# Check if the device path is a URI
+			[[ "$device_path" == "//"* ]] && return 0
+			# Check if the device path is readable or at least exists
+			if [ -r "$device_path" ] || [ -e "$device_path" ]; then
+				return 0
+			else
+				return 1
+			fi
+		fi
+	done
+
+	echo "Error: Could not find 'What=' line in the file!"
+	return 1
+}
 install_smb_creds() {
 	local creds_file="/etc/.smb-credentials"
 
@@ -307,8 +334,12 @@ setup_external_mounts() {
 						unit_files+=("$new_basename")
 					elif [ "$OS" = "Arch" ]; then
 						sudo cp -f "$file" "$dst/$basename" # just copy
-						if [[ "$basename" == *.automount* ]] || [[ "$basename" == *.swap* ]]; then
-							unit_files+=("$basename") # only include automounts and swap
+						if [[ "$basename" == *.automount* ]]; then
+							if check_mount_device "${file%.*}.mount"; then
+								unit_files+=("$basename") # only include existing automounts and swap
+							elif [[ "$basename" == *.swap* ]] && check_mount_device "$file"; then
+								unit_files+=("$basename")
+							fi
 						fi
 					else
 						echo "Error: unsupported OS, skipping systemd mounts!"
