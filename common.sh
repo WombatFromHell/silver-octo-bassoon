@@ -124,6 +124,14 @@ setup_arch_btrfs() {
 	local HOME_FS_TYPE
 	HOME_FS_TYPE=$(df -T /home | awk 'NR==2 {print $2}')
 
+	local is_systemd_boot
+	is_systemd_boot="$(sudo ls -l /boot/loader)"
+	is_systemd_boot="$?"
+	if [ "$is_systemd_boot" -eq 0 ]; then
+		echo "Error: systemd-boot detected, skipping grub-btrfs setup!"
+		return 1
+	fi
+
 	if [ "$ROOT_FS_TYPE" = "btrfs" ] && confirm "Install grub-btrfsd and snapper?"; then
 		echo "IMPORTANT: Root (/) and Home (/home) must be mounted on @ and @home respectively!"
 		echo "!! Ensure you have a root (subvolid=5) subvol for @var, @var_tmp, and @var_log before continuing !!"
