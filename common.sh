@@ -494,9 +494,9 @@ install_openrgb() {
 install_nvidia_tweaks() {
 	! confirm "Install Nvidia driver tweaks and fan/power control?" && return
 
+	local dst="/etc/modprobe.d/nvidia.conf"
+	local local_bin="/usr/local/bin"
 	if [ -e "/proc/driver/nvidia" ] && [ "$OS" == "Arch" ]; then
-		local dst="/etc/modprobe.d/nvidia.conf"
-		local local_bin="/usr/local/bin"
 		sudo mkdir -p "$local_bin"
 
 		sudo rm -f "$dst"
