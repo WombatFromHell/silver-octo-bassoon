@@ -1,92 +1,3 @@
-#!/usr/bin/env bash
-
-shopt -s nullglob
-
-SUPPORT="./support"
-CP="sudo rsync -vhP --chown=$USER:$USER --chmod=D755,F644"
-PACMAN=(sudo pacman -Sy --needed --noconfirm)
-
-# cache credentials
-cache_creds() {
-	sudo -v &
-	pid=$!
-	wait $pid
-	if [ "$?" -eq 130 ]; then
-		echo "Error: Cannot obtain sudo credentials!"
-		exit 1
-	fi
-}
-
-confirm() {
-	read -r -p "$1 (y/N) " response
-	case "$response" in
-	[yY])
-		return 0
-		;;
-	*)
-		echo "Action aborted!"
-		return 1
-		;;
-	esac
-}
-
-run_if_confirmed() {
-	local prompt="$1"
-	local func="$2"
-
-	if confirm "$prompt"; then
-		$func
-	fi
-}
-
-check_cmd() {
-	local cmd
-	cmd="$(command -v "$1")"
-	if [ -n "$cmd" ]; then
-		echo "$cmd"
-	else
-		return 1
-	fi
-}
-
-is_archlike() {
-	local os="$1"
-	local archlikes=("Arch" "CachyOS")
-
-	for os_name in "${archlikes[@]}"; do
-		if [ "$os_name" == "$os" ]; then
-			return 0
-		fi
-	done
-	return 1
-}
-check_os() {
-	local os
-	os="$(grep "NAME=" /etc/os-release | head -n 1 | cut -d\" -f2 | cut -d' ' -f1)"
-	# check fallback in case of macOS
-	local fallback
-	fallback="$(uname -a | cut -d' ' -f1)"
-
-	local supported=("Arch" "Bazzite")
-
-	for distro in "${supported[@]}"; do
-		if is_archlike "$os"; then
-			echo "Arch"
-			return
-		elif [[ "$os" == "$distro" ]]; then
-			echo "$os"
-			return
-		fi
-	done
-
-	if [ -n "$fallback" ] && [ "$fallback" == "Darwin" ]; then
-		echo "$fallback"
-	else
-		echo "Unknown"
-	fi
-}
-OS="$(check_os)"
-
 update_sysdboot_cmdline() {
 	local target_file="$1"
 	local text_to_add="$2"
@@ -487,6 +398,7 @@ setup_kernel_args() {
 
 install_appimages() {
 	local appimages_path="$HOME/AppImages"
+	echo "Installing AppImages to '$appimages_path'..."
 	mkdir -p "$appimages_path" &&
 		$CP "$SUPPORT"/appimages/*.AppImage "$appimages_path/" &&
 		chmod 0755 "$appimages_path"/*.AppImage
@@ -514,6 +426,7 @@ install_openrgb() {
 				sudo cp -f ./etc-udev-rules.d/60-openrgb.rules /etc/udev/rules.d/
 				sudo cp -f "$SUPPORT"/appimages/openrgb.AppImage /usr/local/bin/
 				sudo chmod 0755 /usr/local/bin/openrgb.AppImage
+				remove_this /usr/local/bin/openrgb "sudo"
 				sudo ln -s /usr/local/bin/openrgb.AppImage /usr/local/bin/openrgb
 				sudo udevadm control --reload-rules && sudo udevadm trigger
 			else
@@ -535,7 +448,7 @@ install_nvidia_tweaks() {
 		echo "Error: unsupported OS, skipping Nvidia tweaks!"
 	fi
 
-	sudo cp -f "$local_bin"/nvidia-pm.py "$local_bin"/veridian-controller "$local_bin"/
+	# sudo cp -f "$local_bin"/nvidia-pm.py "$local_bin"/veridian-controller "$local_bin"/
 	sudo cp -f ./etc/nvidia-pm.conf ./etc/veridian-controller.toml /etc/
 }
 nvidia_env_check() {
@@ -616,7 +529,7 @@ setup_system_shared() {
 			$CP ."${env_path}" "$env_path"
 		nvidia_env_check
 
-		mkdir -p /usr/local/bin/ "$HOME"/.local/bin/ &&
+		sudo mkdir -p /usr/local/bin/ &&
 			sudo cp -f ./usr-local-bin/* /usr/local/bin/ &&
 			sudo chown root:root /usr/local/bin/* &&
 			sudo chmod 0755 /usr/local/bin/*
@@ -625,7 +538,7 @@ setup_system_shared() {
 			sudo cp -f ./etc-sysctl.d/*.conf /etc/sysctl.d/ &&
 			sudo sysctl --system &>/dev/null
 
-		# enable some secondary user-specific services
+		# install some secondary user-specific services
 		mkdir -p "$HOME"/.config/systemd/user/ "$HOME"/.local/bin/
 		$CP ./systemd-user/*.service "$HOME"/.config/systemd/user/
 		chmod 0755 "$HOME"/.local/bin/*
@@ -634,8 +547,8 @@ setup_system_shared() {
 		setup_ssh_gpg
 		setup_chaotic_aur
 		install_nvidia_tweaks
-		install_openrgb
 		install_appimages
+		install_openrgb
 		install_fonts
 	else
 		echo "Error: unsupported OS, skipping setup!"
@@ -660,15 +573,15 @@ install_nix() {
 		sh -s -- install ${nix:+$nix} --no-confirm
 }
 install_nix_flake() {
-	if check_cmd nix && confirm "Install 'home-manager' and custom Nix flake?"; then
+	if nix="$(check_cmd nix)" && confirm "Install 'home-manager' and custom Nix flake?"; then
 		if ! check_cmd home-manager; then
 			"$nix" run home-manager/master -- init --switch "$(realpath "$HOME")/.config/home-manager"
 		fi
 		if ! [ -d "$HOME"/.nix ]; then
 			git clone https://github.com/WombatFromHell/automatic-palm-tree.git "$HOME"/.nix
 		fi
-		if check_cmd home-manager; then
-			home-manager switch --flake "$(realpath "$HOME")"/.nix#"$(hostname)"
+		if hm="$(check_cmd home-manager)"; then
+			"$hm" switch --flake "$(realpath "$HOME")"/.nix#"$(hostname)"
 		fi
 	else
 		echo "Error: 'nix' wasn't found in your PATH, skipping Nix flake setup!"
@@ -676,23 +589,21 @@ install_nix_flake() {
 	fi
 }
 setup_package_manager() {
-	case "$OS" in
-	"Bazzite" | "Darwin" | "Arch")
-		if ! check_cmd brew && confirm "Install Brew?"; then
+	if [ "$OS" != "NixOS" ]; then
+		if ! brew="$(check_cmd brew)" && confirm "Install Brew?"; then
 			install_brew
 			setup_package_manager # try again
-		elif check_cmd brew && confirm "Brew found, use it to install common utils?"; then
-			check_cmd brew && brew install eza fd rdfind ripgrep fzf bat lazygit fish zoxide
+		elif brew="$(check_cmd brew)" && confirm "Brew found, use it to install common utils?"; then
+			check_cmd brew && "$brew" install eza fd rdfind ripgrep fzf bat lazygit fish zoxide
 			setup_neovim # use BOB for Neovim
-		elif ! check_cmd nix && confirm "Install Nix?"; then
+		elif ! nix="$(check_cmd nix)" && confirm "Install Nix?"; then
 			install_nix
-		elif check_cmd nix && confirm "Nix found, use it to install a custom flake?"; then
+		elif nix="$(check_cmd nix)" && confirm "Nix found, use it to install a custom flake?"; then
 			install_nix_flake
 		fi
-		;;
-
-	*) echo "Error: incompatible OS, skipping package manager setup!" ;;
-	esac
+	else
+		echo "Error: incompatible OS, skipping package manager setup!"
+	fi
 }
 
 install_peazip() {

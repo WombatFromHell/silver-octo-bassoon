@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-source ./common.sh
+source ./lib/common.sh
+source ./lib/install.sh
 cache_creds
 
 bootstrap_arch
