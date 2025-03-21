@@ -657,24 +657,37 @@ install_nix() {
 install_nix_flake() {
 	local nix
 	nix="$(check_cmd nix)"
+	local home_manager
+	home_manager="$(check_cmd home-manager)"
 
 	if [ -n "$nix" ] && confirm "Install 'home-manager' and custom Nix flake?"; then
-		"$nix" run home-manager/master -- init --switch "$(realpath "$HOME")/.config/home-manager"
-		git clone https://github.com/WombatFromHell/automatic-palm-tree.git "$HOME"/.nix
+		if [ -z "$home_manager" ]; then
+			"$nix" run home-manager/master -- init --switch "$(realpath "$HOME")/.config/home-manager"
+		fi
+		if ! [ -d "$HOME"/.nix ]; then
+			git clone https://github.com/WombatFromHell/automatic-palm-tree.git "$HOME"/.nix
+		fi
+		if [ -n "$home_manager" ]; then
+			"$home_manager" switch --flake "$(realpath "$HOME")"/.nix#"$(hostname)"
+		fi
 	fi
 }
 setup_package_manager() {
 	local brew
 	brew="$(check_cmd brew)"
+	local nix
+	nix="$(check_cmd nix)"
 
 	case "$OS" in
 	"Bazzite" | "Darwin")
-		if confirm "Install Brew and some common utils?"; then
-			[ -z "$brew" ] && brew="$(install_brew)"
+		if [ -z "$brew" ] && confirm "Install Brew and some common utils?"; then
+			brew="$(install_brew)"
 			[ -n "$brew" ] && "$brew" install eza fd rdfind ripgrep fzf bat lazygit fish zoxide
 			setup_neovim # use BOB for Neovim
-		elif confirm "Install Nix as an alternative to Brew?"; then
+		elif [ -z "$nix" ] && confirm "Install Nix as an alternative to Brew?"; then
 			install_nix
+			install_nix_flake
+		elif [ -n "$nix" ]; then
 			install_nix_flake
 		fi
 		;;
@@ -697,7 +710,7 @@ install_peazip() {
 				# pin PeaZip to v10.0.0 for compatibility reasons
 				flatpak --user upgrade --noninteractive \
 					"$peazip_app" --commit=04aea5bd3a84ddd5ddb032ef08c2e5214e3cc2448bdce155d446d30a84185278 &&
-					flatpak --user mask --noninteractive "$peazip_app"
+					flatpak --user mask "$peazip_app"
 			fi
 
 			local peazip_fix="./dotfiles/Configs/scripts/fix-peazip-dolphin-integration.sh"
@@ -772,10 +785,13 @@ setup_flatpak() {
 	# pre-install common Flatpaks
 	if confirm "Setup Flatpak and add common apps?"; then
 		[ "$OS" == "Arch" ] && "${PACMAN[@]}" flatpak
-
 		remove_existing_flatpaks
 
 		flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+		sudo flatpak install --system --noninteractive \
+			runtime/org.freedesktop.Platform.VulkanLayer.MangoHud/x86_64/24.08 \
+			org.gtk.Gtk3theme.Adwaita-dark
+
 		flatpak install --user --noninteractive \
 			com.github.zocker_160.SyncThingy \
 			com.github.tchx84.Flatseal \
@@ -783,12 +799,10 @@ setup_flatpak() {
 			com.spotify.Client \
 			net.agalwood.Motrix \
 			com.vysp3r.ProtonPlus \
-			com.usebottles.bottles \
-			runtime/org.freedesktop.Platform.VulkanLayer.MangoHud/x86_64/24.08
+			com.usebottles.bottles
 
 		if [ "$OS" == "Bazzite" ]; then
-			flatpak install --noninteractive \
-				org.gtk.Gtk3theme.Adwaita-dark \
+			sudo flatpak install --system --noninteractive \
 				org.kde.filelight \
 				org.kde.gwenview \
 				org.kde.haruna \
@@ -796,7 +810,9 @@ setup_flatpak() {
 				org.kde.okular \
 				com.github.Matoking.protontricks
 		fi
+	fi
 
+	if command -v flatpak &>/dev/null; then
 		install_peazip
 		install_brave
 		install_firefox_fix
