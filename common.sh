@@ -731,21 +731,31 @@ install_obs() {
 				com.obsproject.Studio
 		}
 }
+remove_existing_flatpaks() {
+	# remove existing flatpaks
+	local installed_flatpaks=()
+	while IFS= read -r app; do
+		installed_flatpaks+=("$app")
+	done < <(flatpak list --app --columns=application | tail -n +1)
+
+	for app in "${installed_flatpaks[@]}"; do
+		sudo flatpak remove --noninteractive "$app"
+		flatpak --user remove --noninteractive "$app"
+	done
+	sudo flatpak remove --unused
+}
 setup_flatpak() {
 	# pre-install common Flatpaks
 	if confirm "Setup Flatpak and add common apps?"; then
 		[ "$OS" == "Arch" ] && "${PACMAN[@]}" flatpak
 
-		# remove existing flatpaks
-		local installed_flatpaks=()
-		while IFS= read -r app; do
-			installed_flatpaks+=("$app")
-		done < <(flatpak list --app --columns=application | tail -n +1)
-		sudo flatpak remove --unused
+		remove_existing_flatpaks
 
 		flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 		flatpak install --user --noninteractive \
 			com.github.zocker_160.SyncThingy \
+			com.github.tchx84.Flatseal \
+			it.mijorus.gearlever \
 			com.spotify.Client \
 			net.agalwood.Motrix \
 			com.vysp3r.ProtonPlus \
@@ -755,8 +765,6 @@ setup_flatpak() {
 		if [ "$OS" == "Bazzite" ]; then
 			flatpak install --noninteractive \
 				org.gtk.Gtk3theme.Adwaita-dark \
-				com.github.tchx84.Flatseal \
-				it.mijorus.gearlever \
 				org.kde.filelight \
 				org.kde.gwenview \
 				org.kde.haruna \
