@@ -627,9 +627,8 @@ install_nix() {
 	*) ;;
 	esac
 
-	(
-		bash -ic "$(curl --proto '=https' --tlsv1.2 -fsSL https://install.determinate.systems/nix)" -- install "${nix:+$nix}"
-	)
+	curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix |
+		sh -s -- install ${nix:+$nix} --no-confirm
 }
 install_nix_flake() {
 	local nix
@@ -751,7 +750,7 @@ setup_flatpak() {
 			net.agalwood.Motrix \
 			com.vysp3r.ProtonPlus \
 			com.usebottles.bottles \
-			org.freedesktop.Platform.VulkanLayer.MangoHud
+			runtime/org.freedesktop.Platform.VulkanLayer.MangoHud/x86_64/24.08
 
 		if [ "$OS" == "Bazzite" ]; then
 			flatpak install --noninteractive \
