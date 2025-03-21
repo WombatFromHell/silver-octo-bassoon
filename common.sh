@@ -660,45 +660,35 @@ install_nix() {
 		sh -s -- install ${nix:+$nix} --no-confirm
 }
 install_nix_flake() {
-	local nix
-	nix="$(check_cmd nix)"
-	local home_manager
-	home_manager="$(check_cmd home-manager)"
-
-	if [ -n "$nix" ] && confirm "Install 'home-manager' and custom Nix flake?"; then
-		if [ -z "$home_manager" ]; then
+	if check_cmd nix && confirm "Install 'home-manager' and custom Nix flake?"; then
+		if ! check_cmd home-manager; then
 			"$nix" run home-manager/master -- init --switch "$(realpath "$HOME")/.config/home-manager"
 		fi
 		if ! [ -d "$HOME"/.nix ]; then
 			git clone https://github.com/WombatFromHell/automatic-palm-tree.git "$HOME"/.nix
 		fi
-		if [ -n "$home_manager" ]; then
-			"$home_manager" switch --flake "$(realpath "$HOME")"/.nix#"$(hostname)"
+		if check_cmd home-manager; then
+			home-manager switch --flake "$(realpath "$HOME")"/.nix#"$(hostname)"
 		fi
+	else
+		echo "Error: 'nix' wasn't found in your PATH, skipping Nix flake setup!"
+		return 1
 	fi
 }
 setup_package_manager() {
-	local brew
-	brew="$(check_cmd brew)"
-	local nix
-	nix="$(check_cmd nix)"
-
 	case "$OS" in
-	"Bazzite" | "Darwin")
-		if [ -z "$brew" ] && confirm "Install Brew and some common utils?"; then
-			brew="$(install_brew)"
-			[ -n "$brew" ] && "$brew" install eza fd rdfind ripgrep fzf bat lazygit fish zoxide
+	"Bazzite" | "Darwin" | "Arch")
+		if ! check_cmd brew && confirm "Install Brew?"; then
+			install_brew
+			setup_package_manager # try again
+		elif check_cmd brew && confirm "Brew found, use it to install common utils?"; then
+			check_cmd brew && brew install eza fd rdfind ripgrep fzf bat lazygit fish zoxide
 			setup_neovim # use BOB for Neovim
-		elif [ -z "$nix" ] && confirm "Install Nix as an alternative to Brew?"; then
+		elif ! check_cmd nix && confirm "Install Nix?"; then
 			install_nix
-			install_nix_flake
-		elif [ -n "$nix" ]; then
+		elif check_cmd nix && confirm "Nix found, use it to install a custom flake?"; then
 			install_nix_flake
 		fi
-		;;
-
-	"Arch")
-		confirm "Install Nix?" && install_nix && install_nix_flake
 		;;
 
 	*) echo "Error: incompatible OS, skipping package manager setup!" ;;
