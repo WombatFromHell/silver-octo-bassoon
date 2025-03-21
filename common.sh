@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 shopt -s nullglob
-set -xuo pipefail
 
 SUPPORT="./support"
 CP="sudo rsync -vhP --chown=$USER:$USER --chmod=D755,F644"
@@ -302,14 +301,8 @@ setup_neovim() {
 check_mount_device() {
 	local mount_file="$1"
 
-	if ! [ -r "$mount_file" ]; then
+	if ! [ -r "$mount_file" ] || ! [ -f "$mount_file" ]; then
 		echo "Error: File '$mount_file' does not exist or is unreadable!"
-		return 1
-	fi
-
-	# Check if the file is a regular file
-	if ! [ -f "$mount_file" ]; then
-		echo "Error: '$mount_file' is not a regular file."
 		return 1
 	fi
 
@@ -327,7 +320,7 @@ check_mount_device() {
 				return 1
 			fi
 		fi
-	done <"$mount_file" # Read from file directly to handle non-blocking properly
+	done <"$mount_file"
 
 	echo "Error: Could not find 'What=' line in the file!"
 	return 1
@@ -373,9 +366,9 @@ filter_mount_unit() {
 
 	# validate automount file based on mount file's What= line
 	if [[ "$basename" == *.automount ]] && check_mount_device "${tgt%.*}.mount"; then
-		echo "$tgt"
+		echo "$basename"
 	elif [[ "$new_basename" == *.swap ]] && check_mount_device "$file"; then
-		echo "$tgt"
+		echo "$basename"
 	else
 		return 1
 	fi
