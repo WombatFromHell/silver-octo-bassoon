@@ -5,6 +5,12 @@ include = ["BraveSoftware"]
 exclude = ["Cache", "Code Cache", "GPUCache"]
 
 [[backup]]
+path = "$HOME/.var/app/com.brave.Browser/config"
+output = "BraveSoftware-var_backup"
+include = ["BraveSoftware"]
+exclude = ["Cache", "Code Cache", "GPUCache"]
+
+[[backup]]
 path = "$HOME/.config"
 output = "heroic_backup"
 include = ["heroic"]
