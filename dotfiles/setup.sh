@@ -61,15 +61,24 @@ check_for_os() {
 }
 
 remove_this() {
-	local target=$1
-	local sudo_flag=$2
-	[ "$sudo_flag" == "sudo" ] && ADMIN=true
+	local target="$1"
+	local use_sudo="${2:-sudo}"
 	if [[ -L "$target" ]]; then
-		unlink "$target" && return 0
-		[ "$ADMIN" == "true" ] && sudo unlink "$target" && return 0
+		if [[ "$use_sudo" == "sudo" ]]; then
+			command=(sudo unlink)
+		else
+			command=(unlink)
+		fi
+		"${command[@]}" "$target" && return 0
+		return 1
 	fi
-	rm -rf "${target:?}" && return 0
-	sudo rm -rf "${target:?}" && return 0
+
+	if [[ "$use_sudo" == "sudo" ]]; then
+		command=(sudo rm -rf)
+	else
+		command=(rm -rf)
+	fi
+	"${command[@]}" "$target" && return 0
 	return 1
 }
 
@@ -147,7 +156,7 @@ handle_scripts() {
 	ln -sf "$(realpath "$ROOT/$dir")" "$target"
 	echo "Linking 'fish.sh' in /usr/local/bin for compatibility..."
 	local fish="/usr/local/bin/fish.sh"
-	remove_this "$fish"
+	remove_this "$fish" "sudo" # use sudo mode here
 	sudo ln -sf "$target/fish.sh" "$fish"
 	return 2
 }
