@@ -364,11 +364,24 @@ filter_mount_unit() {
 	local basename
 	basename="$(basename "$tgt")"
 
-	# validate automount file based on mount file's What= line
+	# For automount files, validate the related mount file
 	if [[ "$basename" == *.automount ]] && check_mount_device "${tgt%.*}.mount"; then
+		# Return both the automount and related mount file
+		echo "$basename ${basename%.automount}.mount"
+		return 0
+	# For swap files, just validate the swap file itself
+	elif [[ "$basename" == *.swap ]] && check_mount_device "$tgt"; then
 		echo "$basename"
-	elif [[ "$new_basename" == *.swap ]] && check_mount_device "$file"; then
-		echo "$basename"
+		return 0
+	# For mount files, validate the mount file and return both mount and automount if automount exists
+	elif [[ "$basename" == *.mount ]] && check_mount_device "$tgt"; then
+		local automount_file="${tgt%.mount}.automount"
+		if [ -f "$automount_file" ]; then
+			echo "$basename $(basename "$automount_file")"
+		else
+			echo "$basename"
+		fi
+		return 0
 	else
 		return 1
 	fi
@@ -376,65 +389,57 @@ filter_mount_unit() {
 setup_external_mounts() {
 	local src="./systemd-automount"
 	local dst="/etc/systemd/system"
-
 	confirm "Setup external filesystem mounts?" &&
 		{
 			remove_existing_mounts
-
 			if [ "$OS" = "Arch" ] || [ "$OS" = "Bazzite" ]; then
 				mkdir -p "$dst"
-
 				unit_files=()
+
+				# Process all mount, automount, and swap files
 				for file in "$src"/mnt-*.mount "$src"/mnt-*.automount "$src"/mnt-*.swap; do
 					if ! [ -e "$file" ]; then
 						echo "Couldn't find unit: $file, skipping..."
 						continue
 					fi
 
-					basename=$(basename "$file")
-					case "$OS" in
-					"Bazzite")
-						local enabled_unit
-						enabled_unit="$(filter_mount_unit "$file")"
-						if [ -n "$enabled_unit" ]; then
-							unit_files+=("$enabled_unit")
-						else
-							echo "Skipping unit: $file"
-							continue
-						fi
+					# Get all files that need to be enabled
+					local enabled_units
+					enabled_units="$(filter_mount_unit "$file")"
+					local enabled_units_result="$?"
 
-						echo "Processing unit: '$basename'..."
-						# create new filename with var-mnt prefix
-						new_basename="var-${basename}"
-						temp_file="$(mktemp)"
-						sed 's#/mnt/#/var/mnt/#g' "$file" >"$temp_file"
-						# copy modified file to destination
-						sudo cp -f "$temp_file" "$dst/$new_basename"
-						sudo chmod 0644 "$dst/$new_basename"
-						echo "Created unit: '$dst/$new_basename'"
-						rm "$temp_file"
-						;;
+					if [ "$enabled_units_result" -ne 0 ] || [ -z "$enabled_units" ]; then
+						echo "Skipping unit: $file"
+						continue
+					fi
 
-					"Arch")
-						local enabled_unit
-						enabled_unit="$(filter_mount_unit "$file")"
-						if [ -n "$enabled_unit" ]; then
-							unit_files+=("$enabled_unit")
-						else
-							echo "Skipping unit: $file"
-							continue
-						fi
+					# Process each file that needs to be enabled
+					for basename in $enabled_units; do
+						unit_files+=("$basename")
+						original_file="$src/$basename"
 
-						echo "Processing unit: '$basename'..."
-						sudo cp -f "$file" "$dst/$basename"
-						echo "Created unit: '$dst/$basename'"
-						;;
-
-					*)
-						echo "Error: unsupported OS, skipping systemd mounts!"
-						return 1
-						;;
-					esac
+						case "$OS" in
+						"Bazzite")
+							# Create new filename with var-mnt prefix
+							new_basename="var-${basename}"
+							temp_file="$(mktemp)"
+							sed 's#/mnt/#/var/mnt/#g' "$original_file" >"$temp_file"
+							# Copy modified file to destination
+							sudo cp -f "$temp_file" "$dst/$new_basename"
+							sudo chmod 0644 "$dst/$new_basename"
+							echo "Created unit: '$dst/$new_basename'"
+							rm "$temp_file"
+							;;
+						"Arch")
+							sudo cp -f "$original_file" "$dst/$basename"
+							echo "Copied unit: '$dst/$basename'"
+							;;
+						*)
+							echo "Error: unsupported OS, skipping systemd mounts!"
+							return 1
+							;;
+						esac
+					done
 				done
 
 				if [ "${#unit_files[@]}" -gt 0 ]; then
