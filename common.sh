@@ -307,6 +307,12 @@ check_mount_device() {
 		return 1
 	fi
 
+	# Check if the file is a regular file
+	if ! [ -f "$mount_file" ]; then
+		echo "Error: '$mount_file' is not a regular file."
+		return 1
+	fi
+
 	while IFS= read -r line; do
 		# Check for lines starting with "What="
 		if [[ "$line" =~ ^\s*What= ]]; then
@@ -321,7 +327,7 @@ check_mount_device() {
 				return 1
 			fi
 		fi
-	done
+	done <"$mount_file" # Read from file directly to handle non-blocking properly
 
 	echo "Error: Could not find 'What=' line in the file!"
 	return 1
