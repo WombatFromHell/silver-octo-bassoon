@@ -48,15 +48,43 @@ check_program() {
 	return 0
 }
 
-check_for_os() {
-	local os
-	os="$(uname -a)"
+is_archlike() {
+	local os="$1"
+	local archlikes=("Arch" "CachyOS")
+	for os_name in "${archlikes[@]}"; do
+		if [ "$os_name" == "$os" ]; then
+			return 0
+		fi
+	done
+	return 1
+}
+check_os() {
+	local os=""
+	if [ -f "/etc/os-release" ]; then
+		os="$(grep "NAME=" /etc/os-release | head -n 1 | cut -d\" -f2 | cut -d' ' -f1)"
+	fi
+	local kernel
+	kernel="$(uname -s)"
 
-	case "$os" in
-	*NixOS*) echo "NixOS" ;;
-	*Darwin*) echo "Darwin" ;;
-	*Linux*) echo "Linux" ;;
-	*) echo "Other" ;;
+	if [ "$kernel" == "Darwin" ]; then
+		echo "Darwin"
+	elif is_archlike "$os"; then
+		echo "Arch"
+	elif [ "$os" == "Bazzite" ] || [ "$os" == "NixOS" ]; then
+		echo "$os"
+	elif [ "$kernel" == "Linux" ]; then
+		echo "Linux"
+	else
+		echo "Unknown"
+	fi
+}
+OS="$(check_os)"
+is_linux() {
+	case "$OS" in
+	# do NOT list NixOS variants here!
+	"Linux" | "Arch" | "Bazzite") return 0 ;;
+
+	*) return 1 ;;
 	esac
 }
 
@@ -162,9 +190,9 @@ handle_scripts() {
 }
 
 handle_pipewire() {
-	local dir=$1 target=$2 os=$3
-	if [[ "$os" != "Linux" ]] || ! confirm "Are you sure you want to stow $dir?"; then
-		echo "Skipping $dir stow on $os..."
+	local dir=$1 target=$2
+	if ! is_linux || ! confirm "Are you sure you want to stow $dir?"; then
+		echo "Skipping $dir stow on $OS..."
 		return 1
 	fi
 	local conf_root=".config/pipewire"
@@ -229,19 +257,19 @@ handle_tmux() {
 }
 
 do_pre_stow() {
-	local dir=$1 target=$2 os=$3
+	local dir=$1 target=$2
 	case "$dir" in
 	hypr) check_program "hyprland" || return 1 ;;
 	MangoHud) check_program "mangohud" || return 1 ;;
 	topgrade.d) check_program "topgrade" || return 1 ;;
-	home) handle_home "$os" || return $? ;;
-	pipewire) handle_pipewire "$dir" "$target" "$os" || return $? ;;
+	home) handle_home || return $? ;;
+	pipewire) handle_pipewire "$dir" "$target" || return $? ;;
 	scripts) handle_scripts "$dir" || return $? ;;
 	systemd)
-		[[ "$os" != "Linux" ]] && {
-			echo "Skipping $dir stow on $os..."
+		if ! is_linux; then
+			echo "Skipping $dir stow on $OS..."
 			return 1
-		}
+		fi
 		;;
 	nix) return 1 ;;
 	OpenRGB) handle_openrgb "$dir" || return $? ;;
@@ -255,7 +283,7 @@ do_post_stow() {
 	local dir=$1 target=$2 os=$3
 	case "$dir" in
 	home)
-		if [ "$os" == "NixOS" ]; then
+		if [ "$OS" == "NixOS" ]; then
 			remove_this "$HOME/.profile"
 			echo "Detected NixOS; removed ~/.profile to avoid env clobbering."
 		elif check_program "uwsm" "Error: 'uwsm' not found, skipping!"; then
