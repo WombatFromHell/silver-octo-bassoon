@@ -167,12 +167,8 @@ setup_arch_btrfs() {
 	local is_systemd_boot
 	is_systemd_boot="$(sudo ls -l /boot/loader)"
 	is_systemd_boot="$?"
-	if [ "$is_systemd_boot" -eq 0 ]; then
-		echo "Error: systemd-boot detected, skipping grub-btrfs setup!"
-		return 1
-	fi
 
-	if [ "$ROOT_FS_TYPE" = "btrfs" ] && confirm "Install grub-btrfsd and snapper?"; then
+	if [ "$ROOT_FS_TYPE" == "btrfs" ] && confirm "Install grub-btrfsd and snapper?"; then
 		echo "IMPORTANT: Root (/) and Home (/home) must be mounted on @ and @home respectively!"
 		echo "!! Ensure you have a root (subvolid=5) subvol for @var, @var_tmp, and @var_log before continuing !!"
 		btrfs_mount="/mnt/btrfs"
@@ -182,7 +178,12 @@ setup_arch_btrfs() {
 			sudo btrfs sub cr "$btrfs_mount"/@snapshots
 		echo "UUID=$ROOT_FS_UUID /.snapshots btrfs subvol=/@snapshots/root,defaults,noatime,compress=zstd,commit=120 0 0" | sudo tee -a /etc/fstab
 
-		"${PACMAN[@]}" grub-btrfs snap-pac inotify-tools
+		if [ "$is_systemd_boot" -gt 0 ]; then
+			echo "Warning: systemd-boot detected, skipping grub-btrfs installation..."
+		else
+			"${PACMAN[@]}" grub-btrfs
+		fi
+		"${PACMAN[@]}" snap-pac inotify-tools
 
 		sudo snapper -c root create-config / &&
 			sudo mv "$btrfs_mount/@/.snapshots" "$btrfs_mount/@snapshots/root"
@@ -210,7 +211,11 @@ setup_arch_btrfs() {
 			sudo systemctl enable snapper-{cleanup,backup,timeline}.timer
 
 		# regenerate grub-btrfs snapshots
-		sudo grub-mkconfig -o /boot/grub/grub.cfg
+		if [ "$is_systemd_boot" -gt 0 ]; then
+			echo "Warning: systemd-boot detected, skipping grub-btrfs installation..."
+		else
+			sudo grub-mkconfig -o /boot/grub/grub.cfg
+		fi
 	fi
 }
 
