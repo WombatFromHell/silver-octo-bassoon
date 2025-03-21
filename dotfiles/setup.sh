@@ -280,7 +280,7 @@ do_pre_stow() {
 }
 
 do_post_stow() {
-	local dir=$1 target=$2 os=$3
+	local dir=$1 target=$2
 	case "$dir" in
 	home)
 		if [ "$OS" == "NixOS" ]; then
@@ -313,7 +313,7 @@ do_post_stow() {
 }
 
 do_stow() {
-	local dir=$1 target=$2 os=$3
+	local dir=$1 target=$2
 	if ! confirm "Removing all files from $target before stowing '$dir'?"; then
 		return 1
 	fi
@@ -325,11 +325,9 @@ do_stow() {
 handle_stow() {
 	local dir=$1
 	local target="$HOME/.config/$dir"
-	local os
-	os=$(check_for_os)
-	do_pre_stow "$dir" "$target" "$os" || return 1
-	do_stow "$dir" "$target" "$os" || return 1
-	do_post_stow "$dir" "$target" "$os"
+	do_pre_stow "$dir" "$target" || return 1
+	do_stow "$dir" "$target" || return 1
+	do_post_stow "$dir" "$target"
 }
 
 main() {
