@@ -533,6 +533,29 @@ install_nvidia_tweaks() {
 	sudo cp -f "$local_bin"/nvidia-pm.py "$local_bin"/veridian-controller "$local_bin"/
 	sudo cp -f ./etc/nvidia-pm.conf ./etc/veridian-controller.toml /etc/
 }
+nvidia_env_check() {
+	local env_file="/etc/environment"
+	local nvidia_driver="/proc/driver/nvidia"
+	local patterns=(
+		"LIBVA_DRIVER_NAME=.*"
+		"GBM_BACKEND=.*"
+		"__GLX_VENDOR.*"
+		"__EGL_VENDOR.*"
+	)
+	if ! [ -e "$nvidia_driver" ]; then
+		# NVIDIA drivers are not installed - disable EGL overrides
+		for pattern in "${patterns[@]}"; do
+			sudo sed -i "\|^$pattern|{ /^#/! s|^|#| }" "$env_file"
+		done
+		echo "Disabled NVIDIA Wayland overrides in /etc/environment..."
+	else
+		# NVIDIA drivers are installed - enable EGL overrides
+		for pattern in "${patterns[@]}"; do
+			sudo sed -i "s|^#\($pattern\)|\1|" "$env_file"
+		done
+		echo "Enabled NVIDIA Wayland overrides in /etc/environment..."
+	fi
+}
 setup_system_shared() {
 	! confirm "Install some common packages and tweaks?" && return
 
@@ -586,6 +609,7 @@ setup_system_shared() {
 		local env_path="/etc/environment"
 		sudo cp -f "$env_path" "${env_path}".bak &&
 			$CP ."${env_path}" "$env_path"
+		nvidia_env_check
 
 		mkdir -p /usr/local/bin/ "$HOME"/.local/bin/ &&
 			sudo cp -f ./usr-local-bin/* /usr/local/bin/ &&
