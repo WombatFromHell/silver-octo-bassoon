@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 shopt -s nullglob
+set -xuo pipefail
 
 SUPPORT="./support"
 CP="sudo rsync -vhP --chown=$USER:$USER --chmod=D755,F644"
@@ -359,6 +360,20 @@ remove_existing_mounts() {
 	sudo systemctl daemon-reload
 	echo "Done removing existing mount units..."
 }
+filter_mount_unit() {
+	local tgt="$1"
+	local basename
+	basename="$(basename "$tgt")"
+
+	# validate automount file based on mount file's What= line
+	if [[ "$basename" == *.automount ]] && check_mount_device "${tgt%.*}.mount"; then
+		echo "$tgt"
+	elif [[ "$new_basename" == *.swap ]] && check_mount_device "$file"; then
+		echo "$tgt"
+	else
+		return 1
+	fi
+}
 setup_external_mounts() {
 	local src="./systemd-automount"
 	local dst="/etc/systemd/system"
@@ -377,44 +392,50 @@ setup_external_mounts() {
 						continue
 					fi
 
-					echo "Processing unit: '$file'..."
 					basename=$(basename "$file")
-					if [ "$OS" = "Bazzite" ]; then
+					case "$OS" in
+					"Bazzite")
+						local enabled_unit
+						enabled_unit="$(filter_mount_unit "$file")"
+						if [ -n "$enabled_unit" ]; then
+							unit_files+=("$enabled_unit")
+						else
+							echo "Skipping unit: $file"
+							continue
+						fi
+
+						echo "Processing unit: '$basename'..."
 						# create new filename with var-mnt prefix
 						new_basename="var-${basename}"
 						temp_file="$(mktemp)"
 						sed 's#/mnt/#/var/mnt/#g' "$file" >"$temp_file"
 						# copy modified file to destination
-						sudo cp -f "$temp_file" "$dst/$new_basename" &&
-							sudo chmod 0644 "$dst/$new_basename"
+						sudo cp -f "$temp_file" "$dst/$new_basename"
+						sudo chmod 0644 "$dst/$new_basename"
+						echo "Created unit: '$dst/$new_basename'"
 						rm "$temp_file"
+						;;
 
-						if [[ "$new_basename" == *.automount ]]; then
-							echo "Adding unit for enablement: '$new_basename'..."
-							if check_mount_device "${file%.*}.mount"; then
-								echo "Adding automount unit for enablement: '$new_basename'..."
-								unit_files+=("$new_basename")
-							elif [[ "$new_basename" == *.swap ]] && check_mount_device "$file"; then
-								echo "Adding swap unit for enablement: '$basename'..."
-								unit_files+=("$new_basename")
-							fi
+					"Arch")
+						local enabled_unit
+						enabled_unit="$(filter_mount_unit "$file")"
+						if [ -n "$enabled_unit" ]; then
+							unit_files+=("$enabled_unit")
+						else
+							echo "Skipping unit: $file"
+							continue
 						fi
-					elif [ "$OS" = "Arch" ]; then
+
+						echo "Processing unit: '$basename'..."
 						sudo cp -f "$file" "$dst/$basename"
+						echo "Created unit: '$dst/$basename'"
+						;;
 
-						if [[ "$basename" == *.automount ]]; then
-							if check_mount_device "${file%.*}.mount"; then
-								echo "Adding automount unit for enablement: '$basename'..."
-								unit_files+=("$basename") # only include existing automounts and swap
-							elif [[ "$basename" == *.swap ]] && check_mount_device "$file"; then
-								echo "Adding swap unit for enablement: '$basename'..."
-								unit_files+=("$basename")
-							fi
-						fi
-					else
+					*)
 						echo "Error: unsupported OS, skipping systemd mounts!"
 						return 1
-					fi
+						;;
+					esac
 				done
 
 				if [ "${#unit_files[@]}" -gt 0 ]; then
