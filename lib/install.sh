@@ -39,11 +39,12 @@ update_bootloader_cmdline() {
 		;;
 
 	"refind")
-		if sudo grep -qxF "\"*$text_to_add\"" "$target_file"; then
+		if sudo grep -q "$text_to_add" "$target_file"; then
 			echo "Text already exists in $target_file. No changes made."
 			return 1
 		fi
-		printf '"%s"\n' "$text_to_add" | sudo tee -a "$target_file" >/dev/null
+
+		sudo sed -i "1s/\(.*\)\"$/\1 $text_to_add\"/" "$target_file"
 		echo "Successfully updated refind kernel parameters."
 		;;
 
@@ -86,7 +87,7 @@ setup_arch_btrfs() {
 	HOME_FS_TYPE=$(df -T /home | awk 'NR==2 {print $2}')
 
 	local is_systemd_boot
-	is_systemd_boot="$(sudo ls -l /boot/loader)"
+	is_systemd_boot="$(sudo ls -l "/boot/loader/" &>/dev/null)"
 	is_systemd_boot="$?"
 
 	if [ "$ROOT_FS_TYPE" == "btrfs" ] && confirm "Install grub-btrfsd and snapper?"; then
