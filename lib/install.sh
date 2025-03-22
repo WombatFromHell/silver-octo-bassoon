@@ -61,7 +61,7 @@ bootstrap_arch() {
 		"${PACMAN[@]}" base-devel procps-ng curl \
 			file git unzip rsync unzip \
 			sudo nano libssh2 curl \
-			libcurl-gnutls
+			libcurl-gnutls sshfs yay
 	fi
 }
 
@@ -91,6 +91,8 @@ setup_arch_btrfs() {
 
 		if [ "$is_systemd_boot" -gt 0 ]; then
 			echo "Warning: systemd-boot detected, skipping grub-btrfs installation..."
+		elif [ -e "/boot/refind_linux.conf" ]; then
+			"${PACMAN[@]}" refind-btrfs
 		else
 			"${PACMAN[@]}" grub-btrfs
 		fi
