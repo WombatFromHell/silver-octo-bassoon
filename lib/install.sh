@@ -170,52 +170,6 @@ EOF
 	fi
 }
 
-install_neovim_config() {
-	local basedir="$HOME/.local"
-	local git
-	git="$(check_cmd git)"
-
-	confirm "Wipe any existing NeoVim config and download custom distribution?" &&
-		{
-			if [ -n "$git" ]; then
-				rm -rf "$HOME"/.config/nvim "$basedir"/share/nvim "$basedir"/cache/nvim "$basedir"/state/nvim
-				"$git" clone git@github.com:WombatFromHell/lazyvim.git "$HOME"/.config/nvim
-			elif [ -z "$git" ]; then
-				echo "Error: unable to find 'git', skipping NeoVim config installation!"
-			fi
-		}
-}
-setup_neovim() {
-	local url="https://github.com/MordechaiHadad/bob/releases/download/v4.0.3/bob-linux-x86_64.zip"
-	local outdir="/tmp"
-	local outpath="$outdir/bob-linux-x86_64"
-	local basedir="$HOME/.local"
-	local target="$basedir/bin"
-	local global_target="/usr/local/bin"
-
-	confirm "Install NeoVim nightly via BOB?" &&
-		{
-			# install Mason Pre-reqs when in Archlinux
-			[ "$OS" == "Arch" ] && "${PACMAN[@]}" base-devel procps-ng curl file git unzip rsync
-
-			if [ "$OS" == "Arch" ] || [ "$OS" == "Bazzite" ]; then
-				curl -sfSLO --output-dir "$outdir" "$url"
-				unzip "${outpath}.zip" -d "$outdir"
-				$CP "${outpath}/bob" "$target"
-				chmod 0755 "$target"/bob
-				"$target"/bob use nightly
-
-				rm -rf "$outpath" &&
-					sudo rm -f "$global_target"/nvim &&
-					sudo ln -sf "$basedir"/share/bob/nvim-bin/nvim "$global_target"/nvim
-
-				install_neovim_config
-			else
-				install_neovim_config
-			fi
-		}
-}
-
 check_mount_device() {
 	local mount_file="$1"
 
@@ -557,6 +511,58 @@ setup_system_shared() {
 	fi
 }
 
+install_neovim_config() {
+	local basedir="$HOME/.local"
+	local git
+	git="$(check_cmd git)"
+
+	confirm "Wipe any existing NeoVim config and download custom distribution?" &&
+		{
+			if [ -n "$git" ]; then
+				rm -rf "$HOME"/.config/nvim "$basedir"/share/nvim "$basedir"/cache/nvim "$basedir"/state/nvim
+				"$git" clone git@github.com:WombatFromHell/lazyvim.git "$HOME"/.config/nvim
+			elif [ -z "$git" ]; then
+				echo "Error: unable to find 'git', skipping NeoVim config installation!"
+			fi
+		}
+}
+install_neovim() {
+	local url="https://github.com/MordechaiHadad/bob/releases/download/v4.0.3/bob-linux-x86_64.zip"
+	local outdir="/tmp"
+	local outpath="$outdir/bob-linux-x86_64"
+	local basedir="$HOME/.local"
+	local target="$basedir/bin"
+	local global_target="/usr/local/bin"
+
+	local nvim_path
+	nvim_path="$(check_cmd nvim)"
+	if [ -n "$nvim_path" ]; then
+		echo "Error: 'nvim' already installed, skipping NeoVim setup!"
+		return 1
+	fi
+
+	confirm "Install NeoVim nightly via BOB (unnecessary if using Nix flake)?" &&
+		{
+			# install Mason Pre-reqs when in Archlinux
+			[ "$OS" == "Arch" ] && "${PACMAN[@]}" base-devel procps-ng curl file git unzip rsync
+
+			if [ "$OS" != "NixOS" ]; then
+				curl -sfSLO --output-dir "$outdir" "$url"
+				unzip "${outpath}.zip" -d "$outdir"
+				$CP "${outpath}/bob" "$target"
+				chmod 0755 "$target"/bob
+				"$target"/bob use nightly
+
+				rm -rf "$outpath" &&
+					sudo rm -f "$global_target"/nvim &&
+					sudo ln -sf "$basedir"/share/bob/nvim-bin/nvim "$global_target"/nvim
+
+				install_neovim_config
+			else
+				echo "Error: NixOS detected, skipping NeoVim setup!"
+			fi
+		}
+}
 install_brew() {
 	(
 		bash -ic "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" 2>&1 | tee /dev/tty
@@ -597,12 +603,13 @@ setup_package_manager() {
 			setup_package_manager # try again
 		elif brew="$(check_cmd brew)" && confirm "Brew found, use it to install common utils?"; then
 			check_cmd brew && "$brew" install eza fd rdfind ripgrep fzf bat lazygit fish zoxide
-			setup_neovim # use BOB for Neovim
 		elif ! nix="$(check_cmd nix)" && confirm "Install Nix?"; then
 			install_nix
 		elif nix="$(check_cmd nix)" && confirm "Nix found, use it to install a custom flake?"; then
 			install_nix_flake
 		fi
+
+		install_neovim # ask if user wants BOB for NeoVim Nightly
 	else
 		echo "Error: incompatible OS, skipping package manager setup!"
 	fi
