@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 LOCAL="."
-REMOTE="$HOME/.nas-home/Projects/silver-octo-bassoon/dotfiles"
+REMOTE="$HOME/.nas-home/Projects/silver-octo-bassoon/dotfiles/"
 
 _CMD=(rsync -avL --checksum --update)
 EXCLUDES=(
