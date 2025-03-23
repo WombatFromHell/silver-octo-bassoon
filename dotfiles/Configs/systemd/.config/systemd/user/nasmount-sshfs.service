@@ -6,12 +6,13 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 Environment=PATH=/bin:/sbin:/usr/bin:/usr/sbin
-ExecStartPre=rmdir %h/.nas-home
-ExecStartPre=mkdir -p %h/.nas-home
+ExecStartPre=-rmdir %h/.nas-home
+ExecStartPre=-mkdir -p %h/.nas-home
 ExecStart=sshfs -p 2222 -o reconnect,IdentityFile=~/.ssh/id_rsa,idmap=user nxxel@192.168.1.153:/share/homes/nxxel %h/.nas-home
+ExecStartPost=-unlink %h/Backups
 ExecStartPost=ln -sf %h/.nas-home/GDrive/Backups %h/Backups
 ExecStop=fusermount -u %h/.nas-home
-ExecStopPost=rm -f %h/Backups
+ExecStopPost=-unlink %h/Backups
 RemainAfterExit=yes
 
 [Install]
