@@ -607,11 +607,16 @@ install_nix_flake() {
 }
 setup_package_manager() {
 	if [ "$OS" != "NixOS" ]; then
+		local pkgs="bat eza fd rdfind ripgrep fzf bat lazygit fish rustup zoxide"
+		if [ "$OS" == "Arch" ] && confirm "Install common devtools/shell using pacman?"; then
+			"${PACMAN[@]}" "$pkgs"
+		fi
+
 		if ! brew="$(check_cmd brew)" && confirm "Install Brew?"; then
 			install_brew
 			setup_package_manager # try again
 		elif brew="$(check_cmd brew)" && confirm "Brew found, use it to install common utils?"; then
-			check_cmd brew && "$brew" install eza fd rdfind ripgrep fzf bat lazygit fish zoxide
+			check_cmd brew && "$brew" install "$pkgs"
 		elif ! nix="$(check_cmd nix)" && confirm "Install Nix?"; then
 			install_nix
 		elif nix="$(check_cmd nix)" && confirm "Nix found, use it to install a custom flake?"; then
