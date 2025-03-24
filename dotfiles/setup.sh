@@ -211,24 +211,30 @@ handle_spicetify() {
 	local dir="$1"
 	local target="$2"
 	local bypass="${3:-1}"
-	if [ "$bypass" -ne 0 ] && ! confirm "Are you sure you want to stow $dir?"; then
+
+	if [ "$OS" == "Darwin" ] ||
+		[ "$bypass" -ne 0 ] && ! confirm "Are you sure you want to stow $dir?"; then
 		return 1
 	fi
+
+	# main install path
 	if check_program "spicetify"; then
 		echo "Double-check your 'prefs' path at: $target/config-xpui.ini"
 		stow_this "$dir"
-		return 0
-	fi
-	if confirm "Download and install 'spicetify'?"; then
-		if check_program "brew"; then
-			brew install spicetify
+		return 2 # signal to bypass additional stow steps
+	elif confirm "Download and install 'spicetify'?"; then
+		# try using brew if available, otherwise pull remotely and rerun the stow
+		if check_program "brew" && brew install spicetify ||
+			curl -fsSL https://raw.githubusercontent.com/spicetify/cli/main/install.sh | sh; then
+			handle_spicetify "$dir" "$target" 0
 		else
-			curl -fsSL https://raw.githubusercontent.com/spicetify/cli/main/install.sh | sh
+			echo "Error: something went wrong, aborting!"
+			return 1
 		fi
-		handle_spicetify "$dir" "$target" 0
-		return 2
+	else
+		return 1
 	fi
-	return 1
+
 }
 
 handle_tmux() {
