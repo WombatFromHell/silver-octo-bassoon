@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 LOCAL="."
-REMOTE="$HOME/.nas-home/Projects/silver-octo-bassoon/dotfiles/"
+REMOTE="$(realpath "$HOME/.nas-home")/Projects/silver-octo-bassoon/dotfiles/"
 
 _CMD=(rsync -avL --checksum --update)
 EXCLUDES=(
@@ -58,7 +58,7 @@ equality() {
 			awk -F ": " '{print $2}'
 	)
 
-	if [ "$result" -eq 0 ]; then
+	if [ "${result:-0}" -eq 0 ]; then
 		echo "No changes detected!"
 		return 0
 	else
