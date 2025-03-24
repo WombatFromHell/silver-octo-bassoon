@@ -259,6 +259,10 @@ alias hms='home-manager switch $_hmsuf'
 alias hmls='home-manager generations'
 alias hmrm='home-manager remove-generations'
 #
+alias drbu='darwin-rebuild switch --flake $NIX_FLAKE_OS_ROOT#$_host'
+alias drbb='darwin-rebuild build --dry-run --flake $NIX_FLAKE_OS_ROOT#$_host'
+alias drbls='darwin-rebuild --list-generations'
+#
 alias nix_hist='sudo nix profile history --profile /nix/var/nix/profiles/system'
 alias nix_rb='sudo nix profile rollback --profile /nix/var/nix/profile/system'
 alias nix_act='sudo /nix/var/nix/profile/system/bin/switch-to-configuration switch'
