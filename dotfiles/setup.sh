@@ -315,6 +315,18 @@ do_post_stow() {
 	bat)
 		bat cache --build
 		;;
+	scripts)
+		local bin_dir
+		bin_dir="$(realpath "$HOME")/.local/bin"
+
+		if [ -r "$HOME/.config/systemd/user/on-session-state.service" ]; then
+			mkdir -p "$bin_dir/monitor-session/"
+			remove_this "$bin_dir/monitor-session/*.*"
+			ln -sf "$bin_dir/scripts/fix-gsync.py" "$bin_dir/monitor-session/fix-gsync.py" &&
+				ln -sf "$bin_dir/scripts/openrgb-load.sh" "$bin_dir/monitor-session/openrgb-load.sh"
+			echo "Linked common scripts for use with 'on-session-state' systemd service..."
+		fi
+		;;
 	esac
 }
 

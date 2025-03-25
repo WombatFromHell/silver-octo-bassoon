@@ -4,6 +4,7 @@ Description=Provide Lock/Unlock Script Event Functionality for KDE Plasma 6
 [Service]
 Type=simple
 Environment="PATH=%h/.local/bin:%h/.local/bin/scripts:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin"
+ExecStartPre=mkdir -p %h/.local/bin/monitor-session
 ExecStart=%h/.local/bin/scripts/monitor-dbus-session-state.sh
 ExecStop=/usr/bin/pkill -9 -f monitor-dbus-session-state.sh
 RemainAfterExit=yes
