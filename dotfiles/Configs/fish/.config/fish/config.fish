@@ -23,7 +23,7 @@ if status is-interactive
         echo "$user_host:$current_dir"
     end
 
-    if command -q tmux
+    if command -q tmux && test "$TERM_PROGRAM" != vscode
         set fish_tmux_autostart true
         # set fish_tmux_autostart_once true
         set fish_tmux_autoconnect true
