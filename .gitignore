@@ -1,3 +1,4 @@
+logs
 support
 monitor-session
 dotfiles/Configs/systemd/**/user/*.wants/**
