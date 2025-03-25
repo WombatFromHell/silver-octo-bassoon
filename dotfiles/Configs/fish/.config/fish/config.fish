@@ -270,6 +270,8 @@ alias nix_roots='nix-store --gc --print-roots'
 #
 alias nixosopt='sudo nix-store --gc && sudo nix-store --optimize'
 alias nixopt='nix-store --gc && nix-store --optimize'
+#
+alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
 
 # keep this at the bottom
 if command -q starship

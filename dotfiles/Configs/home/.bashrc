@@ -50,6 +50,8 @@ if [[ $- == *i* ]]; then
 	#
 	alias nixosopt='sudo nix-store --gc && sudo nix-store --optimize'
 	alias nixopt='nix-store --gc && nix-store --optimize'
+	#
+	alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
 fi
 
 CARGO_SRC="$HOME/.cargo/env"
