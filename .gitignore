@@ -3,6 +3,9 @@
 .ansible
 support
 __pycache__
-files/dotfiles/**/OpenRGB/**/logs
 
-files/dotfiles/**/fish/fish_variables
+**/dotfiles/**/.config/OpenRGB/**/logs
+
+**/dotfiles/**/.config/fish/
+!**/dotfiles/**/.config/fish/config.fish
+!**/dotfiles/**/.config/fish/fish.plugins

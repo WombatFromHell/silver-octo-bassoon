@@ -64,14 +64,12 @@ brew_packages:
   - fish
   - fzf
   - lazygit
+  - neovim
   - rdfind
   - ripgrep
   - rustup
+  - starship
+  - yazi
   - zoxide
-
-enable_btrfs_snapper: false
-enable_vfio: false
-enable_distrobox: false
 # distrobox containers
-enable_cursor: false
-enable_devbox: false
+# enable_devbox: false
