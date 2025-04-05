@@ -10,3 +10,9 @@
     cmd: bat cache --build
     creates: "{{ home_realpath }}/.config/bat/.cache-built"
   listen: refresh_bat_cache
+
+- name: Refresh fish plugins
+  ansible.builtin.command:
+    cmd: fish -c 'fisher update'
+    creates: "{{ home_realpath }}/.config/fish/functions/fisher.fish"
+  listen: refresh_fish_plugins

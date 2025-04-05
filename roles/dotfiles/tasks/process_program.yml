@@ -28,3 +28,4 @@
   vars:
     program_handlers:
       bat: refresh_bat_cache
+      fish: refresh_fish_plugins
