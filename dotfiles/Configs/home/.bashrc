@@ -1,4 +1,4 @@
-export PATH="$HOME/.local/bin:$HOME/.local/bin/scripts:$HOME/.nix-profile/bin:$HOME/.local/share/nvim/mason/bin:$HOME/.local/share/nvm/v23.6.1/bin:/usr/local/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.local/bin/scripts:$HOME/.local/share/bob/nvim-bin:$HOME/.nix-profile/bin:$HOME/.local/share/nvim/mason/bin:$HOME/.local/share/nvm/v23.6.1/bin:/usr/local/bin:$PATH"
 
 function yy() {
 	tmp=$(mktemp -t "yazi-cwd.XXXXXX")
