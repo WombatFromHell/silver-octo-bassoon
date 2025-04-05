@@ -3,4 +3,5 @@
 .ansible
 support
 __pycache__
-dotfiles/**/tmux/plugins/
+
+files/dotfiles/**/fish/fish_variables
