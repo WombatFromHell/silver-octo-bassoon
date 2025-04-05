@@ -57,14 +57,3 @@
       ansible.builtin.set_fact:
         home_fs_type: "{{ home_fs_type_result.stdout }}"
       check_mode: false
-
-    - name: Check for GRUB bootloader
-      ansible.builtin.stat:
-        path: /boot/efi/EFI/grub/grubx64.efi
-      register: grub_check
-      check_mode: false
-
-    - name: Set bootloader facts
-      ansible.builtin.set_fact:
-        is_grub_boot: "{{ grub_check.stat.exists | default(false) }}"
-      check_mode: false
