@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 
+function do_overrides() {
+	local app=$1
+	local dolphin_exports=$2
+	local srv_menu_path=$3
+
+	"$FLATPAK" ${MODE:+$MODE} override --filesystem=~/.local/share/kio/servicemenus "$app"
+	"$FLATPAK" ${MODE:+$MODE} run --command=sh "$app" -c \
+		"mkdir -p $srv_menu_path && \
+      cp -f $dolphin_exports/* $srv_menu_path/ && \
+      chmod +x $srv_menu_path/*"
+}
+
 function fix_context_menu() {
 	local app="io.github.peazip.PeaZip"
-	local app_dir="$(realpath "$HOME")/.var/app/$app"
 
 	if ! FLATPAK=$(which flatpak); then
 		echo "Error: 'flatpak' not found!"
@@ -36,11 +47,14 @@ function fix_context_menu() {
 	local srv_menu_path="$HOME/.local/share/kio/servicemenus"
 	local dolphin_exports="/app/peazip/res/share/batch/freedesktop_integration/KDE-servicemenus/KDE5-dolphin"
 
-	"$FLATPAK" ${MODE:+$MODE} override --filesystem=~/.local/share/kio/servicemenus "$app"
-	"$FLATPAK" ${MODE:+$MODE} run --command=sh "$app" -c \
-		"mkdir -p $srv_menu_path && cp -f $dolphin_exports/* $srv_menu_path/ && chmod +x $srv_menu_path/*"
+	if [ -r "$srv_menu_path/peazipadd.desktop" ]; then
+		echo "Detected remnants of servicemenus at '$srv_menu_path', fix has been applied before, skipping..."
+		do_overrides "$app" "$dolphin_exports" "$srv_menu_path"
+		exit 0
+	else
+		do_overrides "$app" "$dolphin_exports" "$srv_menu_path"
+	fi
 
-	mkdir -p "$app_dir" && touch "$app_dir/.dolphin-context-menu-fix-applied"
 	echo "Copied KDE5/6 Dolphin context menu entries to $srv_menu_path!"
 }
 

@@ -60,7 +60,7 @@
 
         - name: Check if fix marker exists
           ansible.builtin.stat:
-            path: "{{ home_realpath }}/.var/app/{{ peazip_app }}/.dolphin-context-menu-fix-applied"
+            path: "{{ home_realpath }}/.local/share/kio/servicemenus/peazipadd.desktop"
           register: fix_marker
 
         - name: Apply PeaZip-Dolphin integration fix
@@ -72,8 +72,11 @@
           changed_when: false
 
         - name: Verify fix application
-          when: apply_fix is defined and not apply_fix.skipped
+          when:
+            - not fix_marker.stat.exists
+            - apply_fix is defined
+            - apply_fix.rc == 0
           ansible.builtin.stat:
-            path: "{{ home_realpath }}/.var/app/{{ peazip_app }}/.dolphin-context-menu-fix-applied"
+            path: "{{ home_realpath }}/.local/share/kio/servicemenus/peazipadd.desktop"
           register: verify_fix
           failed_when: not verify_fix.stat.exists
