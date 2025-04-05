@@ -1,0 +1,77 @@
+---
+# System Configuration
+system_hostname: methyl-bazzite
+timezone: America/Denver
+graphics_card: nvidia
+
+# User Configuration
+vault_file: "{{ playbook_dir }}/files/support/gpg_vault.yml"
+home_dir: "{{ home_realpath }}"
+scripts_dir: "{{ home_dir }}/.local/bin/scripts"
+dotfiles_root: "{{ playbook_dir }}/files/dotfiles"
+gnupg_key_dir: "{{ playbook_dir }}/files/support/.ssh/gnupg-keys"
+ssh_key_dir: "{{ playbook_dir }}/files/support/.ssh"
+pipewire_dir: "{{ home_dir }}/.config/pipewire"
+
+# add host-specific kernel args here
+kernel_args: "amd_pstate=active acpi_enforce_resources=lax"
+bootloader: "grub"
+
+program_checks:
+  hyprland: "hypr"
+  mangohud: "MangoHud"
+  openrgb: "OpenRGB"
+  topgrade: "topgrade.d"
+
+# $HOME/.local/bin/scripts/ exposed globally via /usr/local/bin/
+script_links:
+  - src: "fish.sh"
+    dest: "/usr/local/bin/fish.sh"
+
+# To be run after dotfiles are processed
+program_handlers:
+  bat:
+    - command: "bat cache --build"
+      creates: "{{ home_dir }}/.cache/bat" # Makes handler idempotent
+
+enable_flatpak: true
+remove_existing_flatpaks: true
+system_flatpaks:
+  - com.github.tchx84.Flatseal
+  - it.mijorus.gearlever
+  - runtime/org.freedesktop.Platform.VulkanLayer.MangoHud/x86_64/24.08
+  - org.gtk.Gtk3theme.Adwaita-dark
+user_flatpaks:
+  - com.github.zocker_160.SyncThingy
+  - com.spotify.Client
+  - net.agalwood.Motrix
+  - com.vysp3r.ProtonPlus
+  - com.usebottles.bottles
+skip_flatpaks:
+  - io.github.peazip.PeaZip
+  - com.brave.Browser
+  - org.mozilla.firefox
+install_brave: true
+install_firefox: false
+install_peazip: true
+
+enable_brew: true
+brew_packages:
+  - ansible
+  - bat
+  - eza
+  - fd
+  - fish
+  - fzf
+  - lazygit
+  - rdfind
+  - ripgrep
+  - rustup
+  - zoxide
+
+enable_btrfs_snapper: false
+enable_vfio: false
+enable_distrobox: false
+# distrobox containers
+enable_cursor: false
+enable_devbox: false

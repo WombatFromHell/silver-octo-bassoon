@@ -1,0 +1,33 @@
+---
+- name: Copy binaries to /usr/local/bin
+  tags: [extra, globalbin]
+  block:
+    - name: Ensure /usr/local/bin directory exists
+      become: true
+      ansible.builtin.file:
+        path: /usr/local/bin
+        state: directory
+        mode: "0755"
+
+    - name: Find all binary files in role's files/bin directory
+      ansible.builtin.find:
+        paths: "{{ role_path }}/files/bin"
+        file_type: file
+        recurse: false
+        # conditionally exclude nvidia related binaries
+        excludes: "{{ ['nvidia-pm.py', 'veridian-controller'] if nvidia_missing else [] }}"
+      register: bin_files
+
+    - name: Copy binary files to /usr/local/bin with proper permissions
+      ansible.builtin.copy:
+        src: "{{ file_item.path }}"
+        dest: "/usr/local/bin/{{ file_item.path | basename }}"
+        mode: "0755"
+        remote_src: false
+        backup: true
+      loop: "{{ bin_files.files }}"
+      loop_control:
+        loop_var: file_item
+        label: "Copying {{ file_item.path | basename }}"
+      when: bin_files.matched > 0
+      become: true

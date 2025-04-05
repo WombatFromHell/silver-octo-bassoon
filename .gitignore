@@ -1,9 +1,6 @@
-support
-monitor-session
-dotfiles/Configs/systemd/**/user/*.wants/**
-dotfiles/Configs/tmux/.config/tmux/plugins/**
-pipewire.conf.d
+.vault_pass
 
-fish_variables
-.smb-credentials
-.smb-secrets
+.ansible
+support
+__pycache__
+dotfiles/**/tmux/plugins/

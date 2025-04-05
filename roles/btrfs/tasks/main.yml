@@ -1,0 +1,81 @@
+---
+- name: Setup BTRFS on grub/rEFInd
+  become: true
+  tags: [extra, btrfs]
+  when:
+    - ansible_distribution == "Archlinux"
+    - enable_btrfs_snapper | default(false)
+  vars:
+    # User-configurable variables
+    btrfs_mount: "/mnt/btrfs"
+    use_aur_helper: true
+    aur_helper: "yay"
+    aur_flags: "-Sy --needed --noconfirm"
+    compress_algorithm: "zstd"
+    commit_interval: 120
+
+    # Internal variables
+    snapper_timers:
+      - snapper-cleanup.timer
+      - snapper-backup.timer
+      - snapper-timeline.timer
+
+  block:
+    - name: Include system detection tasks
+      ansible.builtin.include_tasks: detection.yml
+      tags: [extra, btrfs, btrfs_detection]
+
+    - name: Create and mount BTRFS root volume
+      block:
+        - name: Create BTRFS mount directory
+          ansible.builtin.file:
+            path: "{{ btrfs_mount }}"
+            state: directory
+            mode: "0755"
+
+        - name: Ensure BTRFS root subvolume is unmounted
+          ansible.posix.mount:
+            path: "{{ btrfs_mount }}"
+            state: absent
+          register: btrfs_unmounted
+          ignore_errors: true
+
+        - name: Mount BTRFS root volume
+          ansible.posix.mount:
+            path: "{{ btrfs_mount }}"
+            src: "{{ root_fs_dev }}"
+            fstype: btrfs
+            opts: "subvolid=5,noatime"
+            state: mounted
+          register: btrfs_mounted
+
+    - name: Include snapper installation tasks
+      ansible.builtin.include_tasks: packages.yml
+      when: ansible_distribution == "Archlinux"
+      tags: [extra, btrfs, btrfs_install]
+
+    - name: Include snapper configuration tasks
+      ansible.builtin.include_tasks: snapper.yml
+      tags: [extra, btrfs, btrfs_snapper]
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+      changed_when: false
+
+    - name: Restart and enable snapperd service
+      ansible.builtin.systemd:
+        name: snapperd.service
+        state: restarted
+        enabled: true
+
+    - name: Enable snapper timers
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+      loop: "{{ snapper_timers }}"
+
+    - name: Regenerate GRUB configuration if using GRUB
+      ansible.builtin.command: grub-mkconfig -o /boot/grub/grub.cfg
+      when: is_grub_boot
+      changed_when: false

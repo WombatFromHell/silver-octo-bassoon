@@ -1,0 +1,54 @@
+---
+- name: Add per-host kernel args
+  tags: [extra, bootloader]
+  become: true
+  block:
+    - name: Look for rEFInd
+      when: ansible_distribution == "Archlinux"
+      block:
+        - name: Check if refind_linux.conf exists
+          ansible.builtin.stat:
+            path: "/boot/refind_linux.conf"
+          register: refind_exists
+
+        - name: Detect kernel args (refind)
+          when:
+            - refind_exists.stat.exists
+          bootloader_mod:
+            bootloader: "{{ bootloader }}"
+            config_file: "/boot/refind_linux.conf"
+            check_args: "{{ kernel_args }}"
+
+    - name: Look for GRUB
+      when: ansible_distribution == "Archlinux"
+      block:
+        - name: Check if /etc/default/grub exists
+          ansible.builtin.stat:
+            path: "/etc/default/grub"
+          register: grub_exists
+
+        - name: Detect kernel args (grub)
+          when: grub_exists.stat.exists
+          bootloader_mod:
+            bootloader: "{{ bootloader }}"
+            config_file: "/etc/default/grub"
+            check_args: "{{ kernel_args }}"
+          register: check_grub_result
+
+    - name: Change kernel args (ostree)
+      when: ansible_facts.lsb.id == "Bazzite"
+      block:
+        - name: Check current kernel cmdline
+          ansible.builtin.shell: |
+            set -o pipefail
+            cat /proc/cmdline | grep "{{ kernel_args }}"
+          register: kernel_args_rc
+          failed_when: false
+          changed_when: false
+          check_mode: false
+
+        - name: Append missing kernel arguments
+          ansible.builtin.command: rpm-ostree kargs --append-if-missing="{{ kernel_args }}"
+          when: kernel_args_rc.rc != 0
+          register: kargs_result
+          changed_when: "'Already present' not in kargs_result.stderr"

@@ -1,0 +1,68 @@
+---
+- name: Configure system for KVM/QEMU passthrough
+  become: true
+  vars:
+    vm_grub_args: "kvm.ignore_msrs=1 kvm.report_ignored_msrs=0 amd_iommu=on iommy=pt rd.driver.pre=vfio_pci vfio_pci.disable_vga=1"
+    support_path: "{{ playbook_dir }}/files/support"
+
+  tags: [extra, vfio]
+  when:
+    - ansible_distribution == "Archlinux"
+    - enable_vfio | default(false)
+  block:
+    - name: Install required packages
+      community.general.pacman:
+        name:
+          - libvirt
+          - qemu-desktop
+          - swtpm
+        state: present
+
+    - name: Detect kernel args
+      bootloader_mod:
+        bootloader: "{{ bootloader }}"
+        check_args: "{{ vm_grub_args }}"
+      register: check_result
+
+    - name: Modify kernel args for VFIO support
+      bootloader_mod:
+        bootloader: "{{ bootloader }}"
+        text_to_add: "{{ vm_grub_args }}"
+      when: not check_result.args_exist
+      register: add_args_result
+
+    - name: Update GRUB config
+      ansible.builtin.command:
+        cmd: grub-mkconfig -o /boot/grub/grub.cfg
+      when:
+        - add_args_result is defined
+        - add_args_result.changed
+        - bootloader == "grub"
+      changed_when: false
+
+    - name: Create libvirt hooks directory
+      ansible.builtin.file:
+        path: /etc/libvirt/hooks
+        state: directory
+        mode: "0755"
+
+    - name: Extract and deploy VFIO hooks
+      ansible.builtin.unarchive:
+        src: "{{ support_path }}/vfio-hooks.tar.gz"
+        dest: /etc/libvirt/hooks
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Restart libvirtd service
+      ansible.builtin.systemd:
+        name: libvirtd
+        state: restarted
+
+    - name: Add current user to libvirt group
+      ansible.builtin.user:
+        name: "{{ ansible_user_id }}"
+        groups: libvirt
+        append: true
+        state: present

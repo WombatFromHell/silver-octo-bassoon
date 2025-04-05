@@ -1,0 +1,107 @@
+---
+# System Configuration
+system_hostname: methyl-cachyos
+timezone: America/Denver
+graphics_card: nvidia
+
+# User Configuration
+vault_file: "{{ playbook_dir }}/files/support/gpg_vault.yml"
+home_dir: "{{ home_realpath }}"
+scripts_dir: "{{ home_dir }}/.local/bin/scripts"
+dotfiles_root: "{{ playbook_dir }}/files/dotfiles"
+gnupg_key_dir: "{{ playbook_dir }}/files/support/.ssh/gnupg-keys"
+ssh_key_dir: "{{ playbook_dir }}/files/support/.ssh"
+pipewire_dir: "{{ home_dir }}/.config/pipewire"
+
+# add host-specific kernel args here
+kernel_args: "amd_pstate=active acpi_enforce_resources=lax"
+bootloader: "grub"
+
+# Package Management
+base_packages:
+  - ansible
+  - base-devel
+  - bat
+  - curl
+  - distrobox
+  - earlyoom
+  - eza
+  - fd
+  - file
+  - fish
+  - fuse2
+  - fzf
+  - git
+  - gnupg
+  - lazygit
+  - lib32-mangohud
+  - lib32-pulseaudio
+  - libcurl-gnutls
+  - libssh2
+  - mangohud
+  - nano
+  - neovim
+  - openrgb
+  - podman
+  - procps-ng
+  - protontricks
+  - rdfind
+  - ripgrep
+  - rsync
+  - rustup
+  - sshfs
+  - starship
+  - steam
+  - tmux
+  - tuned
+  - unzip
+  - winetricks
+  - wl-clipboard
+  - yay
+  - yazi
+  - zoxide
+  - zram-generator
+  - zstd
+
+aur_builder_user: yaybuildr
+aur_helper_pkg: yay-bin
+aur_helper: yay
+aur_packages:
+  - brave-bin
+  - brlaser-git
+  - protonplus
+  - spotify
+  - spicetify-cli
+
+program_checks:
+  hyprland: "hypr"
+  mangohud: "MangoHud"
+  openrgb: "OpenRGB"
+  topgrade: "topgrade.d"
+
+# $HOME/.local/bin/scripts/ exposed globally via /usr/local/bin/
+script_links:
+  - src: "fish.sh"
+    dest: "/usr/local/bin/fish.sh"
+
+# To be run after dotfiles are processed
+program_handlers:
+  bat:
+    - command: "bat cache --build"
+      creates: "{{ home_dir }}/.cache/bat" # Makes handler idempotent
+
+enable_flatpak: true
+remove_existing_flatpaks: false
+system_flatpaks:
+  - com.github.tchx84.Flatseal
+  - it.mijorus.gearlever
+user_flatpaks:
+  - com.usebottles.bottles
+
+enable_brew: false
+enable_btrfs_snapper: true
+enable_vfio: false
+enable_distrobox: false
+# distrobox containers
+enable_cursor: false
+enable_devbox: false

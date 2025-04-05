@@ -1,0 +1,62 @@
+---
+- name: AUR package management
+  tags: [core, aur]
+  block:
+    - name: Create build user for AUR packages
+      tags: aur_build_user
+      become: true
+      block:
+        - name: Create build user
+          ansible.builtin.user:
+            name: "{{ aur_builder_user }}"
+            create_home: true
+            system: true
+
+        - name: Configure sudoers for build user
+          ansible.builtin.lineinfile:
+            path: /etc/sudoers.d/{{ aur_builder_user }}
+            line: "{{ aur_builder_user }} ALL=(ALL) NOPASSWD: /usr/bin/pacman"
+            create: true
+            mode: "0440"
+            validate: "visudo -cf %s"
+
+    - name: Install AUR helper if not present
+      tags: aur_helper_install
+      become: true
+      ansible.builtin.shell: |
+        set -o pipefail
+        if ! command -v {{ aur_helper }} >/dev/null 2>&1 ||
+            ! pacman -Qi {{ aur_helper_pkg }} >/dev/null 2>&1; then
+          cd /tmp &&
+          git clone https://aur.archlinux.org/{{ aur_helper_pkg }}.git &&
+          cd {{ aur_helper_pkg }} &&
+          makepkg -si --noconfirm
+        fi
+      args:
+        creates: /usr/bin/{{ aur_helper }}
+      register: aur_present
+
+    - name: Install AUR packages
+      tags: aur_install
+      become: true
+      become_user: "{{ aur_builder_user }}"
+      ansible.builtin.command: "{{ aur_helper }} -Sy --needed --noconfirm {{ aur_item }}"
+      loop: "{{ aur_packages }}"
+      loop_control:
+        loop_var: aur_item
+      register: aur_install
+      changed_when:
+        - "'already up to date' not in aur_install.stdout"
+        - "'there is nothing to do' not in aur_install.stdout"
+      when: aur_packages | length > 0
+
+    - name: Update existing AUR packages
+      tags: aur_update
+      become: true
+      become_user: "{{ aur_builder_user }}"
+      ansible.builtin.command: "{{ aur_helper }} -Syu --noconfirm"
+      register: upgrade_result
+      changed_when:
+        - "'there is nothing to do' not in upgrade_result.stdout"
+        - "'Packages are up to date' not in upgrade_result.stdout"
+        - "'No packages to upgrade' not in upgrade_result.stdout"

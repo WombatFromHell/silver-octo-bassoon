@@ -1,0 +1,35 @@
+---
+- name: Setup external filesystem mounts
+  tags: [extra, mounts]
+  block:
+    - name: "Include remove-existing task"
+      ansible.builtin.include_tasks: remove_existing.yml
+
+    - name: "Find .mount files in role files directory"
+      ansible.builtin.find:
+        paths: "{{ role_path }}/files"
+        patterns: "*.mount"
+      register: mount_files
+
+    - name: "Process each .mount file"
+      ansible.builtin.include_tasks: process_mount.yml
+      loop: "{{ mount_files.files }}"
+      loop_control:
+        loop_var: mount_item
+        label: "Processing {{ mount_item.path | basename }}"
+
+    - name: "Find .swap files in role files directory"
+      ansible.builtin.find:
+        paths: "{{ role_path }}/files"
+        patterns: "*.swap"
+      register: swap_files
+
+    - name: "Process each .swap file"
+      ansible.builtin.include_tasks: process_swap.yml
+      loop: "{{ swap_files.files }}"
+      loop_control:
+        loop_var: swap_item
+        label: "Processing {{ swap_item.path | basename }}"
+
+    - name: "Include creds task"
+      ansible.builtin.include_tasks: creds.yml

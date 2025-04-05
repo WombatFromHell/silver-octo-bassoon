@@ -1,0 +1,83 @@
+---
+- name: Download and install Homebrew
+  tags: [extra, brew]
+  when:
+    - ansible_facts.lsb.id == "Bazzite"
+    - enable_brew | default(false)
+  block:
+    - name: Check if Homebrew is already installed
+      ansible.builtin.stat:
+        path: "{{
+          '/opt/homebrew/bin/brew' if ansible_system == 'Darwin'
+          else '/home/linuxbrew/.linuxbrew/bin/brew'
+          }}"
+      register: brew_installed
+
+    - name: Install Homebrew
+      when: brew_installed is not defined
+      block:
+        - name: Download Homebrew installation script
+          ansible.builtin.get_url:
+            url: https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh
+            dest: /tmp/install_homebrew.sh
+            mode: "0755"
+
+        - name: Run Homebrew installation script non-interactively
+          ansible.builtin.command: /tmp/install_homebrew.sh
+          environment:
+            NONINTERACTIVE: "1"
+          when: not brew_installed.stat.exists
+          register: homebrew_install_output
+          changed_when: homebrew_install_output.rc != 0 and
+            "'already installed' not in homebrew_install_output.stderr"
+
+        - name: Remove the installation script
+          ansible.builtin.file:
+            path: /tmp/install_homebrew.sh
+            state: absent
+
+        - name: Add Homebrew to PATH (Bashlikes - Linux)
+          ansible.builtin.lineinfile:
+            path: "{{ path_item }}"
+            line: 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"'
+            state: present
+          loop:
+            - "{{ home_realpath }}/.bashrc"
+            - "{{ home_realpath }}/.zshrc"
+            - "{{ home_realpath }}/.config/fish/config.fish"
+          loop_control:
+            loop_var: path_item
+
+        - name: Add Homebrew to PATH (Fish - Linux)
+          ansible.builtin.lineinfile:
+            path: "{{ path_item }}"
+            line: "eval (/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+            state: present
+          loop:
+            - "{{ home_realpath }}/.config/fish/config.fish"
+          loop_control:
+            loop_var: path_item
+
+    - name: Manage Homebrew packages
+      when:
+        - brew_installed.stat.exists
+        - brew_packages is defined
+      block:
+        - name: Ensure Homebrew is up to date
+          community.general.homebrew:
+            update_homebrew: true
+            state: latest
+          register: brew_update
+          changed_when: brew_update.changed
+
+        - name: Install/update Homebrew packages
+          community.general.homebrew:
+            name: "{{ item }}"
+            state: latest
+          loop: "{{ brew_packages | default([]) }}"
+          when: brew_packages is defined
+          register: brew_package_results
+          retries: 1
+          delay: 3
+          until: brew_package_results is not failed
+          changed_when: brew_package_results.changed

@@ -1,0 +1,49 @@
+    OpenRGB v0.9
+    Commit: b5f46e3f1de03595656c682fc2f068b66e735e63 from 2023-07-09 22:51:47 -0500
+    Launched: 20250327_080334
+====================================================================================================
+
+0     |Info:    Found file: lightsout.orp attempting to validate header
+0     |Info:    Valid v4 profile found for lightsout
+9     |Info:    ------------------------------------------------------
+9     |Info:    |               Start device detection               |
+9     |Info:    ------------------------------------------------------
+10    |Info:    Initializing HID interfaces: Success
+21    |Info:    ------------------------------------------------------
+21    |Info:    |             Detecting I2C interfaces               |
+21    |Info:    ------------------------------------------------------
+21    |Info:    Registering I2C interface: /dev/i2c-3 Device 10DE:2206 Subsystem: 1458:403F
+21    |Info:    Registering I2C interface: /dev/i2c-1 Device 10DE:2206 Subsystem: 1458:403F
+22    |Info:    Registering I2C interface: /dev/i2c-8 Device 1022:790B Subsystem: 1458:5001
+22    |Info:    Registering I2C interface: /dev/i2c-6 Device 1022:790B Subsystem: 1458:5001
+22    |Info:    Registering I2C interface: /dev/i2c-4 Device 10DE:2206 Subsystem: 1458:403F
+22    |Info:    Registering I2C interface: /dev/i2c-2 Device 10DE:2206 Subsystem: 1458:403F
+22    |Info:    Registering I2C interface: /dev/i2c-0 Device 10DE:2206 Subsystem: 1458:403F
+22    |Info:    Registering I2C interface: /dev/i2c-7 Device 1022:790B Subsystem: 1458:5001
+22    |Info:    Registering I2C interface: /dev/i2c-5 Device 10DE:2206 Subsystem: 1458:403F
+22    |Info:    ------------------------------------------------------
+22    |Info:    |               Detecting I2C devices                |
+22    |Info:    ------------------------------------------------------
+1063  |Info:    [ENE DRAM] Registering RGB controller
+1204  |Info:    [ENE DRAM] Registering RGB controller
+1306  |Info:    ------------------------------------------------------
+1306  |Info:    |               Detecting I2C PCI devices            |
+1306  |Info:    ------------------------------------------------------
+1410  |Info:    [Gigabyte RTX3080 Gaming OC 10G] Registering RGB controller
+1672  |Info:    ------------------------------------------------------
+1672  |Info:    |               Detecting HID devices                |
+1672  |Info:    ------------------------------------------------------
+1846  |Info:    [B550 AORUS ELITE V2] Registering RGB controller
+1846  |Info:    ------------------------------------------------------
+1846  |Info:    |            Detecting libusb HID devices            |
+1846  |Info:    ------------------------------------------------------
+1846  |Info:    ------------------------------------------------------
+1846  |Info:    |              Detecting other devices               |
+1846  |Info:    ------------------------------------------------------
+1856  |Info:    ------------------------------------------------------
+1856  |Info:    |                Detection completed                 |
+1856  |Info:    ------------------------------------------------------
+1856  |Info:    Profile loading: Succeeded for ENE DRAM @ I2C: /dev/i2c-6, address 0x72
+1856  |Info:    Profile loading: Succeeded for ENE DRAM @ I2C: /dev/i2c-6, address 0x73
+1856  |Info:    Profile loading: Succeeded for Gigabyte RTX3080 Gaming OC 10G @ I2C: /dev/i2c-0, address 0x62
+1856  |Info:    Profile loading: Succeeded for B550 AORUS ELITE V2 @ HID: /dev/hidraw6

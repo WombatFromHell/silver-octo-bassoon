@@ -1,0 +1,79 @@
+---
+- name: Handle PeaZip installation
+  when: install_peazip | default(false)
+  tags: [extra, flatpak, flatpak_extra, flatpak_peazip]
+  vars:
+    peazip_app: "io.github.peazip.PeaZip"
+    pinned_peazip_ver: "04aea5bd3a84ddd5ddb032ef08c2e5214e3cc2448bdce155d446d30a84185278"
+  block:
+    - name: Install PeaZip
+      community.general.flatpak:
+        name: "{{ peazip_app }}"
+        state: present
+        method: user
+
+    - name: Pin PeaZip to specific version on Bazzite
+      when: ansible_facts.lsb.id == "Bazzite"
+      block:
+        - name: Get current PeaZip commit
+          ansible.builtin.shell: |
+            flatpak --user info "{{ peazip_app }}" | grep Commit | awk '{print $2}'
+          register: current_peazip_commit
+          changed_when: false
+          ignore_errors: true
+
+        - name: Check if PeaZip is already masked
+          ansible.builtin.shell: |
+            flatpak --user mask | grep "{{ peazip_app }}" || true
+          register: peazip_masked
+          ignore_errors: true
+          changed_when: false
+
+        - name: Upgrade PeaZip to specific commit (if needed)
+          when:
+            - current_peazip_commit.stdout != pinned_peazip_ver
+            - not current_peazip_commit.failed
+          ansible.builtin.command: >
+            flatpak --user upgrade --noninteractive "{{ peazip_app }}"
+            --commit={{ pinned_peazip_ver }}
+          register: peazip_upgrade
+          changed_when:
+            - "'Nothing to do' not in peazip_upgrade.stderr"
+            - "'is already installed' not in peazip_upgrade.stderr"
+
+        - name: Mask PeaZip (if needed)
+          when:
+            - not peazip_masked.failed
+            - peazip_masked.stdout | length == 0
+            - peazip_upgrade is changed or current_peazip_commit.stdout == pinned_peazip_ver
+          ansible.builtin.command: >
+            flatpak --user mask {{ peazip_app }}
+          register: mask_result
+          changed_when:
+            - "'is already masked' not in mask_result.stderr"
+            - "'Nothing to do' not in mask_result.stderr"
+
+        - name: Check for PeaZip-Dolphin fix script
+          ansible.builtin.stat:
+            path: "{{ dotfiles_root }}/Configs/scripts/fix-peazip-dolphin-integration.sh"
+          register: peazip_script
+
+        - name: Check if fix marker exists
+          ansible.builtin.stat:
+            path: "{{ home_realpath }}/.var/app/{{ peazip_app }}/.dolphin-context-menu-fix-applied"
+          register: fix_marker
+
+        - name: Apply PeaZip-Dolphin integration fix
+          when:
+            - peazip_script.stat.exists
+            - not fix_marker.stat.exists
+          ansible.builtin.command: "{{ dotfiles_root }}/Configs/scripts/fix-peazip-dolphin-integration.sh"
+          register: apply_fix
+          changed_when: false
+
+        - name: Verify fix application
+          when: apply_fix is defined and not apply_fix.skipped
+          ansible.builtin.stat:
+            path: "{{ home_realpath }}/.var/app/{{ peazip_app }}/.dolphin-context-menu-fix-applied"
+          register: verify_fix
+          failed_when: not verify_fix.stat.exists

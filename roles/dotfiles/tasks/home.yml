@@ -1,0 +1,40 @@
+- name: Home dotfiles processing
+  tags: [extra, dotfiles, dotfiles_home]
+  vars:
+    force_tuckr_overwrite: true
+  block:
+    - name: Verify tuckr is installed
+      ansible.builtin.command: tuckr --version
+      register: tuckr_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Fail if tuckr not available
+      ansible.builtin.fail:
+        msg: "tuckr is required but not found in PATH"
+      when: tuckr_check.rc != 0
+
+    - name: Get list of files in Configs/home directory
+      ansible.builtin.find:
+        path: "{{ dotfiles_root }}/Configs/home"
+        recurse: true
+        file_type: any
+      register: config_files
+
+    - name: Process home directory with tuckr (forced mode)
+      tuckr_manage:
+        name: "home"
+        state: present
+        force: "{{ force_tuckr_overwrite | default(false) }}"
+      when: config_files.files | length > 0
+      register: tuckr_result
+      retries: 2
+      delay: 1
+      until: tuckr_result is not failed
+
+    - name: Display tuckr conflicts if any
+      ansible.builtin.debug:
+        var: tuckr_result
+      when:
+        - debug_mode | default(false) | bool
+        - tuckr_result is defined

@@ -1,0 +1,26 @@
+---
+- name: Check if binary available in PATH - '{{ binary_name | default('') }}'
+  ansible.builtin.shell: "command -v {{ binary_name }}"
+  register: check_program
+  changed_when: false
+  failed_when: false
+  args:
+    executable: /bin/bash
+  vars:
+    ansible_verbose_output: true
+  no_log: false
+
+- name: Configure dotfiles using tuckr - '{{ program_name | default('') }}'
+  tuckr_manage:
+    name: "{{ program_name }}"
+    state: present
+  when: check_program.rc == 0
+  register: tuckr_result
+  changed_when: tuckr_result is changed
+  failed_when: tuckr_result is failed
+  notify: "{{ program_handlers[program_name] | default(omit) }}"
+  vars:
+    program_handlers:
+      bat: refresh_bat_cache
+    ansible_verbose_output: true
+  no_log: false

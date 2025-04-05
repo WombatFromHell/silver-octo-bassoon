@@ -1,0 +1,37 @@
+---
+- name: Systemd user units processing
+  tags: [extra, dotfiles, dotfiles_systemd]
+  block:
+    - name: Check if systemd directory exists in dotfiles
+      ansible.builtin.set_fact:
+        has_systemd: "'systemd' in (lookup('fileglob', dotfiles_root + '/Configs/*') | list | map('basename'))"
+
+    - name: Create systemd user config directory
+      ansible.builtin.file:
+        path: "{{ home_dir }}/.config/systemd/user"
+        state: directory
+        mode: "0755"
+      when: has_systemd
+
+    - name: Find all .service files in dotfiles
+      ansible.builtin.find:
+        path: "{{ dotfiles_root }}/Configs/systemd/.config/systemd/user"
+        patterns: "*.service"
+        recurse: true
+      register: systemd_dotfiles
+      when: has_systemd
+
+    - name: Create symlinks for each service file
+      ansible.builtin.file:
+        path: "{{ home_dir }}/.config/systemd/user/{{ unit_item.path | regex_replace('^.*/systemd/.config/systemd/user/?', '') }}"
+        src: "{{ unit_item.path }}"
+        state: link
+        force: true
+      loop: "{{ systemd_dotfiles.files }}"
+      loop_control:
+        loop_var: unit_item
+        label: "Symlinking {{ unit_item.path | basename }}"
+      notify: reload_user_systemd
+      when:
+        - has_systemd
+        - systemd_dotfiles.files | length > 0

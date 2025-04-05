@@ -1,0 +1,57 @@
+---
+- name: Handle Brave browser installation
+  when: install_brave | default(true)
+  tags: [extra, flatpak, flatpak_extra, flatpak_brave]
+  vars:
+    brave_app: com.brave.Browser
+  block:
+    - name: Install Brave browser
+      community.general.flatpak:
+        name: "{{ brave_app }}"
+        state: present
+        method: user
+
+    - name: Install libva-nvidia-driver on Arch
+      when:
+        - ansible_distribution == "Arch"
+        - graphics_card == "nvidia"
+        - nvidia_missing is not defined
+      community.general.pacman:
+        name: libva-nvidia-driver
+        state: present
+
+    - name: Check Brave VAAPI fix script
+      when: graphics_card == "nvidia" and nvidia_missing is not defined
+      ansible.builtin.stat:
+        path: "{{ dotfiles_root }}/Configs/scripts/fix-vaapi-chromium-flatpak.sh"
+      register: brave_script
+      ignore_errors: true
+
+    - name: Set executable permission for Brave fix script
+      ansible.builtin.file:
+        path: "{{ brave_script.stat.path }}"
+        mode: "0755"
+      when:
+        - brave_script.stat.exists is defined
+        - brave_script.stat.exists
+        - not brave_script.stat.isdir
+
+    - name: Check if VAAPI fix already applied
+      ansible.builtin.stat:
+        path: "{{ home_realpath }}/.var/app/{{ brave_app }}/.chrome-vaapi-fix-applied"
+      register: vaapi_fix_applied
+      ignore_errors: true
+      changed_when: false
+
+    - name: Apply Brave VAAPI fix
+      when:
+        - brave_script.stat.exists is defined
+        - brave_script.stat.exists
+        - not brave_script.stat.isdir
+        - not (vaapi_fix_applied.stat.exists is defined and vaapi_fix_applied.stat.exists)
+      ansible.builtin.script: "{{ brave_script.stat.path }}"
+      register: apply_vaapi_fix
+      ignore_errors: true
+      changed_when:
+        - apply_vaapi_fix.rc == 0
+        - "'already applied' not in (apply_vaapi_fix.stdout|default(''))"

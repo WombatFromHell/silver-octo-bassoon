@@ -1,0 +1,12 @@
+---
+- name: Reload user systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+    scope: user
+  listen: reload_user_systemd
+
+- name: Refresh bat cache
+  ansible.builtin.command:
+    cmd: bat cache --build
+    creates: "{{ home_realpath }}/.config/bat/.cache-built"
+  listen: refresh_bat_cache

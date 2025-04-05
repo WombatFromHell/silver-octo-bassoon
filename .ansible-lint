@@ -1,0 +1,6 @@
+---
+exclude_paths:
+  - files/dotfiles/
+  - files/support/
+  - roles/**/files/
+  - library/

@@ -1,0 +1,45 @@
+---
+- name: Copy and enable systemd units to /etc/systemd/system
+  tags: [extra, globalunits]
+  block:
+    - name: Ensure /etc/systemd/system directory exists
+      become: true
+      ansible.builtin.file:
+        path: /etc/systemd/system
+        state: directory
+        mode: "0755"
+
+    - name: Find all unit files, filtering out unnecessary ones if NVIDIA driver is missing
+      ansible.builtin.find:
+        paths: "{{ role_path }}/files/units"
+        file_type: file
+        recurse: false
+        excludes: "{{ ['nvidia-tdp.*', 'veridian-controller.service'] if nvidia_missing else [] }}"
+      register: unit_files
+
+    - name: Copy unit files to /etc/systemd/system with proper permissions
+      ansible.builtin.copy:
+        src: "{{ file_item.path }}"
+        dest: "/etc/systemd/system/{{ file_item.path | basename }}"
+        mode: "0644"
+        remote_src: false
+        backup: true
+      loop: "{{ unit_files.files }}"
+      loop_control:
+        loop_var: file_item
+        label: "Copying {{ file_item.path | basename }}"
+      when: unit_files.matched > 0
+      become: true
+      notify: reload_global_systemd
+
+    - name: Enable service units
+      ansible.builtin.systemd:
+        name: "{{ unit_file.path | basename }}"
+        daemon_reload: true
+        enabled: true
+        state: started
+      loop: "{{ unit_files.files }}"
+      loop_control:
+        loop_var: unit_file
+        label: "Enabling {{ unit_file.path | basename }}"
+      become: true

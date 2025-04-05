@@ -1,0 +1,67 @@
+---
+- name: Configure snapper
+  become: true
+  tags: [extra, btrfs, btrfs_snapper]
+
+  block:
+    - name: Create @snapshots subvolume if it doesn't exist
+      ansible.builtin.command: btrfs subvolume create {{ btrfs_mount }}/@snapshots
+      args:
+        creates: "{{ btrfs_mount }}/@snapshots"
+      changed_when: false
+
+    - name: Create snapper root configuration
+      ansible.builtin.command: snapper -c root create-config /
+      args:
+        creates: /etc/snapper/configs/root
+      register: snapper_root_created
+
+    - name: Move root snapshots
+      ansible.builtin.command: mv {{ btrfs_mount }}/@/.snapshots {{ btrfs_mount }}/@snapshots/root
+      args:
+        creates: "{{ btrfs_mount }}/@snapshots/root"
+
+    - name: Copy root snapper configuration
+      ansible.builtin.copy:
+        src: "{{ role_path }}/files/snapper_root_config"
+        dest: /etc/snapper/configs/root
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Configure fstab for root snapshots
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: >
+          UUID={{ root_fs_uuid }} /.snapshots btrfs
+          subvol=/@snapshots/root,defaults,noatime,compress={{ compress_algorithm }},commit={{ commit_interval }} 0 0
+        state: present
+        regexp: ".* /.snapshots .*"
+
+    - name: Create snapper home configuration
+      ansible.builtin.command: snapper -c home create-config /home
+      args:
+        creates: /etc/snapper/configs/home
+      register: snapper_home_created
+
+    - name: Move home snapshots
+      ansible.builtin.command: mv {{ btrfs_mount }}/@home/.snapshots {{ btrfs_mount }}/@snapshots/home
+      args:
+        creates: "{{ btrfs_mount }}/@snapshots/home"
+
+    - name: Configure fstab for home snapshots
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: >
+          UUID={{ root_fs_uuid }} /home/.snapshots btrfs
+          subvol=/@snapshots/home,defaults,noatime,compress={{ compress_algorithm }},commit={{ commit_interval }} 0 0
+        state: present
+        regexp: ".* /home/.snapshots .*"
+
+    - name: Copy home snapper configuration
+      ansible.builtin.copy:
+        src: "{{ role_path }}/files/snapper_home_config"
+        dest: /etc/snapper/configs/home
+        owner: root
+        group: root
+        mode: "0644"

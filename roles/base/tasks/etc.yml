@@ -1,0 +1,37 @@
+---
+- name: Copy global configs and environment to /etc
+  tags: [extra, etc]
+  block:
+    - name: Find all files in role's files/etc directory
+      ansible.builtin.find:
+        paths: "{{ role_path }}/files/etc"
+        file_type: file
+        recurse: false
+        # conditionally exclude nvidia related configs
+        excludes: "{{ ['nvidia-pm.conf', 'veridian-controller.toml'] if nvidia_missing else [] }}"
+      register: etc_files
+
+    - name: Copy files to /etc with proper permissions
+      ansible.builtin.copy:
+        src: "{{ etc_item.path }}"
+        dest: "/etc/{{ etc_item.path | basename }}"
+        mode: "0644"
+        remote_src: false
+        backup: true
+      loop: "{{ etc_files.files }}"
+      loop_control:
+        loop_var: etc_item
+        label: "Copying {{ etc_item.path | basename }}"
+      when: etc_files.matched > 0
+      become: true
+
+    - name: Uncomment Nvidia-specific environment variables if graphics card is nvidia
+      ansible.builtin.replace:
+        path: /etc/environment
+        regexp: >
+          ^#\s*(MOZ_DISABLE_RDD_SANDBOX=.*|LIBVA_DRIVER_NAME=.*|
+          NVD_BACKEND=.*|GBM_BACKEND=.*|__GLX_VENDOR_LIBRARY_NAME=.*|
+          __GLX_VENDOR_LIBRARY_FILENAMES=.*)$
+        replace: '\1'
+      when: graphics_card == 'nvidia' and not nvidia_missing
+      become: true

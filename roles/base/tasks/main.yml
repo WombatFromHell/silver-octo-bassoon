@@ -1,0 +1,51 @@
+---
+- name: Include package management task
+  when: ansible_distribution == "Archlinux"
+  ansible.builtin.include_tasks: pacman.yml
+  tags: [core, pacman]
+
+- name: Include AUR management task
+  when: ansible_distribution == "Archlinux"
+  ansible.builtin.include_tasks: aur.yml
+  tags: [core, aur]
+
+- name: Include zram enablement task
+  when: ansible_distribution == "Archlinux"
+  ansible.builtin.include_tasks: zram.yml
+  tags: [core, zram]
+
+- name: Include global binaries task
+  ansible.builtin.include_tasks: globalbin.yml
+  tags: [extra, globalbin]
+
+- name: Include global systemd units task
+  ansible.builtin.include_tasks: globalunits.yml
+  tags: [extra, globalunits]
+
+- name: Include etc configs task
+  ansible.builtin.include_tasks: etc.yml
+  tags: [extra, etc]
+
+- name: Include sudoers configs task
+  ansible.builtin.include_tasks: sudoers.yml
+  tags: [extra, sudoers]
+
+- name: Include udev-rules.d task
+  ansible.builtin.include_tasks: udev.yml
+  tags: [extra, udev]
+
+- name: Include bootloader task
+  ansible.builtin.include_tasks: bootloader.yml
+  tags: [extra, bootloader]
+
+- name: Include fonts task
+  ansible.builtin.include_tasks: fonts.yml
+  tags: [extra, fonts]
+
+- name: Include appimages task
+  ansible.builtin.include_tasks: appimages.yml
+  tags: [extra, appimages]
+
+- name: Include brew install task
+  ansible.builtin.include_tasks: brew.yml
+  tags: [extra, brew]

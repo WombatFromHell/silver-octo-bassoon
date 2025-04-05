@@ -1,0 +1,33 @@
+---
+- name: Tuckr installation and dotfiles pre-install
+  tags: tuckr
+  block:
+    - name: Ensure /usr/local/bin exists
+      ansible.builtin.file:
+        path: /usr/local/bin
+        state: directory
+        mode: "0755"
+      become: true
+
+    - name: Copy tuckr binary
+      ansible.builtin.copy:
+        src: "{{ role_path }}/files/bin/tuckr"
+        dest: /usr/local/bin/tuckr
+        mode: "0755"
+        remote_src: false
+      become: true
+      register: tuckr_installed
+      no_log: true
+
+    - name: Verify tuckr installation
+      ansible.builtin.command: "tuckr --version"
+      register: tuckr_version
+      changed_when: false
+      failed_when: tuckr_version.rc != 0
+
+    - name: Ensure link to dotfiles root exists
+      ansible.builtin.file:
+        path: "{{ home_dir }}/.dotfiles"
+        src: "{{ dotfiles_root }}"
+        state: link
+        force: true

@@ -1,0 +1,53 @@
+---
+- name: "Read mount file content"
+  ansible.builtin.slurp:
+    src: "{{ mount_item.path }}"
+  register: mount_file_content
+
+- name: "Extract What value from mount file"
+  ansible.builtin.set_fact:
+    mount_what: >-
+      {{
+        (mount_file_content.content | b64decode | regex_findall('^What=(.*)$', multiline=True)
+        | first | default('')) | trim
+      }}
+
+- name: "Determine if mount What is local (starts with /dev)"
+  ansible.builtin.set_fact:
+    is_local: "{{ mount_what.startswith('/dev') }}"
+
+- name: "Validate local mount path exists"
+  ansible.builtin.stat:
+    path: "{{ mount_what }}"
+  register: mount_path_stat
+  when: is_local
+
+- name: "Copy .mount file to /etc/systemd/system/ (only if valid or network)"
+  ansible.builtin.copy:
+    src: "{{ role_path }}/files/{{ mount_item.path | basename }}"
+    dest: "/etc/systemd/system/{{ mount_item.path | basename }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: (not is_local) or (is_local and mount_path_stat.stat.exists)
+  become: true
+  no_log: true
+
+- name: "Copy corresponding .automount file to /etc/systemd/system/ (only if valid or network)"
+  ansible.builtin.copy:
+    src: "{{ role_path }}/files/{{ mount_item.path | regex_replace('\\.mount$', '.automount') | basename }}"
+    dest: "/etc/systemd/system/{{ mount_item.path | regex_replace('^.*/', '') | regex_replace('\\.mount$', '.automount') }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: (not is_local) or (is_local and mount_path_stat.stat.exists)
+  become: true
+  no_log: true
+
+- name: "Enable corresponding .automount unit"
+  ansible.builtin.systemd:
+    name: "{{ mount_item.path | regex_replace('^.*/', '') | regex_replace('\\.mount$', '.automount') }}"
+    enabled: true
+    daemon_reload: true
+  when: (not is_local) or (is_local and mount_path_stat.stat.exists)
+  become: true

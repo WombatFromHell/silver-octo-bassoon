@@ -1,0 +1,74 @@
+---
+- name: "Find existing .automount files in /etc/systemd/system"
+  ansible.builtin.find:
+    paths: /etc/systemd/system
+    patterns: "*.automount"
+  register: existing_automounts
+
+- name: "Disable existing .automount units"
+  ansible.builtin.systemd:
+    name: "{{ existing_automount | basename }}"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  loop: "{{ existing_automounts.files | map(attribute='path') | list }}"
+  loop_control:
+    loop_var: existing_automount
+    label: "Disabling {{ existing_automount | basename }}"
+  failed_when: false
+  become: true
+
+- name: "Remove existing .automount files"
+  ansible.builtin.file:
+    path: "{{ existing_automount }}"
+    state: absent
+  loop: "{{ existing_automounts.files | map(attribute='path') | list }}"
+  loop_control:
+    loop_var: existing_automount
+    label: "Removing {{ existing_automount | basename }}"
+  become: true
+
+- name: "Find existing .swap files in /etc/systemd/system"
+  ansible.builtin.find:
+    paths: /etc/systemd/system
+    patterns: "*.swap"
+  register: existing_swaps
+
+- name: "Disable existing .swap units"
+  ansible.builtin.systemd:
+    name: "{{ existing_swap | basename }}"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  loop: "{{ existing_swaps.files | map(attribute='path') | list }}"
+  loop_control:
+    loop_var: existing_swap
+    label: "Disabling {{ existing_swap | basename }}"
+  failed_when: false
+  become: true
+
+- name: "Remove existing .swap files"
+  ansible.builtin.file:
+    path: "{{ existing_swap }}"
+    state: absent
+  loop: "{{ existing_swaps.files | map(attribute='path') | list }}"
+  loop_control:
+    loop_var: existing_swap
+    label: "Removing {{ existing_swap | basename }}"
+  become: true
+
+- name: "Find existing .mount files in /etc/systemd/system"
+  ansible.builtin.find:
+    paths: /etc/systemd/system
+    patterns: "*.mount"
+  register: existing_mounts
+
+- name: "Remove existing .mount files"
+  ansible.builtin.file:
+    path: "{{ existing_mount }}"
+    state: absent
+  loop: "{{ existing_mounts.files | map(attribute='path') | list }}"
+  loop_control:
+    loop_var: existing_mount
+    label: "Removing {{ existing_mount | basename }}"
+  become: true

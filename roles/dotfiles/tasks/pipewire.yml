@@ -1,0 +1,41 @@
+---
+- name: PipeWire surround configuration processing
+  tags: [extra, dotfiles, dotfiles_pipewire]
+  block:
+    - name: Check if PipeWire directories exist
+      ansible.builtin.stat:
+        path: "{{ current_directory_path }}"
+        follow: false
+      register: pipewire_dir_check
+      loop:
+        - "{{ pipewire_dir }}"
+        - "{{ pipewire_dir }}/pipewire.conf.d"
+      loop_control:
+        loop_var: current_directory_path
+
+    - name: Ensure PipeWire config directories exist
+      ansible.builtin.file:
+        path: "{{ directory_check_result.current_directory_path }}"
+        state: directory
+        mode: "0755"
+      no_log: true
+      loop: "{{ pipewire_dir_check.results }}"
+      loop_control:
+        loop_var: directory_check_result
+      when:
+        - not directory_check_result.stat.exists or
+          directory_check_result.stat.islnk
+
+    - name: Copy kemar.sofa file
+      ansible.builtin.copy:
+        src: "{{ role_path }}/files/kemar.sofa"
+        dest: "{{ pipewire_dir }}/kemar.sofa"
+        mode: "0644"
+      no_log: true
+
+    - name: Create spatializer config from template (idempotent)
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/spatializer.conf.j2"
+        dest: "{{ pipewire_dir }}/pipewire.conf.d/virtual-spatializer-7.1.conf"
+        mode: "0644"
+        backup: true

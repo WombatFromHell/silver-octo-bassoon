@@ -1,0 +1,38 @@
+---
+- name: Handle Firefox browser installation
+  when: install_firefox | default(false)
+  tags: [extra, flatpak, flatpak_extra, flatpak_firefox]
+  block:
+    - name: Install libva-nvidia-driver on Archlinux for Firefox
+      when: ansible_distribution == "Archlinux"
+      community.general.pacman:
+        name: libva-nvidia-driver
+        state: present
+
+    - name: Install Firefox browser
+      community.general.flatpak:
+        name: org.mozilla.firefox
+        state: present
+        method: system
+
+    - name: Check Firefox VAAPI fix script
+      ansible.builtin.stat:
+        path: "{{ dotfiles_root }}/Configs/scripts/fix-vaapi-firefox.sh"
+      register: firefox_script
+
+    - name: Set executable permission for Firefox fix script
+      ansible.builtin.file:
+        path: "{{ firefox_script.stat.path }}"
+        mode: "0755"
+      when:
+        - firefox_script.stat.exists
+        - not firefox_script.stat.isdir
+
+    - name: Apply Firefox VAAPI fix
+      ansible.builtin.script: "{{ firefox_script.stat.path }}"
+
+      when:
+        - firefox_script.stat.exists
+        - not firefox_script.stat.isdir
+        - firefox_script.stat.mode is defined
+        - firefox_script.stat.mode | int | bitwise_and(0o111)

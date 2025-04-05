@@ -1,0 +1,28 @@
+---
+- name: Enablement for ZRAM using zram-generator
+  tags: [extra, zram]
+  block:
+    - name: Ensure /etc/systemd/system directory exists
+      become: true
+      ansible.builtin.file:
+        path: /etc/systemd
+        state: directory
+        mode: "0755"
+
+    - name: Copy unit files to /etc/systemd/system with proper permissions
+      ansible.builtin.copy:
+        src: "{{ role_path }}/files/zram-generator.conf"
+        dest: "/etc/systemd/zram-generator.conf"
+        mode: "0644"
+        remote_src: false
+        backup: true
+      become: true
+      no_log: true
+
+    - name: Enable service units
+      ansible.builtin.systemd:
+        name: "systemd-zram-setup@zram0.service"
+        daemon_reload: true
+        enabled: true
+        state: restarted
+      become: true

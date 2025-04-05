@@ -1,0 +1,26 @@
+---
+- name: Copy udev rules.d configs
+  tags: [extra, udev]
+  block:
+    - name: Find all files in role's files/udev-rules.d directory
+      ansible.builtin.find:
+        paths: "{{ role_path }}/files/udev-rules.d"
+        file_type: file
+        recurse: false
+      register: udev_files
+
+    - name: Copy files to /etc/udev/rules.d with proper permissions
+      ansible.builtin.copy:
+        src: "{{ udev_item.path }}"
+        dest: "/etc/udev/rules.d/{{ udev_item.path | basename }}"
+        mode: "0644"
+        remote_src: false
+        backup: true
+      loop: "{{ udev_files.files }}"
+      register: copy_results
+      loop_control:
+        loop_var: udev_item
+        label: "Copying {{ udev_item.path | basename }}"
+      when: udev_files.matched > 0
+      become: true
+      notify: reload_udev

@@ -1,0 +1,28 @@
+---
+- name: Configure fstab based on detected bootloader
+  tags: [extra, btrfs, btrfs_install]
+  block:
+    - name: Install core packages
+      community.general.pacman:
+        name:
+          - snap-pac
+          - snapper
+          - inotify-tools
+        state: present
+
+    - name: Install grub-btrfs for grub bootloader
+      community.general.pacman:
+        name: grub-btrfs
+        state: present
+      when: is_grub_boot
+      register: grub_btrfs_install
+      changed_when: grub_btrfs_install.changed
+
+    # NOTE: snap-pac-grub has been temporarily disowned on the AUR
+    # - name: Install snap-pac-grub from the AUR
+    #   ansible.builtin.command: "{{ aur_helper }} -Sy --needed --noconfirm snap-pac-grub"
+    #   register: spg_install
+    #   changed_when:
+    #     - "'already up to date' not in aur_install.stdout"
+    #     - "'there is nothing to do' not in aur_install.stdout"
+    #   when: ansible_distribution == "Archlinux" and aur_packages | length > 0

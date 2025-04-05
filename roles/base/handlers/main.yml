@@ -1,0 +1,33 @@
+---
+- name: Reload global systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+  listen: reload_global_systemd
+
+- name: Refresh font cache (global)
+  ansible.builtin.command:
+    cmd: fc-cache -fv
+  become: true
+  changed_when: true
+  listen: refresh_global_font_cache
+
+- name: Refresh font cache (user)
+  ansible.builtin.command:
+    cmd: fc-cache -fv
+  changed_when: true
+  listen: refresh_user_font_cache
+
+- name: Reload udev rules
+  ansible.builtin.command:
+    cmd: udevadm control --reload-rules
+  become: true
+  changed_when: true
+  listen: reload_udev
+
+- name: Trigger udev rules
+  ansible.builtin.command:
+    cmd: udevadm trigger
+  become: true
+  changed_when: true
+  listen: reload_udev

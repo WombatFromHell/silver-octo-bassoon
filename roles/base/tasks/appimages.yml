@@ -1,0 +1,64 @@
+---
+- name: AppImages processing
+  tags: [extra, appimages]
+  block:
+    - name: Ensure AppImages directory exists
+      ansible.builtin.file:
+        path: "{{ home_dir }}/AppImages"
+        state: directory
+        mode: "0755"
+
+    - name: Install fuse2 on Archlinux (required for AppImage execution)
+      community.general.pacman:
+        name: fuse2
+        state: present
+      when: ansible_distribution == "Archlinux"
+      become: true
+
+    - name: Find all AppImages in source directory
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/files/support/appimages"
+        patterns: "*.AppImage"
+        file_type: file
+      register: appimages_to_copy
+
+    - name: Copy AppImages with proper permissions (if changed)
+      ansible.builtin.copy:
+        src: "{{ images_item.path }}"
+        dest: "{{ home_dir }}/AppImages/{{ images_item.path | basename }}"
+        remote_src: false
+        mode: "0755"
+        checksum: "{{ images_item.md5 if images_item.md5 is defined else omit }}"
+      loop: "{{ appimages_to_copy.files }}"
+      loop_control:
+        loop_var: images_item
+        label: "Copying {{ images_item.path | basename }}"
+      when: appimages_to_copy.matched > 0
+
+    - name: Ensure .local/bin directory exists
+      ansible.builtin.file:
+        path: "{{ home_dir }}/.local/bin"
+        state: directory
+        mode: "0755"
+
+    - name: Check if ghostty.AppImage exists
+      ansible.builtin.stat:
+        path: "{{ home_dir }}/AppImages/ghostty.AppImage"
+      register: ghostty_src
+
+    - name: Rename Ghostty to the form GearLever uses
+      ansible.builtin.command:
+        cmd: mv {{ home_dir }}/AppImages/ghostty.AppImage {{ home_dir }}/AppImages/ghostty.appimage
+      args:
+        creates: "{{ home_dir }}/AppImages/ghostty.appimage"
+        removes: "{{ home_dir }}/AppImages/ghostty.AppImage"
+      when: ghostty_src.stat.exists
+      register: ghostty_moved
+
+    - name: Create symlink for ghostty in user's bin directory
+      ansible.builtin.file:
+        src: "{{ home_dir }}/AppImages/ghostty.appimage"
+        dest: "{{ home_dir }}/.local/bin/ghostty"
+        state: link
+        force: true
+      when: ghostty_moved is defined

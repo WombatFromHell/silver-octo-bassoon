@@ -1,0 +1,52 @@
+---
+- name: Dotfiles symlinking and post-processing
+  tags: [extra, dotfiles]
+  block:
+    - name: Ensure dotfiles symlink exists
+      ansible.builtin.file:
+        path: "{{ home_dir }}/.config/dotfiles"
+        src: "{{ playbook_dir }}/files/dotfiles"
+        state: link
+        force: true
+
+    - name: Preinstall Tuckr for dotfiles management
+      ansible.builtin.include_tasks: tuckr.yml
+
+    - name: Process dotfiles directories
+      block:
+        - name: Find program directories
+          ansible.builtin.find:
+            path: "{{ dotfiles_root }}/Configs"
+            file_type: directory
+            recurse: false
+            excludes: "home,scripts,pipewire,systemd,tmux"
+          register: dotfile_dirs
+          no_log: true
+
+        - name: Process programs with tuckr
+          ansible.builtin.include_tasks: process_program.yml
+          loop: "{{ dotfile_dirs.files }}"
+          loop_control:
+            loop_var: program_item
+            label: "{{ program_item.path | basename }}"
+          vars:
+            program_name: "{{ program_item.path | basename }}"
+            binary_name: "{{ program_checks.get(program_name, program_name) }}"
+
+    - name: Include home task
+      ansible.builtin.include_tasks: home.yml
+
+    - name: Include scripts task
+      ansible.builtin.include_tasks: scripts.yml
+
+    - name: Include systemd task
+      ansible.builtin.include_tasks: systemd.yml
+
+    - name: Include tmux task
+      ansible.builtin.include_tasks: tmux.yml
+
+    - name: Include pipewire task
+      ansible.builtin.include_tasks: pipewire.yml
+
+    - name: Include GPG task
+      ansible.builtin.include_tasks: gpg.yml

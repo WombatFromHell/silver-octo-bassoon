@@ -1,0 +1,99 @@
+---
+- name: Setup Chaotic AUR (Arch Linux only)
+  tags: [extra, chaoticaur]
+  become: true
+  block:
+    - name: Check if backup already exists
+      ansible.builtin.stat:
+        path: /etc/pacman.conf.pre-chaotic-aur.bak
+      register: pacman_conf_backup
+      changed_when: false
+
+    - name: Initialize pacman keyring (if not initialized)
+      ansible.builtin.command: pacman-key --init
+      args:
+        creates: /etc/pacman.d/gnupg
+      changed_when: false
+
+    - name: Check if Chaotic AUR key exists
+      ansible.builtin.command: pacman-key --list-keys 3056513887B78AEB
+      register: chaotic_key_exists
+      ignore_errors: true
+      changed_when: false
+
+    - name: Receive Chaotic AUR key (if missing)
+      ansible.builtin.command: pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
+      when: chaotic_key_exists.rc != 0
+      changed_when: true
+
+    - name: Check if Chaotic AUR key is signed
+      ansible.builtin.shell: |
+        set -o pipefail
+        pacman-key --list-sigs 3056513887B78AEB | grep -q "\\[SIGNED\\]" || true
+      register: chaotic_key_signed
+      changed_when: false
+
+    - name: Locally sign Chaotic AUR key (if unsigned)
+      ansible.builtin.command: pacman-key --lsign-key 3056513887B78AEB
+      when: chaotic_key_signed.rc != 0
+      changed_when: true
+
+    - name: Check if Chaotic AUR keyring is installed
+      ansible.builtin.command: pacman -Q chaotic-keyring
+      register: chaotic_keyring_installed
+      ignore_errors: true
+      changed_when: false
+
+    - name: Install Chaotic AUR keyring package (if not installed)
+      ansible.builtin.command: pacman --noconfirm -U https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst
+      when: chaotic_keyring_installed.rc != 0
+      changed_when: true
+
+    - name: Check if Chaotic AUR mirrorlist is installed
+      ansible.builtin.command: pacman -Q chaotic-mirrorlist
+      register: chaotic_mirrorlist_installed
+      ignore_errors: true
+      changed_when: false
+
+    - name: Install Chaotic AUR mirrorlist package (if not installed)
+      ansible.builtin.command: pacman --noconfirm -U https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst
+      when: chaotic_mirrorlist_installed.rc != 0
+      changed_when: true
+
+    - name: Backup existing pacman.conf (if not backed up)
+      ansible.builtin.copy:
+        src: /etc/pacman.conf
+        dest: /etc/pacman.conf.pre-chaotic-aur.bak
+        remote_src: true
+        mode: "0644"
+      when: not pacman_conf_backup.stat.exists
+      changed_when: true
+      no_log: true
+
+    - name: Check if Chaotic AUR is already configured
+      ansible.builtin.shell: |
+        grep -qF '[chaotic-aur]' /etc/pacman.conf
+      register: chaotic_aur_configured
+      ignore_errors: true
+      changed_when: false
+
+    - name: Add Chaotic AUR repository to pacman.conf (if missing)
+      ansible.builtin.blockinfile:
+        path: /etc/pacman.conf
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - chaotic-aur"
+        block: |
+          [chaotic-aur]
+          Include = /etc/pacman.d/chaotic-mirrorlist
+        insertafter: EOF
+        create: true
+        mode: "0644"
+      when: chaotic_aur_configured.rc != 0
+      changed_when: true
+
+    - name: Refresh package databases (if changes were made)
+      ansible.builtin.command: pacman -Sy
+      when: >
+        (chaotic_aur_configured.rc != 0) or
+        (chaotic_keyring_installed.rc != 0) or
+        (chaotic_mirrorlist_installed.rc != 0)
+      changed_when: true

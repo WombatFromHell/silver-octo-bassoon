@@ -1,0 +1,64 @@
+---
+- name: GPG and SSH key install and setup
+  tags: [extra, dotfiles, dotfiles_gpg]
+  block:
+    - name: Load GPG secrets from vault
+      ansible.builtin.include_vars:
+        file: "{{ vault_file }}"
+        name: gpg_secrets
+      no_log: true
+
+    - name: Ensure GPG directory exists
+      ansible.builtin.file:
+        path: "{{ home_dir }}/.gnupg"
+        state: directory
+        mode: "0700"
+
+    - name: Import public key
+      ansible.builtin.command: >
+        gpg --import "{{ gnupg_key_dir }}/public-key.asc"
+      args:
+        creates: "{{ home_dir }}/.gnupg/pubring.kbx"
+      register: import_public
+      changed_when: "'imported' in import_public.stdout"
+      ignore_errors: true
+
+    - name: Import private key with passphrase
+      ansible.builtin.command: >
+        gpg --batch --pinentry-mode loopback
+        --passphrase-fd 0 --import
+        "{{ gnupg_key_dir }}/private-key.asc"
+      args:
+        stdin: "{{ gpg_secrets.gpg_passphrase }}"
+      register: import_private
+      changed_when: "'imported' in import_private.stdout"
+      no_log: true
+      ignore_errors: true
+
+    - name: Verify key imports
+      ansible.builtin.assert:
+        that:
+          - import_public is not skipped
+          - import_private is not skipped
+        success_msg: "GPG keys imported successfully"
+        fail_msg: "Failed to import one or more GPG keys"
+
+    - name: Ensure SSH directory exists with correct permissions
+      ansible.builtin.file:
+        path: "{{ home_dir }}/.ssh"
+        state: directory
+        mode: "0700"
+
+    - name: Copy SSH keys to user's .ssh directory
+      ansible.builtin.copy:
+        src: "{{ ssh_key_dir }}/{{ ssh_item.key }}"
+        dest: "{{ home_dir }}/.ssh/{{ ssh_item.key }}"
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_gid }}"
+        mode: "{{ ssh_item.mode }}"
+      loop:
+        - { key: "id_rsa", mode: "0600" }
+        - { key: "id_rsa.pub", mode: "0644" }
+      loop_control:
+        loop_var: ssh_item
+        label: "Copying {{ ssh_item.key }}"

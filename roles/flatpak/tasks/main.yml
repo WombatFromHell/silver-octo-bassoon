@@ -1,0 +1,82 @@
+---
+- name: Install Flatpak packages
+  tags: [extra, flatpak]
+  when: enable_flatpak | default(false)
+  block:
+    - name: Ensure Flatpak is installed (Archlinux)
+      when: ansible_distribution == "Archlinux"
+      community.general.pacman:
+        name: flatpak
+        state: present
+      become: true
+      tags: flatpak_install
+
+    - name: Check for flatpak executable
+      when: ansible_distribution != "Archlinux"
+      ansible.builtin.command: command -v flatpak
+      register: flatpak_check
+      changed_when: false
+      ignore_errors: true
+
+    - name: Validate flatpak installation
+      ansible.builtin.assert:
+        that:
+          - flatpak_check.rc == 0
+        fail_msg: "Flatpak is not installed or not in PATH"
+        success_msg: "Flatpak is available at {{ flatpak_check.stdout }}"
+
+    - name: Ensure FlatHub repo exists for the user
+      community.general.flatpak_remote:
+        name: flathub
+        state: present
+        flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
+        method: user
+      register: repo_exists
+
+    - name: Install system packages
+      become: true
+      when: system_flatpaks is defined and system_flatpaks | length > 0
+      flatpak_manage:
+        packages: "{{ system_flatpaks }}"
+        scope: system
+        state: present
+        remove_extra: "{{ remove_existing_flatpaks | default(false) }}"
+        skip_packages: "{{ skip_flatpaks }}"
+
+    - name: Install user packages
+      when:
+        - repo_exists is defined
+        - user_flatpaks is defined and user_flatpaks | length > 0
+      flatpak_manage:
+        packages: "{{ user_flatpaks }}"
+        scope: user
+        state: present
+        remove_extra: "{{ remove_existing_flatpaks | default(false) }}"
+        skip_packages: "{{ skip_flatpaks }}"
+
+    - name: Handle flatpak extra packages and workarounds
+      block:
+        - name: Include flatpak brave tasks
+          ansible.builtin.include_tasks: flatpak_brave.yml
+          tags: [extra, flatpak, flatpak_extra, flatpak_brave]
+
+        - name: Include flatpak firefox tasks
+          ansible.builtin.include_tasks: flatpak_firefox.yml
+          tags: [extra, flatpak, flatpak_extra, flatpak_firefox]
+
+        - name: Include flatpak peazip tasks
+          ansible.builtin.include_tasks: flatpak_peazip.yml
+          tags: [extra, flatpak, flatpak_extra, flatpak_peazip]
+
+        - name: Install OBS Studio and plugins
+          when: install_obs | default(false)
+          tags: [exta, flatpak, flatpak_extra, flatpak_obs]
+          community.general.flatpak:
+            name:
+              - org.freedesktop.Platform.VulkanLayer.OBSVkCapture
+              - com.obsproject.Studio.Plugin.OBSVkCapture
+              - com.obsproject.Studio.Plugin.Gstreamer
+              - com.obsproject.Studio.Plugin.GStreamerVaapi
+              - com.obsproject.Studio
+            state: present
+            method: user

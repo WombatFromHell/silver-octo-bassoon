@@ -1,0 +1,33 @@
+---
+- name: Process scripts
+  tags: [extra, dotfiles, dotfiles_scripts]
+  block:
+    - name: Ensure local bin exists
+      ansible.builtin.file:
+        path: "{{ home_dir }}/.local/bin"
+        state: directory
+        mode: "0755"
+      when: script_links is defined and script_links | length > 0
+
+    - name: Link scripts directory
+      ansible.builtin.file:
+        path: "{{ scripts_dir }}"
+        src: "{{ dotfiles_root }}/Configs/scripts"
+        state: link
+        force: true
+      when: dotfiles_root is defined
+
+    - name: Link global scripts
+      ansible.builtin.file:
+        path: "{{ script_item.dest }}"
+        src: "{{ scripts_dir }}/{{ script_item.src }}"
+        state: link
+        force: true
+      loop: "{{ script_links }}"
+      loop_control:
+        loop_var: script_item
+        label: "Linking {{ script_item.src }}"
+      when:
+        - script_links is defined
+        - script_links | length > 0
+      become: true
