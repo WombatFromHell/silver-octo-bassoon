@@ -307,6 +307,7 @@ do_post_stow() {
 		mkdir -p "$MONITOR_SCRIPTS"
 		ln -sf "$(realpath "$SCRIPTS_DIR")/fix-gsync.py" "$MONITOR_SCRIPTS/fix-gsync.py"
 		ln -sf "$(realpath "$SCRIPTS_DIR")/openrgb-load.sh" "$MONITOR_SCRIPTS/openrgb-load.sh"
+		rm -f "$HOME"/.dotfiles && ln -sf "$(realpath "$script_dir")" "$(realpath "$HOME")"/.dotfiles
 		echo "Linked monitor-session scripts to '$MONITOR_SCRIPTS'."
 		;;
 	fish)
