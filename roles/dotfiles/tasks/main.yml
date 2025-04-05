@@ -31,6 +31,7 @@
             loop_var: program_item
             label: "{{ program_item.path | basename }}"
           vars:
+            force_tuckr_overwrite: true
             program_name: "{{ program_item.path | basename }}"
             binary_name: "{{ program_checks.get(program_name, program_name) }}"
 

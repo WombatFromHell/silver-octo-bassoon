@@ -10,18 +10,21 @@
     ansible_verbose_output: true
   no_log: false
 
-- name: Configure dotfiles using tuckr - '{{ program_name | default('') }}'
+- name: Configure dotfiles using tuckr - '{{ program_name }}'
   tuckr_manage:
     name: "{{ program_name }}"
     state: present
     force: "{{ force_tuckr_overwrite | default(false) }}"
+    backup: "{{ tuckr_backup_conflicts | default(true) }}"
   when: check_program.rc == 0
   register: tuckr_result
   changed_when: tuckr_result is changed
-  failed_when: tuckr_result is failed and not (force_tuckr_overwrite | default(false))
+  failed_when: >
+    (tuckr_result is failed and
+      not (force_tuckr_overwrite|default(false) and 'conflicts' in tuckr_result)) or
+    (tuckr_result.rc is defined and tuckr_result.rc != 0 and
+      not (force_tuckr_overwrite|default(false) and 'conflicts' in tuckr_result))
   notify: "{{ program_handlers[program_name] | default(omit) }}"
   vars:
     program_handlers:
       bat: refresh_bat_cache
-    ansible_verbose_output: true
-  no_log: false
