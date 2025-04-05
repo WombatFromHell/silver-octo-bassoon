@@ -2,18 +2,21 @@
 - name: AppImages processing
   tags: [extra, appimages]
   block:
-    - name: Ensure AppImages directory exists
+    - name: Ensure required directories exist
       ansible.builtin.file:
-        path: "{{ home_dir }}/AppImages"
+        path: "{{ item }}"
         state: directory
         mode: "0755"
+      loop:
+        - "{{ home_dir }}/AppImages"
+        - "{{ home_dir }}/.local/bin"
 
     - name: Install fuse2 on Archlinux (required for AppImage execution)
+      become: true
       community.general.pacman:
         name: fuse2
         state: present
       when: ansible_distribution == "Archlinux"
-      become: true
 
     - name: Find all AppImages in source directory
       ansible.builtin.find:
@@ -21,44 +24,95 @@
         patterns: "*.AppImage"
         file_type: file
       register: appimages_to_copy
+      ignore_errors: true # Continue even if directory doesn't exist
 
-    - name: Copy AppImages with proper permissions (if changed)
-      ansible.builtin.copy:
-        src: "{{ images_item.path }}"
-        dest: "{{ home_dir }}/AppImages/{{ images_item.path | basename }}"
-        remote_src: false
-        mode: "0755"
-        checksum: "{{ images_item.md5 if images_item.md5 is defined else omit }}"
-      loop: "{{ appimages_to_copy.files }}"
-      loop_control:
-        loop_var: images_item
-        label: "Copying {{ images_item.path | basename }}"
+    - name: Check for existing lowercase appimage files
+      ansible.builtin.find:
+        paths: "{{ home_dir }}/AppImages"
+        patterns: "*.appimage"
+        file_type: file
+      register: existing_lowercase_appimages
+      ignore_errors: true
+
+    - name: Process found AppImages
       when: appimages_to_copy.matched > 0
+      block:
+        - name: Create list of lowercase filenames that already exist
+          ansible.builtin.set_fact:
+            existing_lowercase_filenames: "{{
+              existing_lowercase_appimages.files |
+              map(attribute='path') |
+              map('basename') |
+              map('regex_replace', '\\.appimage$', '') |
+              list
+              }}"
 
-    - name: Ensure .local/bin directory exists
-      ansible.builtin.file:
-        path: "{{ home_dir }}/.local/bin"
-        state: directory
-        mode: "0755"
+        - name: Extract basenames from AppImages to copy
+          ansible.builtin.set_fact:
+            source_appimage_paths: "{{ appimages_to_copy.files | map(attribute='path') | list }}"
+            source_appimage_basenames: "{{ appimages_to_copy.files | map(attribute='path') | map('basename') | list }}"
 
-    - name: Check if ghostty.AppImage exists
-      ansible.builtin.stat:
-        path: "{{ home_dir }}/AppImages/ghostty.AppImage"
-      register: ghostty_src
+        - name: Create list of AppImage basenames without extension
+          ansible.builtin.set_fact:
+            source_appimage_names: "{{ source_appimage_basenames | map('regex_replace', '\\.AppImage$', '') | list }}"
 
-    - name: Rename Ghostty to the form GearLever uses
-      ansible.builtin.command:
-        cmd: mv {{ home_dir }}/AppImages/ghostty.AppImage {{ home_dir }}/AppImages/ghostty.appimage
-      args:
-        creates: "{{ home_dir }}/AppImages/ghostty.appimage"
-        removes: "{{ home_dir }}/AppImages/ghostty.AppImage"
-      when: ghostty_src.stat.exists
-      register: ghostty_moved
+        - name: Filter AppImages to copy (skip those with lowercase versions)
+          ansible.builtin.set_fact:
+            final_appimages: "{{ [] }}"
 
-    - name: Create symlink for ghostty in user's bin directory
-      ansible.builtin.file:
-        src: "{{ home_dir }}/AppImages/ghostty.appimage"
-        dest: "{{ home_dir }}/.local/bin/ghostty"
-        state: link
-        force: true
-      when: ghostty_moved is defined
+        - name: Build final AppImages list
+          ansible.builtin.set_fact:
+            final_appimages: "{{ final_appimages + [source_appimage_paths[idx]] }}"
+          loop: "{{ source_appimage_names }}"
+          loop_control:
+            index_var: idx
+          when: >
+            (source_appimage_names[idx] not in existing_lowercase_filenames) or
+            (source_appimage_names[idx] == 'ghostty' and 'ghostty' not in existing_lowercase_filenames)
+
+        - name: Copy AppImages with proper permissions
+          ansible.builtin.copy:
+            src: "{{ item }}"
+            dest: "{{ home_dir }}/AppImages/{{ item | basename }}"
+            remote_src: false
+            mode: "0755"
+          loop: "{{ final_appimages | default([]) }}"
+          loop_control:
+            label: "{{ item | basename }}"
+          when: final_appimages | default([]) | length > 0
+          failed_when: false # Continue on individual copy failures
+    - name: Process Ghostty specially
+      when: >
+        appimages_to_copy.matched > 0 and
+        ('ghostty.AppImage' in (appimages_to_copy.files | map(attribute='path') | map('basename') | list))
+      block:
+        - name: Check for existing Ghostty installations
+          ansible.builtin.stat:
+            path: "{{ home_dir }}/AppImages/ghostty.{{ item }}"
+          loop:
+            - "AppImage"
+            - "appimage"
+          loop_control:
+            label: "ghostty.{{ item }}"
+          register: ghostty_check
+          changed_when: false
+
+        - name: Rename Ghostty to lowercase if needed
+          ansible.builtin.command:
+            cmd: mv "{{ home_dir }}/AppImages/ghostty.AppImage" "{{ home_dir }}/AppImages/ghostty.appimage"
+          args:
+            creates: "{{ home_dir }}/AppImages/ghostty.appimage"
+          when:
+            - ghostty_check.results[0].stat.exists | default(false)
+            - not ghostty_check.results[1].stat.exists | default(false)
+          register: ghostty_moved
+
+        - name: Create symlink for Ghostty
+          ansible.builtin.file:
+            src: "{{ home_dir }}/AppImages/ghostty.appimage"
+            dest: "{{ home_dir }}/.local/bin/ghostty"
+            state: link
+            force: true
+          when: >
+            (ghostty_check.results[1].stat.exists | default(false)) or
+            (ghostty_moved is defined and ghostty_moved.changed | default(false))
