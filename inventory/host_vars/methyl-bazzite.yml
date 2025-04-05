@@ -41,6 +41,12 @@ system_flatpaks:
   - it.mijorus.gearlever
   - runtime/org.freedesktop.Platform.VulkanLayer.MangoHud/x86_64/24.08
   - org.gtk.Gtk3theme.Adwaita-dark
+  - org.kde.filelight
+  - org.kde.gwenview
+  - org.kde.haruna
+  - org.kde.kcalc
+  - org.kde.okular
+  - com.github.Matoking.protontricks
 user_flatpaks:
   - com.github.zocker_160.SyncThingy
   - com.spotify.Client
