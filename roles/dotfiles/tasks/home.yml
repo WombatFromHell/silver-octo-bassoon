@@ -38,3 +38,25 @@
       when:
         - debug_mode | default(false) | bool
         - tuckr_result is defined
+
+    - name: Check for an existing 'chromium-flags.conf'
+      ansible.builtin.stat:
+        path: "{{ home_realpath }}/.config/chromium-flags.conf"
+      register: chromium_flags_check
+
+    - name: Copy link target of 'chromium-flags.conf' if it's a link
+      when: chromium_flags_check.stat.islnk is defined and chromium_flags_check.stat.islnk
+      ansible.builtin.file:
+        src: "{{ chromium_flags_check.stat.lnk_source }}"
+        dest: "{{ home_realpath }}/.config/brave-flags.conf"
+        state: link
+        force: true
+
+    - name: Copy chromium-flags.conf if it's not a link
+      when:
+        - chromium_flags_check.stat.exists and
+          not (chromium_flags_check.stat.islnk is defined and chromium_flags_check.stat.islnk)
+      ansible.builtin.command: |
+        cp -f "{{ home_realpath }}/.config/chromium-flags.conf" "{{ home_realpath }}/.config/brave-flags.conf"
+      args:
+        creates: "{{ home_realpath }}/.config/brave-flags.conf"
