@@ -7,20 +7,21 @@
     home_realpath: "{{ ansible_env.HOME | realpath }}"
 
   pre_tasks:
-    - name: Validate NVIDIA driver presence and set role variable
+    - name: Check for NVIDIA driver presence
       ansible.builtin.stat:
         path: /proc/driver/nvidia
       register: nvidia_driver
-      when: graphics_card == "nvidia"
+      when: graphics_card is defined and graphics_card == "nvidia"
 
-    - name: Set role variable if NVIDIA driver is missing
+    - name: Determine if NVIDIA driver is missing
       ansible.builtin.set_fact:
-        nvidia_missing: "{{
-          not graphics_card or
-          graphics_card != 'nvidia' or
-          graphics_card == 'nvidia' and
-          (nvidia_driver is not defined or not nvidia_driver.stat.exists)
-          }}"
+        nvidia_missing: >-
+          {{
+            (graphics_card is not defined) or
+            (graphics_card != "nvidia") or
+            (graphics_card == "nvidia" and
+             (nvidia_driver is not defined or not nvidia_driver.stat.exists))
+          }}
         cacheable: true
 
   roles:
