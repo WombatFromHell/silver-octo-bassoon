@@ -11,6 +11,7 @@
 
     - name: Preinstall Tuckr for dotfiles management
       ansible.builtin.include_tasks: tuckr.yml
+      tags: [extra, dotfiles, dotfiles_tuckr]
 
     - name: Process dotfiles directories
       block:
@@ -35,18 +36,24 @@
 
     - name: Include home task
       ansible.builtin.include_tasks: home.yml
+      tags: [extra, dotfiles, dotfiles_home]
 
     - name: Include scripts task
       ansible.builtin.include_tasks: scripts.yml
+      tags: [extra, dotfiles, dotfiles_scripts]
 
     - name: Include systemd task
       ansible.builtin.include_tasks: systemd.yml
+      tags: [extra, dotfiles, dotfiles_systemd]
 
     - name: Include tmux task
       ansible.builtin.include_tasks: tmux.yml
+      tags: [extra, dotfiles, dotfiles_tmux]
 
     - name: Include pipewire task
       ansible.builtin.include_tasks: pipewire.yml
+      tags: [extra, dotfiles, dotfiles_pipewire]
 
     - name: Include GPG task
       ansible.builtin.include_tasks: gpg.yml
+      tags: [extra, dotfiles, dotfiles_gpg]

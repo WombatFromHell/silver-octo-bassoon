@@ -1,10 +1,14 @@
 #!/usr/bin/python3
 
 import subprocess
+import os
+import shutil
+import time
 from ansible.module_utils.basic import AnsibleModule
+from typing import Tuple, List, Optional
 
 
-def is_tuckr_available():
+def is_tuckr_available() -> bool:
     """Check if tuckr is in PATH and executable"""
     try:
         subprocess.run(
@@ -18,19 +22,52 @@ def is_tuckr_available():
         return False
 
 
-def parse_tuckr_conflicts(output):
+def parse_tuckr_conflicts(output: Optional[str]) -> List[str]:
     """Parse tuckr output for conflict information"""
-    conflicts = []
+    conflicts: List[str] = []
     if not output:
         return conflicts
 
     for line in output.splitlines():
         if "->" in line and "(already exists)" in line:
-            conflicts.append(line.strip().split("->")[1].split("(")[0].strip())
+            parts = line.strip().split("->")
+            if len(parts) > 1:
+                path_part = parts[1].split("(")[0].strip()
+                if path_part:  # Ensure we don't add empty strings
+                    conflicts.append(path_part)
     return conflicts
 
 
-def run_tuckr(module, command, name, force=False):
+def backup_conflicting_files(module: AnsibleModule, conflicts: List[str]) -> bool:
+    """Backup conflicting files before overwriting"""
+    if not conflicts:  # Handle empty conflict list
+        return True
+
+    backup_dir = os.path.expanduser("~/.tuckr_backups")
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+
+    try:
+        os.makedirs(backup_dir, exist_ok=True)
+        for file_path in conflicts:
+            if os.path.exists(file_path):
+                backup_path = os.path.join(
+                    backup_dir, f"{os.path.basename(file_path)}.{timestamp}"
+                )
+                shutil.move(file_path, backup_path)
+                module.warn(f"Backed up conflicting file {file_path} to {backup_path}")
+        return True
+    except Exception as e:
+        module.warn(f"Failed to backup conflicting files: {str(e)}")
+        return False
+
+
+def run_tuckr(
+    module: AnsibleModule,
+    command: str,
+    name: str,
+    force: bool = False,
+    backup: bool = True,
+) -> Tuple[bool, Optional[str]]:
     """Run tuckr command with improved error handling"""
     if not is_tuckr_available():
         module.fail_json(msg="tuckr not found in PATH or not executable")
@@ -54,6 +91,20 @@ def run_tuckr(module, command, name, force=False):
             conflicts = parse_tuckr_conflicts(stdout_msg)
             if conflicts:
                 error_msg = f"Conflicts detected: {', '.join(conflicts)}"
+                if force and backup:
+                    if backup_conflicting_files(module, conflicts):
+                        # Try again after backup
+                        try:
+                            result = subprocess.run(
+                                ["tuckr", "add", "-y", "--force", name],
+                                check=True,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True,
+                            )
+                            return True, result.stdout
+                        except subprocess.CalledProcessError as e2:
+                            error_msg = f"Failed even with force: {e2.stderr.strip()}"
 
         if "rm" in command:
             module.warn(f"Non-critical tuckr rm failure: {error_msg}")
@@ -66,10 +117,7 @@ def run_tuckr(module, command, name, force=False):
             rc=e.returncode,
             conflicts=parse_tuckr_conflicts(stdout_msg) if stdout_msg else [],
         )
-        return (
-            False,
-            stdout_msg,
-        )  # This line is theoretically unreachable due to fail_json
+        return False, None  # This line is theoretically unreachable due to fail_json
 
 
 def main():
@@ -82,6 +130,7 @@ def main():
                 "choices": ["present", "absent"],
             },
             "force": {"type": "bool", "default": False},
+            "backup": {"type": "bool", "default": True},
         },
         supports_check_mode=False,
     )
@@ -89,24 +138,17 @@ def main():
     name = module.params["name"]
     state = module.params["state"]
     force = module.params["force"]
+    backup = module.params["backup"]
     changed = False
 
     if state == "absent":
-        success, _ = run_tuckr(module, "rm", name)
+        success, _ = run_tuckr(module, "rm", name, force, backup)
         changed = success
     else:
         # Clean up first, ignoring failures
-        run_tuckr(module, "rm", name)
-        success, output = run_tuckr(module, "add -y", name, force)
+        run_tuckr(module, "rm", name, force, backup)
+        success, _ = run_tuckr(module, "add -y", name, force, backup)
         changed = success
-
-        # If failed with conflicts and force is True, try again with backup
-        if not success and force:
-            conflicts = parse_tuckr_conflicts(output or "")
-            if conflicts:
-                module.warn(f"Force mode enabled - backing up conflicts: {conflicts}")
-                success, _ = run_tuckr(module, "add -y --force", name)
-                changed = success
 
     module.exit_json(changed=changed)
 
