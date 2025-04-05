@@ -32,7 +32,7 @@ script_links:
 program_handlers:
   bat:
     - command: "bat cache --build"
-      creates: "{{ home_dir }}/.cache/bat" # Makes handler idempotent
+      creates: "{{ home_dir }}/.cache/bat"
 
 enable_flatpak: true
 remove_existing_flatpaks: true

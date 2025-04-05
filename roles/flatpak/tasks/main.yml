@@ -19,8 +19,10 @@
       ignore_errors: true
 
     - name: Validate flatpak installation
+      when: ansible_distribution != "Archlinux"
       ansible.builtin.assert:
         that:
+          - flatpak_check is defined
           - flatpak_check.rc == 0
         fail_msg: "Flatpak is not installed or not in PATH"
         success_msg: "Flatpak is available at {{ flatpak_check.stdout }}"
@@ -37,22 +39,22 @@
       become: true
       when: system_flatpaks is defined and system_flatpaks | length > 0
       flatpak_manage:
-        packages: "{{ system_flatpaks }}"
+        packages: "{{ system_flatpaks | default([]) }}"
         scope: system
         state: present
         remove_extra: "{{ remove_existing_flatpaks | default(false) }}"
-        skip_packages: "{{ skip_flatpaks }}"
+        skip_packages: "{{ skip_flatpaks | default([]) }}"
 
     - name: Install user packages
       when:
         - repo_exists is defined
         - user_flatpaks is defined and user_flatpaks | length > 0
       flatpak_manage:
-        packages: "{{ user_flatpaks }}"
+        packages: "{{ user_flatpaks | default([]) }}"
         scope: user
         state: present
         remove_extra: "{{ remove_existing_flatpaks | default(false) }}"
-        skip_packages: "{{ skip_flatpaks }}"
+        skip_packages: "{{ skip_flatpaks | default([]) }}"
 
     - name: Handle flatpak extra packages and workarounds
       block:

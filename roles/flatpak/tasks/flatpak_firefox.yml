@@ -1,38 +1,57 @@
 ---
 - name: Handle Firefox browser installation
-  when: install_firefox | default(false)
+  when:
+    - enable_flatpak
+    - install_firefox | default(false)
   tags: [extra, flatpak, flatpak_extra, flatpak_firefox]
+  vars:
+    firefox_app: "org.mozilla.firefox"
   block:
     - name: Install libva-nvidia-driver on Archlinux for Firefox
-      when: ansible_distribution == "Archlinux"
+      when:
+        - ansible_distribution == "Archlinux"
+        - graphics_card == "nvidia"
+        - nvidia_missing is not defined
+      become: true
       community.general.pacman:
         name: libva-nvidia-driver
         state: present
 
     - name: Install Firefox browser
       community.general.flatpak:
-        name: org.mozilla.firefox
+        name: "{{ firefox_app }}"
         state: present
         method: system
 
-    - name: Check Firefox VAAPI fix script
-      ansible.builtin.stat:
-        path: "{{ dotfiles_root }}/Configs/scripts/fix-vaapi-firefox.sh"
-      register: firefox_script
-
-    - name: Set executable permission for Firefox fix script
-      ansible.builtin.file:
-        path: "{{ firefox_script.stat.path }}"
-        mode: "0755"
+    - name: Apply Firefox Nvidia VAAPI fix
       when:
-        - firefox_script.stat.exists
-        - not firefox_script.stat.isdir
+        - graphics_card == "nvidia"
+        - nvidia_missing is not defined
+      block:
+        - name: Check Firefox VAAPI fix script
+          ansible.builtin.stat:
+            path: "{{ dotfiles_root }}/Configs/scripts/fix-vaapi-firefox.sh"
+          register: firefox_script
 
-    - name: Apply Firefox VAAPI fix
-      ansible.builtin.script: "{{ firefox_script.stat.path }}"
+        - name: Set executable permission for Firefox fix script
+          ansible.builtin.file:
+            path: "{{ firefox_script.stat.path }}"
+            mode: "0755"
+          when:
+            - firefox_script.stat.exists
+            - not firefox_script.stat.isdir
 
-      when:
-        - firefox_script.stat.exists
-        - not firefox_script.stat.isdir
-        - firefox_script.stat.mode is defined
-        - firefox_script.stat.mode | int | bitwise_and(0o111)
+        - name: Check if Firefox VAAPI fix already applied
+          ansible.builtin.stat:
+            path: "{{ home_realpath }}/.var/app/{{ firefox_app }}/dri/nvidia_drv_video.so"
+          register: firefox_vaapi_fix_applied
+          ignore_errors: true
+          changed_when: false
+
+        - name: Apply Firefox VAAPI fix
+          ansible.builtin.script: "{{ firefox_script.stat.path }}"
+          changed_when: firefox_vaapi_script_applied.rc == 0
+          when:
+            - firefox_vaapi_fix_applied is not defined
+            - firefox_script.stat.exists
+            - not firefox_script.stat.isdir

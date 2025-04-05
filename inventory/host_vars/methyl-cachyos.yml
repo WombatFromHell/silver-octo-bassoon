@@ -88,20 +88,22 @@ script_links:
 program_handlers:
   bat:
     - command: "bat cache --build"
-      creates: "{{ home_dir }}/.cache/bat" # Makes handler idempotent
+      creates: "{{ home_dir }}/.cache/bat"
 
+enable_brew: false
 enable_flatpak: true
-remove_existing_flatpaks: false
+remove_existing_flatpaks: true
 system_flatpaks:
   - com.github.tchx84.Flatseal
   - it.mijorus.gearlever
 user_flatpaks:
   - com.usebottles.bottles
+skip_flatpaks:
+  - io.github.peazip.PeaZip
+install_peazip: true
 
-enable_brew: false
 enable_btrfs_snapper: true
 enable_vfio: false
 enable_distrobox: false
 # distrobox containers
-enable_cursor: false
-enable_devbox: false
+# enable_devbox: false
