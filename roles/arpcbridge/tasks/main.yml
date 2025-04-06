@@ -27,16 +27,14 @@
       changed_when: false
       register: installer_result
 
-    - name: Debug service installer
-      ansible.builtin.debug:
-        var: installer_result
-
     - name: Ensure the service is started and enabled
       when:
         - installer_exists.stat.exists
-        - installer_result.rc == 0
+        - installer_result.skipped is defined and not installer_result.skipped
+        - installer_result.rc is defined and installer_result.rc == 0
       ansible.builtin.systemd:
         name: discord-flatpak-rpc-bridge.service
         scope: user
         state: started
         enabled: true
+        no_log: true
