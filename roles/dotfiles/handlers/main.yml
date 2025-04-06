@@ -13,6 +13,6 @@
 
 - name: Refresh fish plugins
   ansible.builtin.command:
-    cmd: fish -c 'fisher update'
+    cmd: fish -l -c 'update_fisher'
     creates: "{{ home_realpath }}/.config/fish/functions/fisher.fish"
   listen: refresh_fish_plugins
