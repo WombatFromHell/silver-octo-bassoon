@@ -1,5 +1,6 @@
 - name: Install discord-flatpak-rpc-bridge
   when: install_arpc_fix | default(false)
+  tags: [extra, arpc]
   block:
     - name: Check if the service is enabled and active
       ansible.builtin.systemd:
@@ -17,14 +18,23 @@
       when:
         - installer_exists.stat.exists
         - service_status is failed or service_status.status.ActiveState != "active"
-      become: true
-      ansible.builtin.script:
+      ansible.builtin.shell: |
+        set -o pipefail
+        cd "{{ role_path }}/files/discord-flatpak-rpc-bridge" && \
+        ./install.sh -i
+      args:
         executable: /bin/bash
-        chdir: "{{ role_path }}/files/discord-flatpak-rpc-bridge"
-        cmd: install.sh
+      changed_when: false
+      register: installer_result
+
+    - name: Debug service installer
+      ansible.builtin.debug:
+        var: installer_result
 
     - name: Ensure the service is started and enabled
-      when: installer_exists.stat.exists
+      when:
+        - installer_exists.stat.exists
+        - installer_result.rc == 0
       ansible.builtin.systemd:
         name: discord-flatpak-rpc-bridge.service
         scope: user

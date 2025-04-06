@@ -1,4 +1,18 @@
 ---
+- name: Setup tasks
+  hosts: all
+  tasks:
+    - name: Install sudoers config for ansible
+      tags: sudoers
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/99-ansible-nopasswd"
+        content: |
+          # ONLY FOR USE DURING ANSIBLE DEPLOYMENT
+          %wheel ALL=(ALL) NOPASSWD: ALL
+        mode: "0400"
+        validate: "visudo -cf %s"
+      become: true
+
 - name: Per-host roles
   hosts:
     - methyl-cachyos
@@ -49,3 +63,13 @@
     - distrobox
     - vfio
     - arpcbridge
+
+- name: Teardown tasks
+  hosts: all
+  tasks:
+    - name: Remove sudoers config for ansible
+      tags: sudoers
+      ansible.builtin.file:
+        path: "/etc/sudoers.d/99-ansible-nopasswd"
+        state: absent
+      become: true
