@@ -48,3 +48,4 @@
     - flatpak
     - distrobox
     - vfio
+    - arpcbridge

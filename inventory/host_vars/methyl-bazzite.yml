@@ -79,3 +79,5 @@ brew_packages:
   - zoxide
 # distrobox containers
 # enable_devbox: false
+
+install_arpc_fix: true

@@ -107,3 +107,5 @@ enable_vfio: false
 enable_distrobox: false
 # distrobox containers
 # enable_devbox: false
+
+install_arpc_fix: true
