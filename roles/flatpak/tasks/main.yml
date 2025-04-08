@@ -19,7 +19,9 @@
       ignore_errors: true
 
     - name: Validate flatpak installation
-      when: ansible_distribution != "Archlinux"
+      when:
+        - not ansible_check_mode
+        - ansible_distribution != "Archlinux"
       ansible.builtin.assert:
         that:
           - flatpak_check is defined

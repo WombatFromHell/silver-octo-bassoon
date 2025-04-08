@@ -59,9 +59,12 @@
   no_log: true
 
 - name: "Enable corresponding .automount unit"
+  when:
+    - not ansible_check_mode
+    - (not is_local) or (is_local and mount_path_stat.stat.exists)
   ansible.builtin.systemd:
     name: "{{ mount_item.path | regex_replace('^.*/', '') | regex_replace('\\.mount$', '.automount') }}"
     enabled: true
     daemon_reload: true
-  when: (not is_local) or (is_local and mount_path_stat.stat.exists) and not ansible_check_mode
   become: true
+  check_mode: false

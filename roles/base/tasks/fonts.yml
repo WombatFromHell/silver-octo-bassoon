@@ -9,6 +9,7 @@
         mode: "0755"
 
     - name: Extract fonts archive to .fonts directory
+      when: not ansible_check_mode
       ansible.builtin.unarchive:
         src: "{{ playbook_dir }}/files/support/fonts.tar.gz"
         dest: "{{ home_dir }}/.fonts"
@@ -17,9 +18,9 @@
       notify: refresh_user_font_cache
 
     - name: Create marker file after extraction
+      when: not ansible_check_mode
       ansible.builtin.file:
         path: "{{ home_dir }}/.fonts/.fonts-extracted"
         state: touch
         mode: "0644"
-      # when: not ansible_check_mode
       check_mode: false

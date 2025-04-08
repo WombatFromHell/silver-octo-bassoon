@@ -34,7 +34,9 @@
     name: "{{ swap_item.path | basename }}"
     enabled: true
     daemon_reload: true
-  when: (swap_what.startswith('/') and swap_path_stat.stat.exists) or (not swap_what.startswith('/'))
+  when:
+    - not ansible_check_mode
+    - (swap_what.startswith('/') and swap_path_stat.stat.exists) or (not swap_what.startswith('/'))
   become: true
   register: enable_swap_result
   failed_when: >

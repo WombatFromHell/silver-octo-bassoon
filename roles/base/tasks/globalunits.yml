@@ -33,6 +33,7 @@
       notify: reload_global_systemd
 
     - name: Enable service units
+      when: not ansible_check_mode
       ansible.builtin.systemd:
         name: "{{ unit_file.path | basename }}"
         daemon_reload: true

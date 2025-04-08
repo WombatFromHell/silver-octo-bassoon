@@ -73,8 +73,9 @@
 
         - name: Verify fix application
           when:
+            - not ansible_check_mode
             - not fix_marker.stat.exists
-            - apply_fix is defined
+            - apply_fix.rc is defined
             - apply_fix.rc == 0
           ansible.builtin.stat:
             path: "{{ home_realpath }}/.local/share/kio/servicemenus/peazipadd.desktop"
