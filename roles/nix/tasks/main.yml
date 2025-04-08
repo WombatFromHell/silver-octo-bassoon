@@ -1,0 +1,45 @@
+---
+- name: Install Nix from Determinate Systems installer
+  when: enable_nix | default(false)
+  tags: [extra, nix]
+  block:
+    - name: Check if Nix is already installed
+      ansible.builtin.command: command -v nix
+      register: nix_installed
+      ignore_errors: true
+      changed_when: false
+
+    - name: Set platform-specific install options
+      ansible.builtin.set_fact:
+        nix_install_args: >-
+          {% if ansible_facts.lsb.id == 'Bazzite' %}ostree --no-confirm
+          {% else %}--no-confirm
+          {% endif %}
+      when:
+        - nix_installed.rc is defined
+        - nix_installed.rc != 0
+
+    - name: Download Nix installer script
+      ansible.builtin.uri:
+        url: https://install.determinate.systems/nix
+        method: GET
+        return_content: true
+        body_format: raw
+        validate_certs: true
+      register: nix_installer_script
+      when:
+        - nix_installed.rc is defined
+        - nix_installed.rc != 0
+      changed_when: false
+
+    - name: Install Nix package manager
+      ansible.builtin.command: >-
+        sh -s -- install {{ nix_install_args }}
+      args:
+        stdin: "{{ nix_installer_script.content }}"
+      when:
+        - nix_installed.rc is defined
+        - nix_installed.rc != 0
+        - nix_installer_script.content is defined
+      register: nix_installation
+      changed_when: "'Nix is already installed' not in nix_installation.stderr"
