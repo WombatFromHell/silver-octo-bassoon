@@ -5,8 +5,8 @@
   block:
     - name: Ensure Flatpak is installed (Archlinux)
       when: ansible_distribution == "Archlinux"
-      community.general.pacman:
-        name: flatpak
+      ansible.builtin.package:
+        name: "flatpak"
         state: present
       become: true
       tags: flatpak_install

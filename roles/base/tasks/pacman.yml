@@ -3,14 +3,14 @@
   tags: [core, pacman]
   block:
     - name: Install base packages
-      community.general.pacman:
+      ansible.builtin.package:
         name: "{{ base_packages }}"
         state: present
       become: true
       tags: pacman_install
 
     - name: Upgrade existing packages
-      community.general.pacman:
+      ansible.builtin.package:
         update_cache: true
         upgrade: true
       become: true

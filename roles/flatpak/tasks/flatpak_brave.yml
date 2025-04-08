@@ -19,8 +19,8 @@
         - graphics_card == "nvidia"
         - nvidia_missing is not defined
       become: true
-      community.general.pacman:
-        name: libva-nvidia-driver
+      ansible.builtin.package:
+        name: "libva-nvidia-driver"
         state: present
 
     - name: Apply Chromium Nvidia VAAPI fix

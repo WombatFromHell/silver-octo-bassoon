@@ -13,7 +13,7 @@
     - name: Install distrobox (ArchLinux)
       become: true
       when: distrobox_check.rc != 0
-      community.general.pacman:
+      ansible.builtin.package:
         name:
           - "distrobox"
           - "podman"

@@ -3,16 +3,16 @@
   tags: [extra, btrfs, btrfs_install]
   block:
     - name: Install core packages
-      community.general.pacman:
+      ansible.builtin.package:
         name:
-          - snap-pac
-          - snapper
-          - inotify-tools
+          - "snap-pac"
+          - "snapper"
+          - "inotify-tools"
         state: present
 
     - name: Install grub-btrfs for grub bootloader
-      community.general.pacman:
-        name: grub-btrfs
+      ansible.builtin.package:
+        name: "grub-btrfs"
         state: present
       when: is_grub_boot
       register: grub_btrfs_install

@@ -11,11 +11,11 @@
     - enable_vfio | default(false)
   block:
     - name: Install required packages
-      community.general.pacman:
+      ansible.builtin.package:
         name:
-          - libvirt
-          - qemu-desktop
-          - swtpm
+          - "libvirt"
+          - "qemu-desktop"
+          - "swtpm"
         state: present
 
     - name: Detect kernel args

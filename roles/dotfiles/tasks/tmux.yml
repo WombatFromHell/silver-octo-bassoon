@@ -2,14 +2,13 @@
   tags: [extra, dotfiles, dotfiles_tmux]
   block:
     - name: Check if tmux is installed
-      ansible.builtin.command: which tmux
+      ansible.builtin.command: command -v tmux
       register: tmux_check
       ignore_errors: true
       changed_when: false
-      check_mode: false
 
     - name: Configure tmux if installed
-      when: tmux_check.rc == 0
+      when: tmux_check.rc is defined and tmux_check.rc == 0
       block:
         - name: Manage tmux config with tuckr
           tuckr_manage:
