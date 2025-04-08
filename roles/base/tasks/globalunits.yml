@@ -43,3 +43,4 @@
         loop_var: unit_file
         label: "Enabling {{ unit_file.path | basename }}"
       become: true
+      check_mode: false

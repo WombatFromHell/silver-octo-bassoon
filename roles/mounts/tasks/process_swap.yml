@@ -42,3 +42,4 @@
     (enable_swap_result is failed) and
     ("Could not find the requested service" not in (enable_swap_result.msg | default('')))
   ignore_errors: "{{ ansible_check_mode }}"
+  check_mode: false
