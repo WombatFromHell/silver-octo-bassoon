@@ -36,3 +36,9 @@
     daemon_reload: true
   when: (swap_what.startswith('/') and swap_path_stat.stat.exists) or (not swap_what.startswith('/'))
   become: true
+  register: enable_swap_result
+  failed_when: >
+    (not ansible_check_mode) and
+    (enable_swap_result is failed) and
+    ("Could not find the requested service" not in (enable_swap_result.msg | default('')))
+  ignore_errors: "{{ ansible_check_mode }}"

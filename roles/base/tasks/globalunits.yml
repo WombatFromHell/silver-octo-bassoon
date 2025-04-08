@@ -14,7 +14,7 @@
         paths: "{{ role_path }}/files/units"
         file_type: file
         recurse: false
-        excludes: "{{ ['nvidia-tdp.*', 'veridian-controller.service'] if nvidia_missing else [] }}"
+        excludes: "{{ ['nvidia-tdp.*', 'veridian-controller.service'] if nvidia_missing | default(false) else [] }}"
       register: unit_files
 
     - name: Copy unit files to /etc/systemd/system with proper permissions

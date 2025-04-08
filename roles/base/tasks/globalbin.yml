@@ -15,7 +15,11 @@
         file_type: file
         recurse: false
         # conditionally exclude nvidia related binaries
-        excludes: "{{ ['nvidia-pm.py', 'veridian-controller'] if nvidia_missing else [] }}"
+        excludes: "{{
+          ['nvidia-pm.py', 'veridian-controller']
+          if nvidia_missing | default(false)
+          else []
+          }}"
       register: bin_files
 
     - name: Copy binary files to /usr/local/bin with proper permissions

@@ -22,6 +22,18 @@
   register: mount_path_stat
   when: is_local
 
+- name: "Check if .mount file needs to be copied"
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ mount_item.path | basename }}"
+  register: current_mount_file
+  become: true
+
+- name: "Check if .automount file needs to be copied"
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ mount_item.path | regex_replace('\\.mount$', '.automount') | basename }}"
+  register: current_automount_file
+  become: true
+
 - name: "Copy .mount file to /etc/systemd/system/ (only if valid or network)"
   ansible.builtin.copy:
     src: "{{ role_path }}/files/{{ mount_item.path | basename }}"
@@ -30,6 +42,7 @@
     group: root
     mode: "0644"
   when: (not is_local) or (is_local and mount_path_stat.stat.exists)
+  register: mount_file_copy
   become: true
   no_log: true
 
@@ -41,6 +54,7 @@
     group: root
     mode: "0644"
   when: (not is_local) or (is_local and mount_path_stat.stat.exists)
+  register: automount_file_copy
   become: true
   no_log: true
 
@@ -49,5 +63,5 @@
     name: "{{ mount_item.path | regex_replace('^.*/', '') | regex_replace('\\.mount$', '.automount') }}"
     enabled: true
     daemon_reload: true
-  when: (not is_local) or (is_local and mount_path_stat.stat.exists)
+  when: (not is_local) or (is_local and mount_path_stat.stat.exists) and not ansible_check_mode
   become: true
