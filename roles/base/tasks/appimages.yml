@@ -113,7 +113,7 @@
         - name: Install '.desktop' files
           ansible.builtin.template:
             src: "{{ item.path }}"
-            dest: "{{ home_realpath }}/.local/share/applications/{{ item.path | basename }}"
+            dest: "{{ home_realpath }}/.local/share/applications/{{ item.path | basename | regex_replace('\\.j2$', '') }}"
             mode: "0644"
             force: true
           loop: "{{ desktop_files.files }}"
