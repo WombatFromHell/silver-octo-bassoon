@@ -66,4 +66,22 @@
         success_msg: "GPG keys imported or already present"
         fail_msg: "Failed to import one or more GPG keys"
 
-    # Rest of your tasks...
+    - name: Ensure SSH directory exists with correct permissions
+      ansible.builtin.file:
+        path: "{{ home_dir }}/.ssh"
+        state: directory
+        mode: "0700"
+
+    - name: Copy SSH keys to user's .ssh directory
+      ansible.builtin.copy:
+        src: "{{ ssh_key_dir }}/{{ ssh_item.key }}"
+        dest: "{{ home_dir }}/.ssh/{{ ssh_item.key }}"
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_gid }}"
+        mode: "{{ ssh_item.mode }}"
+      loop:
+        - { key: "id_rsa", mode: "0600" }
+        - { key: "id_rsa.pub", mode: "0644" }
+      loop_control:
+        loop_var: ssh_item
+        label: "Copying {{ ssh_item.key }}"
