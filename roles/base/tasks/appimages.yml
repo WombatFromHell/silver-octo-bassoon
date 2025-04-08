@@ -13,8 +13,8 @@
 
     - name: Install fuse2 on Archlinux (required for AppImage execution)
       become: true
-      community.general.pacman:
-        name: fuse2
+      ansible.builtin.package:
+        name: "fuse2"
         state: present
       when: ansible_distribution == "Archlinux"
 
@@ -81,6 +81,70 @@
             label: "{{ item | basename }}"
           when: final_appimages | default([]) | length > 0
           failed_when: false # Continue on individual copy failures
+
+    - name: Process exports (icons/desktop) for AppImages
+      when: appimages_to_copy.matched > 0
+      block:
+        - name: Ensure 'exported' directory exists
+          ansible.builtin.stat:
+            path: "{{ role_path }}/files/exported"
+          register: stat_exported
+
+        - name: Find all .desktop files in exported dir
+          when: stat_exported.stat is defined and stat_exported.stat.exists
+          ansible.builtin.find:
+            paths: "{{ role_path }}/files/exported"
+            patterns: "*.desktop.j2"
+          register: desktop_files
+
+        - name: Check if update-desktop-database exists
+          ansible.builtin.command: command -v update-desktop-database
+          register: desktop_db_check
+          changed_when: false
+          ignore_errors: true
+
+        - name: Install .desktop files
+          ansible.builtin.template:
+            src: "{{ item.path }}"
+            dest: "{{ home_realpath }}/.local/share/applications/{{ item.path | basename }}"
+            mode: "0644"
+            force: true
+          loop: "{{ desktop_files.files }}"
+          loop_control:
+            label: "{{ item.path | basename }}"
+          notify: update_desktop_database
+
+        - name: Ensure .desktop files installed exist
+          ansible.builtin.stat:
+            path: "{{ home_realpath }}/.local/share/applications/{{ item.path | basename }}"
+          loop: "{{ desktop_files.files }}"
+          loop_control:
+            label: "{{ item.path | basename }}"
+
+        - name: Ensure '.icons' directory exists
+          ansible.builtin.stat:
+            path: "{{ playbook_dir }}/files/support/appimages/.icons"
+          register: stat_icons
+
+        - name: Find all '.icons' files in
+          when: stat_exported.stat is defined and stat_exported.stat.exists
+          ansible.builtin.find:
+            paths: "{{ stat_icons.stat.path }}"
+            patterns: "*.png"
+          register: icon_files
+
+        - name: Install '.icons' files
+          when: icon_files.files is defined and icon_files.files | length > 0
+          ansible.builtin.copy:
+            src: "{{ item.path }}"
+            dest: "{{ home_realpath }}/AppImages/.icons/{{ item.path | basename }}"
+            mode: "0644"
+            force: true
+            checksum: true
+          loop: "{{ icon_files.files }}"
+          loop_control:
+            label: "{{ item.path | basename }}"
+
     - name: Process Ghostty specially
       when: >
         appimages_to_copy.matched > 0 and
