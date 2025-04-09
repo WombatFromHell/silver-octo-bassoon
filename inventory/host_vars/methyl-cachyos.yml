@@ -90,6 +90,7 @@ program_handlers:
     - command: "bat cache --build"
       creates: "{{ home_dir }}/.cache/bat"
 
+enable_lazyvim: true
 enable_brew: false
 enable_flatpak: true
 remove_existing_flatpaks: true

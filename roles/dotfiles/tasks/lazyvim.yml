@@ -1,0 +1,43 @@
+---
+- name: Install personal NeoVim config
+  when: enable_lazyvim | default(false)
+  tags: [extra, dotfiles, dotfiles_lazyvim]
+  vars:
+    config_repo: "git@github.com:WombatFromHell/lazyvim.git"
+    repo_dest: "{{ home_realpath }}/.config/nvim"
+    repo_ver: "bb6e9b844d0ee2d3174cda44752138730672fea3" # pin to 4-8-25
+  block:
+    - name: Check for 'nvim'
+      ansible.builtin.command: command -v nvim
+      register: check_nvim
+      ignore_errors: true
+      changed_when: false
+      failed_when: check_nvim.rc is defined and check_nvim.rc != 0
+
+    - name: Check if '~/.config/nvim' exists
+      ansible.builtin.stat:
+        path: "{{ repo_dest }}"
+      changed_when: false
+      register: stat_nvim
+      failed_when: stat_nvim.stat.exists
+
+    - name: Check that ssh private keys are installed
+      ansible.builtin.shell: |
+        set -o pipefail
+        ssh -T git@github.com 2>&1
+      register: ssh_git_check
+      failed_when: "'successfully authenticated' not in ssh_git_check.stdout"
+      ignore_errors: true
+      changed_when: false
+
+    - name: Set ssh verified fact
+      ansible.builtin.set_fact:
+        ssh_git_success:
+          - "'successfully authenticated' in ssh_git_check.stdout"
+
+    - name: Clone our personal private config to "~/.config/nvim"
+      when: ssh_git_success is defined
+      ansible.builtin.git:
+        repo: "{{ config_repo }}"
+        version: "{{ repo_ver }}"
+        dest: "{{ repo_dest }}"

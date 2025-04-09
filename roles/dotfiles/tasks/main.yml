@@ -58,3 +58,7 @@
     - name: Include GPG task
       ansible.builtin.include_tasks: gpg.yml
       tags: [extra, dotfiles, dotfiles_gpg]
+
+    - name: Include nvim task
+      ansible.builtin.include_tasks: lazyvim.yml
+      tags: [extra, dotfiles, dotfiles_lazyvim]
