@@ -27,9 +27,12 @@
     - name: Extract fingerprint from second line when not present in output
       ansible.builtin.set_fact:
         public_key_fingerprint: "{{ public_key_info.stdout_lines[1] | trim }}"
-      when: fingerprint is not defined
+      when:
+        - public_key_info.stdout_lines | length > 0
+        - public_key_fingerprint is not defined
 
     - name: Check if public key is already imported
+      when: public_key_fingerprint is defined
       ansible.builtin.command: >
         gpg --list-keys "{{ public_key_fingerprint }}"
       register: check_public_key
@@ -39,12 +42,15 @@
     - name: Import public key (if not present)
       ansible.builtin.command: >
         gpg --import "{{ gnupg_key_dir }}/public-key.asc"
-      when: check_public_key.rc != 0
+      when:
+        - public_key_fingerprint is defined
+        - check_public_key.rc != 0
       register: import_public
       changed_when: "'imported' in import_public.stdout"
       ignore_errors: true
 
     - name: Check if private key is already imported
+      when: public_key_fingerprint is defined
       ansible.builtin.command: >
         gpg --list-secret-keys "{{ public_key_fingerprint }}"
       register: check_private_key
@@ -58,7 +64,9 @@
         "{{ gnupg_key_dir }}/private-key.asc"
       args:
         stdin: "{{ gpg_secrets.gpg_passphrase }}"
-      when: check_private_key.rc != 0
+      when:
+        - public_key_fingerprint is defined
+        - check_private_key.rc != 0
       register: import_private
       changed_when: "'imported' in import_private.stdout"
       no_log: true
