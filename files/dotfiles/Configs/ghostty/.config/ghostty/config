@@ -12,7 +12,6 @@ font-feature = -liga
 font-feature = -dlig
 #
 command = ~/.local/bin/scripts/fish.sh
-gtk-gsk-renderer = default
 gtk-single-instance = true
 confirm-close-surface = false
 background-opacity = 0.95
