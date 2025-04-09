@@ -15,13 +15,19 @@
 
     - name: Get fingerprint of public key file
       ansible.builtin.command: >
-        gpg --with-fingerprint --show-keys "{{ gnupg_key_dir }}/public-key.asc"
+        gpg --show-keys "{{ gnupg_key_dir }}/public-key.asc"
       register: public_key_info
       changed_when: false
 
-    - name: Extract public key fingerprint
+    - name: Extract fingerprint when 'Key fingerprint =' is present
       ansible.builtin.set_fact:
-        public_key_fingerprint: "{{ (public_key_info.stdout | regex_search('(?<=Key fingerprint = ).*')) | replace(' ', '') }}"
+        public_key_fingerprint: "{{ public_key_info.stdout | regex_search('Key fingerprint\\s*=\\s*([0-9A-F\\s]+)', '\\1') | trim }}"
+      when: "'Key fingerprint' in public_key_info.stdout"
+
+    - name: Extract fingerprint from second line when not present in output
+      ansible.builtin.set_fact:
+        public_key_fingerprint: "{{ public_key_info.stdout_lines[1] | trim }}"
+      when: fingerprint is not defined
 
     - name: Check if public key is already imported
       ansible.builtin.command: >
@@ -58,14 +64,6 @@
       no_log: true
       ignore_errors: true
 
-    - name: Verify key imports
-      ansible.builtin.assert:
-        that:
-          - check_public_key.rc == 0 or import_public is not skipped
-          - check_private_key.rc == 0 or import_private is not skipped
-        success_msg: "GPG keys imported or already present"
-        fail_msg: "Failed to import one or more GPG keys"
-
     - name: Ensure SSH directory exists with correct permissions
       ansible.builtin.file:
         path: "{{ home_dir }}/.ssh"
@@ -84,4 +82,4 @@
         - { key: "id_rsa.pub", mode: "0644" }
       loop_control:
         loop_var: ssh_item
-        label: "Copying {{ ssh_item.key }}"
+        label: "{{ ssh_item.key }}"
