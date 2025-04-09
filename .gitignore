@@ -5,9 +5,5 @@ support
 __pycache__
 
 **/dotfiles/**/.config/OpenRGB/**/logs
-
 **/dotfiles/**/.config/pipewire/
-
-**/dotfiles/**/.config/fish/
-!**/dotfiles/**/.config/fish/config.fish
-!**/dotfiles/**/.config/fish/fish.plugins
+**/dotfiles/**/.config/fish/fish_variables
