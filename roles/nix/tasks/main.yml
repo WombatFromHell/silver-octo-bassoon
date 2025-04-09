@@ -1,6 +1,8 @@
 ---
 - name: Install Nix from Determinate Systems installer
-  when: enable_nix | default(false)
+  when:
+    - not enable_brew | default(false)
+    - enable_nix | default(false)
   tags: [extra, nix]
   block:
     - name: Check if Nix is already installed

@@ -1,7 +1,9 @@
 ---
 - name: Install Home-Manager for Nix
   tags: [extra, nix, home_manager]
-  when: enable_nix
+  when:
+    - not enable_brew | default(false)
+    - enable_nix | default(false)
   vars:
     nix_binary: "/nix/var/nix/profiles/default/bin/nix"
     hm_binary: "{{ home_realpath }}/.nix-profile/bin/home-manager"
