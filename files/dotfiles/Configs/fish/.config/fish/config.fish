@@ -273,6 +273,10 @@ alias nixopt='nix-store --gc && nix-store --optimize'
 #
 alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
 
+if test -z $NIX_PROFILES
+    source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
+end
+
 # keep this at the bottom
 if command -q starship
     starship init fish | source

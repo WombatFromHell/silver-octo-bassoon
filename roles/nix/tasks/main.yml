@@ -43,3 +43,7 @@
         - nix_installer_script.content is defined
       register: nix_installation
       changed_when: "'Nix is already installed' not in nix_installation.stderr"
+
+    - name: Include 'home-manager' tasks
+      ansible.builtin.include_tasks: hm.yml
+      tags: [extra, nix, home_manager]
