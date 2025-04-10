@@ -163,7 +163,6 @@ function nh_clean
     eval $cmd
 end
 
-set_editor
 setup_podman_sock
 set -x nvm_default_version v23.6.1
 set -x GPG_TTY (tty)
@@ -284,3 +283,5 @@ end
 if command -q starship
     starship init fish | source
 end
+
+set_editor
