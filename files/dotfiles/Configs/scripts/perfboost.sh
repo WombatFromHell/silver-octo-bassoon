@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 check_cmd() {
-	if cmd_path=$(command -v "$1"); then
+	if cmd_path=$(which "$1"); then
 		echo "$cmd_path"
 	else
 		echo ""

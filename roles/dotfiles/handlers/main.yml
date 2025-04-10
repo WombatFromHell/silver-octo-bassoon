@@ -11,6 +11,22 @@
     creates: "{{ home_realpath }}/.config/bat/.cache-built"
   listen: refresh_bat_cache
 
+- name: Fix yazi tasks on ostree
+  when: ansible_facts.lsb.id == "Bazzite"
+  become: true
+  vars:
+    this_uid: "{{ ansible_facts.user_uid }}"
+    this_gid: "{{ ansible_facts.user_gid }}"
+  ansible.builtin.file:
+    path: "/var/.Trash-{{ this_uid }}"
+    state: directory
+    mode: "0755"
+    owner: "{{ ansible_user_id }}"
+  register: fix_yazi_result
+  ignore_errors: true
+  changed_when: fix_yazi_result.rc is defined and fix_yazi_result.rc == 0
+  listen: fix_yazi_tasks
+
 - name: Refresh fish plugins
   ansible.builtin.command:
     cmd: fish -l -c 'update_fisher'

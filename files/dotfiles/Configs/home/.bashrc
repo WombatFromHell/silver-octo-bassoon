@@ -10,24 +10,28 @@ function yy() {
 }
 
 if [[ $- == *i* ]]; then
-	# if command -v fish &>/dev/null &&
+	# if which fish &>/dev/null &&
 	# 	[[ $(ps -o comm= -p $PPID) != "fish" ]] &&
 	# 	[[ "$CONTAINER_ID" == "devbox" ]]; then
 	# fi
 
-	EZA_STANDARD_OPTIONS="--group --header --group-directories-first --icons --color=auto -A"
-	alias l='eza $EZA_STANDARD_OPTIONS'
-	alias la='eza $EZA_STANDARD_OPTIONS --all'
-	alias ll='eza $EZA_STANDARD_OPTIONS --long'
-	alias ls='eza $EZA_STANDARD_OPTIONS'
-	alias lt='eza $EZA_STANDARD_OPTIONS --tree'
-	alias llt='eza $EZA_STANDARD_OPTIONS --long --tree'
-	alias treed='eza $EZA_STANDARD_OPTIONS -DTA -L 1'
-	alias tree='eza $EZA_STANDARD_OPTIONS -TA -L 1'
+	if which eza >/dev/null; then
+		EZA_STANDARD_OPTIONS="--group --header --group-directories-first --icons --color=auto -A"
+		alias l='eza $EZA_STANDARD_OPTIONS'
+		alias la='eza $EZA_STANDARD_OPTIONS --all'
+		alias ll='eza $EZA_STANDARD_OPTIONS --long'
+		alias ls='eza $EZA_STANDARD_OPTIONS'
+		alias lt='eza $EZA_STANDARD_OPTIONS --tree'
+		alias llt='eza $EZA_STANDARD_OPTIONS --long --tree'
+		alias treed='eza $EZA_STANDARD_OPTIONS -DTA -L 1'
+		alias tree='eza $EZA_STANDARD_OPTIONS -TA -L 1'
+	fi
 	#
 	alias lg='lazygit'
 	alias yz='yy'
-	alias cat='bat'
+	if which bat >/dev/null; then
+		alias cat='bat'
+	fi
 	alias mkdir='mkdir -pv'
 	alias tmls='tmux ls'
 	#
@@ -59,14 +63,14 @@ if [ -r "$CARGO_SRC" ]; then
 	source "$CARGO_SRC"
 fi
 
-if command -v direnv &>/dev/null; then
+if which direnv &>/dev/null; then
 	export DIRENV_LOG_FORMAT=
 	eval "$(direnv hook bash)"
 fi
-if command -v starship &>/dev/null; then
+if which starship &>/dev/null; then
 	eval "$(starship init bash)"
 fi
-if command -v zoxide &>/dev/null; then
+if which zoxide &>/dev/null; then
 	eval "$(zoxide init bash)"
 	alias cd='z'
 fi

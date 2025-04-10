@@ -2,7 +2,7 @@
   tags: [extra, dotfiles, dotfiles_tmux]
   block:
     - name: Check if tmux is installed
-      ansible.builtin.command: command -v tmux
+      ansible.builtin.command: which tmux
       register: tmux_check
       ignore_errors: true
       changed_when: false

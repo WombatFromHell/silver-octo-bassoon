@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-if command -v openrgb &>/dev/null; then
-	OPENRGB="$(command -v openrgb)"
-elif command -v flatpak &>/dev/null; then
-	OPENRGB="$(command -v flatpak) run org.openrgb.OpenRGB"
+if which openrgb &>/dev/null; then
+	OPENRGB="$(which openrgb)"
+elif which flatpak &>/dev/null; then
+	OPENRGB="$(which flatpak) run org.openrgb.OpenRGB"
 else
 	echo "Error: OpenRGB cannot be found in PATH, aborting!"
 	exit 1

@@ -122,8 +122,8 @@ function snap_clean_full
 end
 
 function set_editor
-    set editor (command -v nvim || /usr/local/bin/nvim)
-    set fallback (command -v nano)
+    set editor (which nvim)
+    set fallback (which nano)
     if test -n "$editor"
         set -gx EDITOR $editor[1]
         set -gx VISUAL $editor[1]
@@ -176,7 +176,6 @@ set -x CARGO_HOME $HOME/.cargo
 set --erase fish_user_paths
 fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/bob/nvim-bin ~/.rd/bin ~/.spicetify /usr/local/bin $RUSTUP_HOME
 
-set EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --color=auto -A
 set pure_shorten_prompt_current_directory_length 1
 set pure_truncate_prompt_current_directory_keeps 0
 set fish_prompt_pwd_dir_length 3
@@ -187,14 +186,17 @@ set -U --append __done_exclude '^(nvim|nano|bat|cat|less|lazygit|lg)'
 set -U --append __done_exclude '^sudo (nvim|nano|bat|cat|less)'
 set -U --append __done_exclude '^sedit'
 
-alias l='eza $EZA_STANDARD_OPTIONS'
-alias la='eza $EZA_STANDARD_OPTIONS --all'
-alias ll='eza $EZA_STANDARD_OPTIONS --long'
-alias ls='eza $EZA_STANDARD_OPTIONS'
-alias lt='eza $EZA_STANDARD_OPTIONS --tree'
-alias llt='eza $EZA_STANDARD_OPTIONS --long --tree'
-alias treed='eza $EZA_STANDARD_OPTIONS -DTA -L 1'
-alias tree='eza $EZA_STANDARD_OPTIONS -TA -L 1'
+if command -q eza
+    set EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --color=auto -A
+    alias l='eza $EZA_STANDARD_OPTIONS'
+    alias la='eza $EZA_STANDARD_OPTIONS --all'
+    alias ll='eza $EZA_STANDARD_OPTIONS --long'
+    alias ls='eza $EZA_STANDARD_OPTIONS'
+    alias lt='eza $EZA_STANDARD_OPTIONS --tree'
+    alias llt='eza $EZA_STANDARD_OPTIONS --long --tree'
+    alias treed='eza $EZA_STANDARD_OPTIONS -DTA -L 1'
+    alias tree='eza $EZA_STANDARD_OPTIONS -TA -L 1'
+end
 #
 alias vi='$EDITOR'
 alias vim='$EDITOR'

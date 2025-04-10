@@ -8,7 +8,7 @@
     repo_ver: "bb6e9b844d0ee2d3174cda44752138730672fea3" # pin to 4-8-25
   block:
     - name: Check for 'nvim'
-      ansible.builtin.command: command -v nvim
+      ansible.builtin.command: which nvim
       register: check_nvim
       ignore_errors: true
       changed_when: false
@@ -19,9 +19,9 @@
         path: "{{ repo_dest }}"
       changed_when: false
       register: stat_nvim
-      failed_when: stat_nvim.stat.exists
 
     - name: Check that ssh private keys are installed
+      when: stat_nvim.stat is defined and not stat_nvim.stat.exists
       ansible.builtin.shell: |
         set -o pipefail
         ssh -T git@github.com 2>&1
@@ -31,12 +31,16 @@
       changed_when: false
 
     - name: Set ssh verified fact
+      when: stat_nvim.stat is defined and not stat_nvim.stat.exists
       ansible.builtin.set_fact:
         ssh_git_success:
           - "'successfully authenticated' in ssh_git_check.stdout"
 
     - name: Clone our personal private config to "~/.config/nvim"
-      when: ssh_git_success is defined
+      when:
+        - not ansible_check_mode
+        - stat_nvim.stat is defined and not stat_nvim.stat.exists
+        - ssh_git_success is defined
       ansible.builtin.git:
         repo: "{{ config_repo }}"
         version: "{{ repo_ver }}"

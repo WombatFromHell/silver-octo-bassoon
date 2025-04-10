@@ -6,7 +6,7 @@
   tags: [extra, nix]
   block:
     - name: Check if Nix is already installed
-      ansible.builtin.command: command -v nix
+      ansible.builtin.command: which nix
       register: nix_installed
       ignore_errors: true
       changed_when: false

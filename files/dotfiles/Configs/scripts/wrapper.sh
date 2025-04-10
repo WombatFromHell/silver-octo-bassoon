@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-BPFLAND="$(command -v scx_bpfland)"
+BPFLAND="$(which scx_bpfland)"
 if [ -n "$BPFLAND" ]; then
 	"$BPFLAND" &
 fi

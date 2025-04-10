@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-XDGSET="$(command -v xdg-settings)"
+XDGSET="$(which xdg-settings)"
 BROWSER=$(grep "^BrowserApplication=" ~/.config/kdeglobals | cut -d '=' -f2-)
 
 if [ -n "$XDGSET" ] && [ -n "$BROWSER" ] &&

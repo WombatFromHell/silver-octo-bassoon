@@ -13,13 +13,13 @@
 
   block:
     - name: Check for existing 'nix' binary
-      ansible.builtin.command: command -v nix
+      ansible.builtin.command: which nix
       ignore_errors: true
       changed_when: false
       register: nix_exists
 
     - name: Check for existing home-manager binary
-      ansible.builtin.command: command -v home-manager
+      ansible.builtin.command: which home-manager
       ignore_errors: true
       changed_when: false
       register: hm_exists

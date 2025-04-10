@@ -25,7 +25,7 @@
       become: true
       ansible.builtin.shell: |
         set -o pipefail
-        if ! command -v {{ aur_helper }} >/dev/null 2>&1 ||
+        if ! which {{ aur_helper }} >/dev/null 2>&1 ||
             ! pacman -Qi {{ aur_helper_pkg }} >/dev/null 2>&1; then
           cd /tmp &&
           git clone https://aur.archlinux.org/{{ aur_helper_pkg }}.git &&

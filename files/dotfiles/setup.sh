@@ -41,7 +41,7 @@ confirm() {
 check_program() {
 	local prog=$1
 	local msg=${2:-"Error: $prog is required, skipping..."}
-	if ! command -v "$prog" &>/dev/null; then
+	if ! which "$prog" &>/dev/null; then
 		echo "$msg"
 		return 1
 	fi

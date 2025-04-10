@@ -105,7 +105,7 @@
           register: desktop_files
 
         - name: Check if update-desktop-database exists
-          ansible.builtin.command: command -v update-desktop-database
+          ansible.builtin.command: which update-desktop-database
           register: desktop_db_check
           changed_when: false
           ignore_errors: true

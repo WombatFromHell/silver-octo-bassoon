@@ -1,6 +1,6 @@
 ---
 - name: Check if binary available in PATH - '{{ binary_name | default('') }}'
-  ansible.builtin.shell: "command -v {{ binary_name }}"
+  ansible.builtin.shell: "which {{ binary_name }}"
   register: check_program
   changed_when: false
   failed_when: false
@@ -29,3 +29,4 @@
     program_handlers:
       bat: refresh_bat_cache
       fish: refresh_fish_plugins
+      yazi: fix_yazi_tasks

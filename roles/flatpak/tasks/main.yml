@@ -13,7 +13,7 @@
 
     - name: Check for flatpak executable
       when: ansible_distribution != "Archlinux"
-      ansible.builtin.command: command -v flatpak
+      ansible.builtin.command: which flatpak
       register: flatpak_check
       changed_when: false
       ignore_errors: true
