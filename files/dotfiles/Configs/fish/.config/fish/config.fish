@@ -275,8 +275,9 @@ alias nixopt='nix-store --gc && nix-store --optimize'
 #
 alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
 
-if test -z $NIX_PROFILES
-    source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
+set NIX_DAEMON_FISH_SRC /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
+if test -z $NIX_PROFILES; and test -r "$NIX_DAEMON_FISH_SRC"
+    source "$NIX_DAEMON_FISH_SRC"
 end
 
 # keep this at the bottom
