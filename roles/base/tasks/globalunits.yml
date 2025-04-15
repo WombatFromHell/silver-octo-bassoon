@@ -32,16 +32,16 @@
       become: true
       notify: reload_global_systemd
 
-    - name: Enable service units
-      when: not ansible_check_mode
-      ansible.builtin.systemd:
-        name: "{{ unit_file.path | basename }}"
-        daemon_reload: true
-        enabled: true
-        state: started
-      loop: "{{ unit_files.files }}"
-      loop_control:
-        loop_var: unit_file
-        label: "Enabling {{ unit_file.path | basename }}"
-      become: true
-      check_mode: false
+    # - name: Enable service units
+    #   when: not ansible_check_mode
+    #   ansible.builtin.systemd:
+    #     name: "{{ unit_file.path | basename }}"
+    #     daemon_reload: true
+    #     enabled: true
+    #     state: started
+    #   loop: "{{ unit_files.files }}"
+    #   loop_control:
+    #     loop_var: unit_file
+    #     label: "Enabling {{ unit_file.path | basename }}"
+    #   become: true
+    #   check_mode: false

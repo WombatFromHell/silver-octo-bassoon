@@ -2,6 +2,8 @@
 
 if which openrgb &>/dev/null; then
 	OPENRGB="$(which openrgb)"
+elif [ -e "$HOME/AppImages/openrgb.appimage" ]; then
+	OPENRGB="$HOME/AppImages/openrgb.appimage"
 elif which flatpak &>/dev/null; then
 	OPENRGB="$(which flatpak) run org.openrgb.OpenRGB"
 else

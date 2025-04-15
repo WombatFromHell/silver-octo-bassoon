@@ -64,7 +64,7 @@
     - distrobox
     - vfio
     - arpcbridge
-    - nix
+    # - nix
 
 - name: Teardown tasks
   hosts: all
