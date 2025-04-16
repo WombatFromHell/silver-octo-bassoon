@@ -16,7 +16,7 @@ EOF
 detect_gpu() {
 	local base_dir="/usr/lib64/dri"
 	! [ -d "/usr/lib64/dri" ] && base_dir="/usr/lib/dri" # fallback
-	local drivers=("radeonsi_drv_video.so" "nvidia_drv_video.so")
+	local drivers=("nvidia_drv_video.so" "radeonsi_drv_video.so")
 
 	for driver in "${drivers[@]}"; do
 		local path="$base_dir/$driver"

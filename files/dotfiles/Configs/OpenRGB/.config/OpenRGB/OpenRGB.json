@@ -1,4 +1,19 @@
 {
+    "AutoStart": {
+        "client": "localhost:6742",
+        "custom": "",
+        "enabled": false,
+        "host": "0.0.0.0",
+        "port": "6742",
+        "profile": "",
+        "setclient": false,
+        "setcustom": false,
+        "setminimized": false,
+        "setprofile": false,
+        "setserver": false,
+        "setserverhost": false,
+        "setserverport": false
+    },
     "CorsairDominatorSettings": {
         "model": "CMT"
     },
@@ -1239,71 +1254,22 @@
             "Z370 AORUS Ultra Gaming-CF"
         ]
     },
-    "Gigabyte RGB Fusion 2 USB": {
-        "Calibration": {
-            "Data": {
-                "D_LED1": "GRB",
-                "D_LED2": "GRB",
-                "Mainboard": "BGR",
-                "Spare": "BGR"
-            },
-            "Enabled": false
+    "UserInterface": {
+        "RunZoneChecks": false,
+        "exit_profile": {
+            "profile_name": "lightsout",
+            "set_on_exit": true
         },
-        "CustomLayout": {
-            "Data": {
-                "D_LED1 Bottom": [
-                    {
-                        "header": "LED6",
-                        "name": "Name for LED Strip 1"
-                    }
-                ],
-                "D_LED2 Top": [
-                    {
-                        "header": "LED7",
-                        "name": "Name for LED Strip 2"
-                    }
-                ],
-                "Motherboard": [
-                    {
-                        "header": "LED1",
-                        "name": "Name for Led 1"
-                    },
-                    {
-                        "header": "LED2",
-                        "name": "Name for Led 2"
-                    },
-                    {
-                        "header": "LED3",
-                        "name": "Name for Led 3"
-                    },
-                    {
-                        "header": "LED4",
-                        "name": "Name for Led 4"
-                    },
-                    {
-                        "header": "LED5",
-                        "name": "Name for Led 5"
-                    },
-                    {
-                        "header": "LED8",
-                        "name": "Name for Led 8"
-                    }
-                ]
-            },
-            "Enabled": false
+        "geometry": {
+            "height": 0,
+            "load_geometry": false,
+            "save_on_exit": false,
+            "width": 0,
+            "x": 0,
+            "y": 0
         },
-        "MotherboardLayouts": {
-            "B550 AORUS ELITE": "STD_ATX",
-            "B550 AORUS PRO": "STD_ATX",
-            "B550I AORUS PRO AX": "ITX",
-            "X570 AORUS ELITE": "STD_ATX",
-            "X570 AORUS ELITE WIFI": "STD_ATX",
-            "X570 AORUS MASTER": "MSTR_ATX_3",
-            "X570 AORUS PRO WIFI": "STD_ATX",
-            "X570 AORUS ULTRA": "STD_ATX",
-            "X570 I AORUS PRO WIFI": "ITX",
-            "X670E AORUS MASTER": "MSTR_ATX_2",
-            "Z390 AORUS MASTER-CF": "MSTR_ATX"
-        }
+        "greyscale_tray_icon": false,
+        "language": "default",
+        "minimize_on_close": false
     }
 }
