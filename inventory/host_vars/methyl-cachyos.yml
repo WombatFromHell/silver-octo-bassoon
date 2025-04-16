@@ -92,12 +92,14 @@ program_handlers:
 
 enable_lazyvim: true
 enable_brew: false
+enable_nix: false
 enable_flatpak: true
 remove_existing_flatpaks: true
 system_flatpaks:
   - com.github.tchx84.Flatseal
   - it.mijorus.gearlever
 user_flatpaks:
+  - com.vysp3r.ProtonPlus
   - com.usebottles.bottles
 skip_flatpaks:
   - io.github.peazip.PeaZip
