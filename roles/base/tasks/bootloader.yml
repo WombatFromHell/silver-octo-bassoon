@@ -4,7 +4,9 @@
   become: true
   block:
     - name: Look for rEFInd
-      when: ansible_distribution == "Archlinux"
+      when:
+        - ansible_distribution == "Archlinux"
+        - kernel_args is defined and kernel_args | trim != ""
       block:
         - name: Check if refind_linux.conf exists
           ansible.builtin.stat:
@@ -20,7 +22,9 @@
             check_args: "{{ kernel_args }}"
 
     - name: Look for GRUB
-      when: ansible_distribution == "Archlinux"
+      when:
+        - ansible_distribution == "Archlinux"
+        - kernel_args is defined and kernel_args | trim != ""
       block:
         - name: Check if /etc/default/grub exists
           ansible.builtin.stat:
@@ -28,7 +32,8 @@
           register: grub_exists
 
         - name: Detect kernel args (grub)
-          when: grub_exists.stat.exists
+          when:
+            - grub_exists.stat.exists
           bootloader_mod:
             bootloader: "{{ bootloader }}"
             config_file: "/etc/default/grub"
@@ -36,7 +41,9 @@
           register: check_grub_result
 
     - name: Change kernel args (ostree)
-      when: ansible_facts.lsb.id == "Bazzite"
+      when:
+        - ansible_facts.lsb.id == "Bazzite"
+        - kernel_args is defined and kernel_args | trim != ""
       block:
         - name: Check current kernel cmdline
           ansible.builtin.shell: |

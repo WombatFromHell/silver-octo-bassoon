@@ -14,7 +14,7 @@ ssh_key_dir: "{{ playbook_dir }}/files/support/.ssh"
 pipewire_dir: "{{ home_dir }}/.config/pipewire"
 
 # add host-specific kernel args here
-kernel_args: "amd_pstate=active acpi_enforce_resources=lax"
+# kernel_args: "amd_pstate=active acpi_enforce_resources=lax"
 bootloader: "grub"
 
 # Package Management
