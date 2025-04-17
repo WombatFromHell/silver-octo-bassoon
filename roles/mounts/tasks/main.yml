@@ -1,22 +1,13 @@
 ---
 - name: Setup external filesystem mounts
-  tags: [extra, mounts]
+  tags:
+    [extra, mounts, mounts_automount, mounts_swap, mounts_remove, mounts_creds]
   block:
-    - name: "Include remove-existing task"
-      ansible.builtin.include_tasks: remove_existing.yml
-
     - name: "Find .mount files in role files directory"
       ansible.builtin.find:
         paths: "{{ role_path }}/files"
         patterns: "*.mount"
       register: mount_files
-
-    - name: "Process each .mount file"
-      ansible.builtin.include_tasks: process_mount.yml
-      loop: "{{ mount_files.files }}"
-      loop_control:
-        loop_var: mount_item
-        label: "Processing {{ mount_item.path | basename }}"
 
     - name: "Find .swap files in role files directory"
       ansible.builtin.find:
@@ -24,12 +15,28 @@
         patterns: "*.swap"
       register: swap_files
 
+    - name: "Include remove-existing task"
+      tags: [extra, mounts, mounts_remove]
+      ansible.builtin.include_tasks: remove_existing.yml
+
+    - name: "Process each .mount file"
+      ansible.builtin.include_tasks: process_mount.yml
+      tags: [extra, mounts, mounts_automount]
+      when: mount_files is defined and mount_files | length > 0
+      loop: "{{ mount_files.files }}"
+      loop_control:
+        loop_var: mount_item
+        label: "Processing {{ mount_item.path | basename }}"
+
     - name: "Process each .swap file"
       ansible.builtin.include_tasks: process_swap.yml
+      tags: [extra, mounts, mounts_swap]
+      when: swap_files is defined and swap_files | length > 0
       loop: "{{ swap_files.files }}"
       loop_control:
         loop_var: swap_item
         label: "Processing {{ swap_item.path | basename }}"
 
-    - name: "Include creds task"
+    - name: "Install SMB creds file"
       ansible.builtin.include_tasks: creds.yml
+      tags: [extra, mounts, mounts_creds]

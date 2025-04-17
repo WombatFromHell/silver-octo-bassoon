@@ -1,70 +1,141 @@
 ---
-- name: "Read mount file content"
-  ansible.builtin.slurp:
-    src: "{{ mount_item.path }}"
-  register: mount_file_content
-
-- name: "Extract What value from mount file"
-  ansible.builtin.set_fact:
-    mount_what: >-
-      {{
-        (mount_file_content.content | b64decode | regex_findall('^What=(.*)$', multiline=True)
-        | first | default('')) | trim
-      }}
-
-- name: "Determine if mount What is local (starts with /dev)"
-  ansible.builtin.set_fact:
-    is_local: "{{ mount_what.startswith('/dev') }}"
-
-- name: "Validate local mount path exists"
-  ansible.builtin.stat:
-    path: "{{ mount_what }}"
-  register: mount_path_stat
-  when: is_local
-
-- name: "Check if .mount file needs to be copied"
-  ansible.builtin.stat:
-    path: "/etc/systemd/system/{{ mount_item.path | basename }}"
-  register: current_mount_file
+- name: Process .mount/.automount files
+  tags: [core, mounts, mounts_automount]
   become: true
+  block:
+    - name: "Create temporary working directory on target"
+      ansible.builtin.file:
+        path: "/tmp/ansible_mounts_{{ ansible_date_time.epoch }}"
+        state: directory
+        mode: "0700"
+      register: temp_working_dir
 
-- name: "Check if .automount file needs to be copied"
-  ansible.builtin.stat:
-    path: "/etc/systemd/system/{{ mount_item.path | regex_replace('\\.mount$', '.automount') | basename }}"
-  register: current_automount_file
-  become: true
+    - name: "Determine corresponding automount file"
+      ansible.builtin.set_fact:
+        automount_file: "{{ role_path }}/files/{{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}"
+        temp_mount_file: "{{ temp_working_dir.path }}/{{ mount_item.path | basename }}"
+        temp_automount_file: "{{ temp_working_dir.path }}/{{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}"
 
-- name: "Copy .mount file to /etc/systemd/system/ (only if valid or network)"
-  ansible.builtin.copy:
-    src: "{{ role_path }}/files/{{ mount_item.path | basename }}"
-    dest: "/etc/systemd/system/{{ mount_item.path | basename }}"
-    owner: root
-    group: root
-    mode: "0644"
-  when: (not is_local) or (is_local and mount_path_stat.stat.exists)
-  register: mount_file_copy
-  become: true
-  no_log: true
+    - name: "Check if automount file exists"
+      ansible.builtin.stat:
+        path: "{{ automount_file }}"
+      register: automount_stat
 
-- name: "Copy corresponding .automount file to /etc/systemd/system/ (only if valid or network)"
-  ansible.builtin.copy:
-    src: "{{ role_path }}/files/{{ mount_item.path | regex_replace('\\.mount$', '.automount') | basename }}"
-    dest: "/etc/systemd/system/{{ mount_item.path | regex_replace('^.*/', '') | regex_replace('\\.mount$', '.automount') }}"
-    owner: root
-    group: root
-    mode: "0644"
-  when: (not is_local) or (is_local and mount_path_stat.stat.exists)
-  register: automount_file_copy
-  become: true
-  no_log: true
+    - name: "Copy mount file from controller to target temp location"
+      ansible.builtin.copy:
+        src: "{{ mount_item.path }}"
+        dest: "{{ temp_mount_file }}"
+        mode: "0644"
 
-- name: "Enable corresponding .automount unit"
-  when:
-    - not ansible_check_mode
-    - (not is_local) or (is_local and mount_path_stat.stat.exists)
-  ansible.builtin.systemd:
-    name: "{{ mount_item.path | regex_replace('^.*/', '') | regex_replace('\\.mount$', '.automount') }}"
-    enabled: true
-    daemon_reload: true
-  become: true
-  check_mode: false
+    - name: "Copy automount file from controller to target temp location"
+      ansible.builtin.copy:
+        src: "{{ automount_file }}"
+        dest: "{{ temp_automount_file }}"
+        mode: "0644"
+      when: automount_stat.stat.exists
+
+    - name: "Extract What= value from mount file"
+      ansible.builtin.shell: "grep -oP '^What=\\K.*' '{{ temp_mount_file }}'"
+      register: mount_what
+      changed_when: false
+
+    - name: "Skip if What= is a network URI"
+      ansible.builtin.debug:
+        msg: "Skipping device check as What= is a network URI"
+      when:
+        - mount_what.stdout is defined
+        - mount_what.stdout.startswith('//')
+      register: skip_device_check
+
+    - name: "Check if device exists locally"
+      ansible.builtin.stat:
+        path: "{{ mount_what.stdout }}"
+      register: device_stat
+      when:
+        - mount_what.stdout is defined
+        - not mount_what.stdout.startswith('//')
+        - not skip_device_check is defined
+
+    - name: "Fail if device doesn't exist"
+      ansible.builtin.fail:
+        msg: "Device {{ mount_what.stdout }} does not exist"
+      when:
+        - mount_what.stdout is defined
+        - not mount_what.stdout.startswith('//')
+        - not skip_device_check is defined
+        - device_stat is defined
+        - not device_stat.stat.exists
+
+    - name: "Extract original Where= path from mount file"
+      ansible.builtin.shell: "grep -oP '^Where=\\K.*' '{{ temp_mount_file }}'"
+      register: mount_where
+      changed_when: false
+
+    - name: "Extract original Where= path from automount file"
+      ansible.builtin.shell: "grep -oP '^Where=\\K.*' '{{ temp_automount_file }}'"
+      register: automount_where
+      changed_when: false
+      when: automount_stat.stat.exists
+
+    - name: "Determine new paths and filenames for Bazzite"
+      ansible.builtin.set_fact:
+        new_where: "/var{{ mount_where.stdout }}"
+        new_mount_filename: "var-{{ mount_item.path | basename }}"
+        new_automount_filename: "var-{{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}"
+      when: ansible_facts.lsb.id == 'Bazzite'
+
+    - name: "Set non-Bazzite filenames"
+      ansible.builtin.set_fact:
+        new_where: "{{ mount_where.stdout }}"
+        new_mount_filename: "{{ mount_item.path | basename }}"
+        new_automount_filename: "{{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}"
+      when: ansible_facts.lsb.id != 'Bazzite'
+
+    - name: "Modify mount file in temporary location for Bazzite"
+      ansible.builtin.replace:
+        path: "{{ temp_mount_file }}"
+        regexp: "^Where=.*"
+        replace: "Where={{ new_where }}"
+      when: ansible_facts.lsb.id == 'Bazzite'
+
+    - name: "Modify automount file in temporary location for Bazzite"
+      ansible.builtin.replace:
+        path: "{{ temp_automount_file }}"
+        regexp: "^Where=.*"
+        replace: "Where={{ new_where }}"
+      when:
+        - ansible_facts.lsb.id == 'Bazzite'
+        - automount_stat.stat.exists
+
+    - name: "Copy modified mount file to systemd"
+      ansible.builtin.copy:
+        src: "{{ temp_mount_file }}"
+        dest: "/etc/systemd/system/{{ new_mount_filename }}"
+        mode: "0644"
+        remote_src: true
+
+    - name: "Copy modified automount file to systemd"
+      ansible.builtin.copy:
+        src: "{{ temp_automount_file }}"
+        dest: "/etc/systemd/system/{{ new_automount_filename }}"
+        mode: "0644"
+        remote_src: true
+      when: automount_stat.stat.exists
+
+    - name: "Reload systemd daemon"
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: "Enable automount unit"
+      ansible.builtin.systemd:
+        name: "{{ new_automount_filename }}"
+        enabled: true
+        state: started
+      when:
+        - new_automount_filename is defined
+        - automount_stat.stat.exists
+
+    - name: "Clean up temporary files"
+      ansible.builtin.file:
+        path: "{{ temp_working_dir.path }}"
+        state: absent

@@ -1,15 +1,18 @@
 ---
-- name: Include encrypted vault variables
-  ansible.builtin.include_vars:
-    file: "{{ vault_file }}"
-  no_log: true
+- name: Install SMB credentials
+  tags: [extra, mounts, mounts_creds]
+  block:
+    - name: Include encrypted vault variables
+      ansible.builtin.include_vars:
+        file: "{{ vault_file }}"
+      no_log: true
 
-- name: Ensure SMB credentials file exists with correct permissions
-  ansible.builtin.template:
-    src: smb-credentials.j2
-    dest: /etc/.smb-credentials
-    owner: root
-    group: root
-    mode: "0400"
-  become: true
-  no_log: true
+    - name: Ensure SMB credentials file exists with correct permissions
+      ansible.builtin.template:
+        src: smb-credentials.j2
+        dest: /etc/.smb-credentials
+        owner: root
+        group: root
+        mode: "0400"
+      become: true
+      no_log: true
