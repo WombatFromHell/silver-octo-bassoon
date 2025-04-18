@@ -10,7 +10,7 @@
       register: temp_working_dir
       check_mode: false
 
-    - name: "Determine corresponding automount file for '{{ mount_item.path | basename }}'"
+    - name: "Determine corresponding automount file for - '{{ mount_item.path | basename }}'"
       ansible.builtin.set_fact:
         automount_file: "{{ role_path }}/files/{{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}"
         temp_mount_file: "{{ temp_working_dir.path }}/{{ mount_item.path | basename }}"
@@ -22,7 +22,7 @@
       register: automount_stat
       changed_when: false
 
-    - name: "Copy mount file '{{ mount_item.path | basename }}' to target temp location"
+    - name: "Copy mount file to target temp location - {{ mount_item.path | basename }}"
       ansible.builtin.copy:
         src: "{{ mount_item.path }}"
         dest: "{{ temp_mount_file }}"
@@ -31,12 +31,12 @@
       when: not ansible_check_mode
       register: mount_file_copied
 
-    - name: "SIMULATE: Would copy mount file '{{ mount_item.path | basename }}' to {{ temp_mount_file }}"
+    - name: "SIMULATE: Copy mount file - {{ temp_mount_file }}"
       ansible.builtin.debug:
         msg: "Would copy mount unit '{{ mount_item.path | basename }}' to temporary location {{ temp_mount_file }}"
       when: ansible_check_mode
 
-    - name: "Copy automount file '{{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}' to target temp location"
+    - name: "Copy automount file to target temp location - {{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}"
       ansible.builtin.copy:
         src: "{{ automount_file }}"
         dest: "{{ temp_automount_file }}"
@@ -47,7 +47,7 @@
       check_mode: false
       register: automount_file_copied
 
-    - name: "SIMULATE: Would copy automount file '{{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}' to {{ temp_automount_file }}"
+    - name: "SIMULATE: Copy automount file - {{ temp_automount_file }}"
       ansible.builtin.debug:
         msg: "Would copy automount unit
           '{{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}'
@@ -56,13 +56,13 @@
         - automount_stat.stat.exists
         - ansible_check_mode
 
-    - name: "Extract What= value from '{{ mount_item.path | basename }}'"
+    - name: "Extract What= value from - '{{ mount_item.path | basename }}'"
       ansible.builtin.shell: "grep -oP '^What=\\K.*' '{{ mount_item.path }}'"
       register: mount_what
       changed_when: false
       when: ansible_check_mode or (not ansible_check_mode and mount_file_copied is defined)
 
-    - name: "Skip device check for network URI in '{{ mount_item.path | basename }}'"
+    - name: "Skip device check for network URI in - '{{ mount_item.path | basename }}'"
       ansible.builtin.debug:
         msg: "Skipping device check for '{{ mount_item.path | basename }}' as What= is a network URI ({{ mount_what.stdout }})"
       when:
@@ -70,7 +70,7 @@
         - mount_what.stdout.startswith('//')
       register: skip_device_check
 
-    - name: "Check if device exists locally for '{{ mount_item.path | basename }}'"
+    - name: "Check if device exists locally for - '{{ mount_item.path | basename }}'"
       ansible.builtin.stat:
         path: "{{ mount_what.stdout }}"
       register: device_stat
@@ -79,7 +79,7 @@
         - not mount_what.stdout.startswith('//')
         - not skip_device_check is defined
 
-    - name: "Validate device for '{{ mount_item.path | basename }}'"
+    - name: "Validate device for - '{{ mount_item.path | basename }}'"
       ansible.builtin.fail:
         msg: "Device '{{ mount_what.stdout }}' specified in '{{ mount_item.path | basename }}' does not exist"
       when:
@@ -89,7 +89,7 @@
         - device_stat is defined
         - not device_stat.stat.exists
 
-    - name: "Extract Where= path from '{{ mount_item.path | basename }}'"
+    - name: "Extract Where= path from - '{{ mount_item.path | basename }}'"
       ansible.builtin.shell: "grep -oP '^Where=\\K.*' '{{ mount_item.path }}'"
       register: mount_where
       changed_when: false
@@ -117,7 +117,7 @@
         new_automount_filename: "{{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}"
       when: ansible_facts.lsb.id != 'Bazzite'
 
-    - name: "SIMULATE: Would modify mount file '{{ mount_item.path | basename }}' for Bazzite"
+    - name: "SIMULATE: Modify mount file for Bazzite - {{ mount_item.path | basename }}"
       ansible.builtin.debug:
         msg: "Would modify mount unit '{{ new_mount_filename }}' to use path '{{ new_where }}' (original: {{ mount_where.stdout }})"
       when:
@@ -125,7 +125,7 @@
         - ansible_check_mode
         - mount_where.stdout is defined
 
-    - name: "Modify mount file '{{ mount_item.path | basename }}' for Bazzite"
+    - name: "Modify mount file for Bazzite - {{ mount_item.path | basename }}"
       ansible.builtin.replace:
         path: "{{ temp_mount_file }}"
         regexp: "^Where=.*"
@@ -135,7 +135,7 @@
         - not ansible_check_mode
         - mount_file_copied is defined
 
-    - name: "SIMULATE: Would modify automount file '{{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}' for Bazzite"
+    - name: "SIMULATE: Modify automount file for Bazzite - {{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}"
       ansible.builtin.debug:
         msg: "Would modify automount unit '{{ new_automount_filename }}' to use path '{{ new_where }}' (original: {{ automount_where.stdout }})"
       when:
@@ -144,7 +144,7 @@
         - ansible_check_mode
         - automount_where.stdout is defined
 
-    - name: "Modify automount file '{{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}' for Bazzite"
+    - name: "Modify automount file for Bazzite - {{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}"
       ansible.builtin.replace:
         path: "{{ temp_automount_file }}"
         regexp: "^Where=.*"
@@ -155,12 +155,12 @@
         - not ansible_check_mode
         - automount_file_copied is defined
 
-    - name: "SIMULATE: Would install mount unit '{{ new_mount_filename }}'"
+    - name: "SIMULATE: Install mount unit - {{ new_mount_filename }}"
       ansible.builtin.debug:
         msg: "Would install mount unit '{{ new_mount_filename }}' to /etc/systemd/system/ with path '{{ new_where }}'"
       when: ansible_check_mode
 
-    - name: "Install mount unit '{{ new_mount_filename }}'"
+    - name: "Install mount unit - {{ new_mount_filename }}"
       ansible.builtin.copy:
         src: "{{ temp_mount_file }}"
         dest: "/etc/systemd/system/{{ new_mount_filename }}"
@@ -169,14 +169,14 @@
       when: not ansible_check_mode
       register: mount_file_installed
 
-    - name: "SIMULATE: Would install automount unit '{{ new_automount_filename }}'"
+    - name: "SIMULATE: Install automount unit - {{ new_automount_filename }}"
       ansible.builtin.debug:
         msg: "Would install automount unit '{{ new_automount_filename }}' to /etc/systemd/system/ with path '{{ new_where }}'"
       when:
         - automount_stat.stat.exists
         - ansible_check_mode
 
-    - name: "Install automount unit '{{ new_automount_filename }}'"
+    - name: "Install automount unit - {{ new_automount_filename }}"
       ansible.builtin.copy:
         src: "{{ temp_automount_file }}"
         dest: "/etc/systemd/system/{{ new_automount_filename }}"
@@ -187,17 +187,17 @@
         - not ansible_check_mode
       register: automount_file_installed
 
-    - name: "SIMULATE: Would reload systemd for '{{ new_mount_filename }}' and '{{ new_automount_filename }}'"
+    - name: "SIMULATE: Reload systemd unit - {{ new_mount_filename }}"
       ansible.builtin.debug:
-        msg: "Would reload systemd for units: {{ new_mount_filename }} {% if automount_stat.stat.exists %}{{ new_automount_filename }}{% endif %}"
+        msg: "Would reload systemd for units: {{ new_mount_filename }}"
       when: ansible_check_mode
 
-    - name: "Reload systemd for '{{ new_mount_filename }}' and '{{ new_automount_filename }}'"
+    - name: "Reload systemd unit - {{ new_mount_filename }}"
       ansible.builtin.systemd:
         daemon_reload: true
       when: not ansible_check_mode
 
-    - name: "SIMULATE: Would enable automount unit '{{ new_automount_filename }}'"
+    - name: "SIMULATE: Enable automount unit - {{ new_automount_filename }}"
       ansible.builtin.debug:
         msg: "Would enable and start automount unit '{{ new_automount_filename }}' for mount point '{{ new_where }}'"
       when:
@@ -205,7 +205,7 @@
         - automount_stat.stat.exists
         - ansible_check_mode
 
-    - name: "Enable automount unit '{{ new_automount_filename }}'"
+    - name: "Enable automount unit - {{ new_automount_filename }}"
       ansible.builtin.systemd:
         name: "{{ new_automount_filename }}"
         enabled: true
@@ -215,12 +215,12 @@
         - automount_stat.stat.exists
         - not ansible_check_mode
 
-    - name: "SIMULATE: Would clean up temporary files for '{{ mount_item.path | basename }}'"
+    - name: "SIMULATE: Clean up temporary files - {{ mount_item.path | basename }}"
       ansible.builtin.debug:
         msg: "Would remove temporary files for '{{ mount_item.path | basename }}' in {{ temp_working_dir.path }}"
       when: ansible_check_mode
 
-    - name: "Clean up temporary files for '{{ mount_item.path | basename }}'"
+    - name: "Clean up temporary files - {{ mount_item.path | basename }}"
       ansible.builtin.file:
         path: "{{ temp_working_dir.path }}"
         state: absent
