@@ -1,51 +1,71 @@
 ---
 - name: Install Nix from Determinate Systems installer
-  when:
-    - not enable_brew | default(false)
-    - enable_nix | default(false)
+  when: enable_nix | default(false)
   tags: [extra, nix]
   block:
-    - name: Check if Nix is already installed
-      ansible.builtin.command: which nix
-      register: nix_installed
-      ignore_errors: true
-      changed_when: false
+    - name: Check if '/' comes back as 'rw'
+      block:
+        - name: Check if 'findmnt /' comes back as read-write
+          ansible.builtin.command: findmnt /
+          register: findmnt_root_result
+          changed_when: false
+          failed_when: false
 
-    - name: Set platform-specific install options
-      ansible.builtin.set_fact:
-        nix_install_args: >-
-          {% if ansible_facts.lsb.id == 'Bazzite' %}ostree --no-confirm
-          {% else %}--no-confirm
-          {% endif %}
-      when:
-        - nix_installed.rc is defined
-        - nix_installed.rc != 0
+        - name: Set findmnt read-write fact
+          when: findmnt_root_result.stdout is defined
+          ansible.builtin.set_fact:
+            findmnt_root_rw: "{{ findmnt_root_result.stdout is defined and
+              'rw,' in findmnt_root_result.stdout }}"
 
-    - name: Download Nix installer script
-      ansible.builtin.uri:
-        url: https://install.determinate.systems/nix
-        method: GET
-        return_content: true
-        body_format: raw
-        validate_certs: true
-      register: nix_installer_script
-      when:
-        - nix_installed.rc is defined
-        - nix_installed.rc != 0
-      changed_when: false
+        - name: Check if '/nix' directory already exists
+          ansible.builtin.stat:
+            path: /nix
+          register: nix_stat_result
+          changed_when: false
 
-    - name: Install Nix package manager
-      ansible.builtin.command: >-
-        sh -s -- install {{ nix_install_args }}
-      args:
-        stdin: "{{ nix_installer_script.content }}"
-      when:
-        - nix_installed.rc is defined
-        - nix_installed.rc != 0
-        - nix_installer_script.content is defined
-      register: nix_installation
-      changed_when: "'Nix is already installed' not in nix_installation.stderr"
+    - name: Do nix enablement
+      when: nix_stat_result.stat is defined and
+        nix_stat_result.stat.exists and nix_stat_result.stat.isdir
+        or findmnt_root_rw
+      block:
+        - name: Check if Nix is already installed
+          ansible.builtin.command: which nix
+          register: nix_installed
+          failed_when: false
+          changed_when: false
+          check_mode: false
 
-    - name: Include 'home-manager' tasks
-      ansible.builtin.include_tasks: hm.yml
-      tags: [extra, nix, home_manager]
+        - name: Set platform-specific install options
+          when: nix_installed.rc is defined and nix_installed.rc != 0
+          ansible.builtin.set_fact:
+            nix_install_args: >-
+              {% if ansible_facts.lsb.id == 'Bazzite' %}ostree --no-confirm
+              {% else %}--no-confirm
+              {% endif %}
+
+        - name: Download Nix installer script
+          when: nix_installed.rc is defined and nix_installed.rc != 0
+          ansible.builtin.uri:
+            url: https://install.determinate.systems/nix
+            method: GET
+            return_content: true
+            body_format: raw
+            validate_certs: true
+          register: nix_installer_script
+
+          changed_when: false
+
+        - name: Install Nix package manager
+          ansible.builtin.command: >-
+            sh -s -- install {{ nix_install_args }}
+          args:
+            stdin: "{{ nix_installer_script.content }}"
+          when:
+            - nix_installed.rc is defined and nix_installed.rc != 0
+            - nix_installer_script.content is defined
+          register: nix_installation
+          changed_when: "'Nix is already installed' not in nix_installation.stderr"
+
+        - name: Include 'home-manager' tasks
+          ansible.builtin.include_tasks: hm.yml
+          tags: [extra, nix, home_manager]

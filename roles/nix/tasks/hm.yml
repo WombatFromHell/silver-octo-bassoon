@@ -2,8 +2,8 @@
 - name: Install Home-Manager for Nix
   tags: [extra, nix, home_manager]
   when:
-    - not enable_brew | default(false)
     - enable_nix | default(false)
+    - nix_installed.rc is defined and nix_installed.rc == 0
   vars:
     nix_binary: "/nix/var/nix/profiles/default/bin/nix"
     hm_binary: "{{ home_realpath }}/.nix-profile/bin/home-manager"
@@ -28,10 +28,8 @@
       ansible.builtin.command:
         cmd: "nix {{ home_manager_installer }} {{ hm_args }}"
       when:
-        - nix_exists.rc is defined
-        - nix_exists.rc == 0
-        - hm_exists.rc is defined
-        - hm_exists.rc != 0 # only if home-manager doesn't exist
+        - nix_exists.rc is defined and nix_exists.rc == 0
+        - hm_exists.rc is defined and hm_exists.rc != 0 # only if home-manager doesn't exist
       register: hm_install_result
       changed_when: hm_install_result.rc is defined and hm_install_result.rc == 0
 

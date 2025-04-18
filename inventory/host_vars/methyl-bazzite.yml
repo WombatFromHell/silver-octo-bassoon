@@ -62,7 +62,7 @@ install_firefox: false
 install_peazip: true
 
 enable_lazyvim: true
-enable_nix: false
+enable_nix: true
 enable_brew: true
 brew_packages:
   - ansible
