@@ -49,3 +49,7 @@
 - name: Include brew install task
   ansible.builtin.include_tasks: brew.yml
   tags: [extra, brew]
+
+- name: Include shortcuts install task
+  ansible.builtin.include_tasks: shortcuts.yml
+  tags: [extra, shortcuts]

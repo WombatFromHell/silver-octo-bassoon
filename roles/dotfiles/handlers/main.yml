@@ -12,7 +12,7 @@
   listen: refresh_bat_cache
 
 - name: Fix yazi tasks on ostree
-  when: ansible_facts.lsb.id == "Bazzite"
+  when: os_release_id == "bazzite"
   become: true
   vars:
     this_uid: "{{ ansible_facts.user_uid }}"

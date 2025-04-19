@@ -2,7 +2,7 @@
 - name: Download and install Homebrew
   tags: [extra, brew]
   when:
-    - ansible_facts.lsb.id == "Bazzite"
+    - os_release_id == "bazzite"
     - enable_brew | default(false)
   block:
     - name: Check if Homebrew is already installed

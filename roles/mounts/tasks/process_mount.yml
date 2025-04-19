@@ -108,20 +108,20 @@
         new_where: "/var{{ mount_where.stdout }}"
         new_mount_filename: "var-{{ mount_item.path | basename }}"
         new_automount_filename: "var-{{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}"
-      when: ansible_facts.lsb.id == 'Bazzite'
+      when: os_release_id == "bazzite"
 
     - name: "Set non-Bazzite filenames"
       ansible.builtin.set_fact:
         new_where: "{{ mount_where.stdout }}"
         new_mount_filename: "{{ mount_item.path | basename }}"
         new_automount_filename: "{{ mount_item.path | basename | regex_replace('.mount$', '.automount') }}"
-      when: ansible_facts.lsb.id != 'Bazzite'
+      when: os_release_id == "bazzite"
 
     - name: "SIMULATE: Modify mount file for Bazzite - {{ mount_item.path | basename }}"
       ansible.builtin.debug:
         msg: "Would modify mount unit '{{ new_mount_filename }}' to use path '{{ new_where }}' (original: {{ mount_where.stdout }})"
       when:
-        - ansible_facts.lsb.id == 'Bazzite'
+        - os_release_id == "bazzite"
         - ansible_check_mode
         - mount_where.stdout is defined
 
@@ -131,7 +131,7 @@
         regexp: "^Where=.*"
         replace: "Where={{ new_where }}"
       when:
-        - ansible_facts.lsb.id == 'Bazzite'
+        - os_release_id == "bazzite"
         - not ansible_check_mode
         - mount_file_copied is defined
 
@@ -139,7 +139,7 @@
       ansible.builtin.debug:
         msg: "Would modify automount unit '{{ new_automount_filename }}' to use path '{{ new_where }}' (original: {{ automount_where.stdout }})"
       when:
-        - ansible_facts.lsb.id == 'Bazzite'
+        - os_release_id == "bazzite"
         - automount_stat.stat.exists
         - ansible_check_mode
         - automount_where.stdout is defined
@@ -150,7 +150,7 @@
         regexp: "^Where=.*"
         replace: "Where={{ new_where }}"
       when:
-        - ansible_facts.lsb.id == 'Bazzite'
+        - os_release_id == "bazzite"
         - automount_stat.stat.exists
         - not ansible_check_mode
         - automount_file_copied is defined

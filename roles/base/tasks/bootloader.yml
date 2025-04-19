@@ -42,7 +42,7 @@
 
     - name: Change kernel args (ostree)
       when:
-        - ansible_facts.lsb.id == "Bazzite"
+        - os_release_id == "bazzite"
         - kernel_args is defined and kernel_args | trim != ""
       block:
         - name: Check current kernel cmdline

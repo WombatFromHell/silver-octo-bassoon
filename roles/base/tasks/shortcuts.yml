@@ -1,0 +1,34 @@
+---
+- name: Install any '.desktop' files we find in 'exported/'
+  tags: [extra, shortcuts]
+  vars:
+    bazzite_deck_includes:
+      - screenlock.desktop
+  block:
+    - name: Find '.desktop' files in 'exported/'
+      ansible.builtin.find:
+        paths: "{{ role_path }}/files/exported"
+        patterns: "*.desktop"
+      register: shortcut_files
+
+    - name: Ensure '~/.local/share/applications/' exists
+      ansible.builtin.stat:
+        path: "{{ home_realpath }}/.local/share/applications"
+      register: apps_exists
+
+    - name: Install '.desktop' shortcut files
+      ansible.builtin.template:
+        src: "{{ item.path }}"
+        dest: "{{ home_realpath }}/.local/share/applications/{{ item.path | basename }}"
+        mode: "0644"
+        force: true
+      loop: "{{ shortcut_files.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      when: >
+        (apps_exists.stat.exists and apps_exists.stat.isdir) and
+        (
+          (item.path | basename) not in bazzite_deck_includes or
+          os_variant_id == 'bazzite-deck' and (item.path | basename) in bazzite_deck_includes
+        )
+      notify: update_desktop_database

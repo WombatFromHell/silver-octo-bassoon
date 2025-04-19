@@ -13,7 +13,7 @@
         method: user
 
     - name: Pin PeaZip to specific version on Bazzite
-      when: ansible_facts.lsb.id == "Bazzite"
+      when: os_release_id == "bazzite"
       block:
         - name: Get current PeaZip commit
           ansible.builtin.shell: |

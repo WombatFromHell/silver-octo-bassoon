@@ -39,7 +39,7 @@
           when: nix_installed.rc is defined and nix_installed.rc != 0
           ansible.builtin.set_fact:
             nix_install_args: >-
-              {% if ansible_facts.lsb.id == 'Bazzite' %}ostree --no-confirm
+              {% if os_release_id == 'bazzite' %}ostree --no-confirm
               {% else %}--no-confirm
               {% endif %}
 
