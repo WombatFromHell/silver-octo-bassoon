@@ -2,7 +2,7 @@
 # System Configuration
 system_hostname: methyl-cachyos
 timezone: America/Denver
-graphics_card: nvidia
+graphics_card: amd
 
 # User Configuration
 vault_file: "{{ playbook_dir }}/files/support/gpg_vault.yml"
@@ -15,6 +15,7 @@ pipewire_dir: "{{ home_dir }}/.config/pipewire"
 
 # add host-specific kernel args here
 # kernel_args: "amd_pstate=active acpi_enforce_resources=lax"
+kernel_args: "amdgpu.gpu_recovery=1"
 bootloader: "grub"
 
 # Package Management
