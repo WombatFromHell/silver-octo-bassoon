@@ -8,7 +8,7 @@
         file_type: file
         recurse: false
         # conditionally exclude nvidia related configs
-        excludes: "{{ ['nvidia-pm.conf', 'veridian-controller.toml'] if nvidia_missing | default(false) else [] }}"
+        excludes: "{{ ['nvidia-pm.conf', 'veridian-controller.toml'] if not nvidia_exists | default(false) else [] }}"
       register: etc_files
 
     - name: Copy files to /etc with proper permissions
@@ -33,5 +33,5 @@
           NVD_BACKEND=.*|GBM_BACKEND=.*|__GLX_VENDOR_LIBRARY_NAME=.*|
           __GLX_VENDOR_LIBRARY_FILENAMES=.*)$
         replace: '\1'
-      when: graphics_card == 'nvidia' and not nvidia_missing | default(false)
+      when: nvidia_exists | default(false)
       become: true

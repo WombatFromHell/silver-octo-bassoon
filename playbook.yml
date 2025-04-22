@@ -1,6 +1,7 @@
 #!/usr/bin/env ansible-playbook
 ---
 - name: Setup tasks
+  tags: [setup]
   hosts: all
   tasks:
     - name: Install sudoers config for ansible
@@ -29,6 +30,7 @@
 
   pre_tasks:
     - name: Gather NVIDIA driver facts
+      tags: [setup, facts]
       block:
         - name: Check for NVIDIA driver presence
           ansible.builtin.stat:
@@ -38,16 +40,26 @@
 
         - name: Determine if NVIDIA driver is missing
           ansible.builtin.set_fact:
-            nvidia_missing: >-
-              {{
-                (graphics_card is not defined) or
-                (graphics_card != "nvidia") or
-                (graphics_card == "nvidia" and
-                (nvidia_driver is not defined or not nvidia_driver.stat.exists))
-              }} | default(false)
-            cacheable: true
+            nvidia_exists: >
+              {{ graphics_card == "nvidia" and nvidia_driver.stat is defined and nvidia_driver.stat.exists }}
+
+    - name: Gather AMD driver facts
+      tags: [setup, facts]
+      block:
+        - name: Get 'glxinfo'
+          ansible.builtin.command: glxinfo
+          register: glxinfo_output
+          changed_when: false
+          ignore_errors: true
+
+        - name: Set a fact if an AMD GPU is installed as an OpenGL vendor
+          when: "'OpenGL vendor string: AMD' in glxinfo_output.stdout"
+          ansible.builtin.set_fact:
+            amd_exists: true
+          changed_when: false
 
     - name: Gather GRUB bootloader facts
+      tags: [setup, facts]
       become: true
       block:
         - name: Check for GRUB bootloader
@@ -73,6 +85,7 @@
     - nix
 
 - name: Teardown tasks
+  tags: [setup, teardown]
   hosts: all
   tasks:
     - name: Remove sudoers config for ansible

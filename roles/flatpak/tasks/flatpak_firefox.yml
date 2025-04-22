@@ -10,11 +10,19 @@
     - name: Install libva-nvidia-driver on Archlinux for Firefox
       when:
         - ansible_distribution == "Archlinux"
-        - graphics_card == "nvidia"
-        - nvidia_missing is not defined
+        - nvidia_exists | default(false)
       become: true
       ansible.builtin.package:
         name: "libva-nvidia-driver"
+        state: present
+
+    - name: Install mesa driver on Arch
+      when:
+        - ansible_distribution == "Archlinux"
+        - amd_exists | default(false)
+      become: true
+      ansible.builtin.package:
+        name: "mesa"
         state: present
 
     - name: Install Firefox browser
@@ -23,35 +31,53 @@
         state: present
         method: system
 
-    - name: Apply Firefox Nvidia VAAPI fix
+    - name: Apply Firefox VAAPI fix
       when:
-        - graphics_card == "nvidia"
-        - nvidia_missing is not defined
+        - nvidia_exists | default(false)
+        - amd_exists | default(false)
       block:
         - name: Check Firefox VAAPI fix script
           ansible.builtin.stat:
             path: "{{ dotfiles_root }}/Configs/scripts/fix-vaapi-firefox.sh"
           register: firefox_script
+          ignore_errors: true
 
         - name: Set executable permission for Firefox fix script
           ansible.builtin.file:
             path: "{{ firefox_script.stat.path }}"
             mode: "0755"
           when:
+            - firefox_script.stat.exists is defined
             - firefox_script.stat.exists
             - not firefox_script.stat.isdir
 
-        - name: Check if Firefox VAAPI fix already applied
+        - name: Check if VAAPI driver files exist
           ansible.builtin.stat:
-            path: "{{ home_realpath }}/.var/app/{{ firefox_app }}/dri/nvidia_drv_video.so"
-          register: firefox_vaapi_fix_applied
+            path: "{{ home_realpath }}/.var/app/{{ firefox_app }}/dri/{{ item }}"
+          register: firefox_vaapi_fix_check
           ignore_errors: true
           changed_when: false
+          loop:
+            - "nvidia_drv_video.so"
+            - "radeonsi_drv_video.so"
+
+        - name: Assert at least one VAAPI driver file exists
+          ansible.builtin.assert:
+            that:
+              - firefox_vaapi_fix_check is success
+              - firefox_vaapi_fix_check.results | selectattr('stat.exists') | list | length > 0
+            fail_msg: "No VAAPI driver files found for Firefox, will attempt to apply fix"
+            success_msg: "Firefox VAAPI driver files already exist"
+          register: firefox_vaapi_check
+          ignore_errors: true
 
         - name: Apply Firefox VAAPI fix
-          ansible.builtin.script: "{{ firefox_script.stat.path }}"
-          changed_when: firefox_vaapi_script_applied.rc == 0
           when:
-            - firefox_vaapi_fix_applied is not defined
+            - firefox_script.stat.exists is defined
             - firefox_script.stat.exists
             - not firefox_script.stat.isdir
+            - firefox_vaapi_check is failed # Only run if the assert failed (no drivers found)
+          ansible.builtin.script: "{{ firefox_script.stat.path }}"
+          register: firefox_vaapi_script_applied
+          ignore_errors: true
+          changed_when: firefox_vaapi_script_applied.rc == 0

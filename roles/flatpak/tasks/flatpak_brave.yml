@@ -1,4 +1,3 @@
----
 - name: Handle Brave browser installation
   when:
     - enable_flatpak
@@ -16,17 +15,25 @@
     - name: Install libva-nvidia-driver on Arch
       when:
         - ansible_distribution == "Archlinux"
-        - graphics_card == "nvidia"
-        - nvidia_missing is not defined
+        - nvidia_exists | default(false)
       become: true
       ansible.builtin.package:
         name: "libva-nvidia-driver"
         state: present
 
-    - name: Apply Chromium Nvidia VAAPI fix
+    - name: Install mesa driver on Arch
       when:
-        - graphics_card == "nvidia"
-        - nvidia_missing is not defined
+        - ansible_distribution == "Archlinux"
+        - amd_exists | default(false)
+      become: true
+      ansible.builtin.package:
+        name: "mesa"
+        state: present
+
+    - name: Apply Chromium VAAPI fix
+      when:
+        - nvidia_exists | default(false)
+        - amd_exists | default(false)
       block:
         - name: Check Brave VAAPI fix script
           ansible.builtin.stat:
@@ -43,23 +50,33 @@
             - brave_script.stat.exists
             - not brave_script.stat.isdir
 
-        - name: Check if Chromium VAAPI fix already applied
+        - name: Check if VAAPI driver files exist
           ansible.builtin.stat:
-            path: "{{ home_realpath }}/.var/app/{{ brave_app }}/dri/nvidia_drv_video.so"
-          register: chromium_vaapi_fix_applied
+            path: "{{ home_realpath }}/.var/app/{{ brave_app }}/dri/{{ item }}"
+          register: vaapi_fix_check
           ignore_errors: true
           changed_when: false
+          loop:
+            - "nvidia_drv_video.so"
+            - "radeonsi_drv_video.so"
+
+        - name: Assert at least one VAAPI driver file exists
+          ansible.builtin.assert:
+            that:
+              - vaapi_fix_check is success
+              - vaapi_fix_check.results | selectattr('stat.exists') | list | length > 0
+            fail_msg: "No VAAPI driver files found, will attempt to apply fix"
+            success_msg: "VAAPI driver files already exist"
+          register: vaapi_check
+          ignore_errors: true
 
         - name: Apply Brave VAAPI fix
           when:
             - brave_script.stat.exists is defined
             - brave_script.stat.exists
             - not brave_script.stat.isdir
-            - not (chromium_vaapi_fix_applied.stat.exists is defined
-              and chromium_vaapi_fix_applied.stat.exists)
+            - vaapi_check is failed # Only run if the assert failed (no drivers found)
           ansible.builtin.script: "{{ brave_script.stat.path }}"
           register: chromium_vaapi_fix
           ignore_errors: true
-          changed_when:
-            - chromium_vaapi_fix.rc == 0
-            - chromium_vaapi_fix_applied is defined
+          changed_when: chromium_vaapi_fix.rc == 0

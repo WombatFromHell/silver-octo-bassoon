@@ -1,5 +1,5 @@
 [Unit]
-Description=Disable USB wakeup triggers in /proc/acpi/wakeup
+Description=Disable wakeup triggers in /proc/acpi/wakeup
 
 [Service]
 Type=oneshot

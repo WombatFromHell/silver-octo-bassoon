@@ -17,7 +17,7 @@
         # conditionally exclude nvidia related binaries
         excludes: "{{
           ['nvidia-pm.py', 'veridian-controller']
-          if nvidia_missing | default(false)
+          if not nvidia_exists | default(false)
           else []
           }}"
       register: bin_files
