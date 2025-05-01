@@ -1,5 +1,5 @@
 [Unit]
-Description=Automount Optional "linuxgames" Disk Mount
+Description=Automount Optional "linuxdata" Disk Mount
 
 [Automount]
 Where=/mnt/linuxdata
