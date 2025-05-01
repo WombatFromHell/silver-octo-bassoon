@@ -1,47 +1,16 @@
 ---
-- name: "Read swap file content"
-  ansible.builtin.slurp:
-    src: "{{ swap_item.path }}"
-  register: swap_file_content
-
-- name: "Extract What value from swap file"
-  ansible.builtin.set_fact:
-    swap_what: >-
-      {{
-        (swap_file_content.content | b64decode | regex_findall('^What=(.*)$', multiline=True)
-        | first | default('')) | trim
-      }}
-
-- name: "Validate local swap path exists"
-  ansible.builtin.stat:
-    path: "{{ swap_what }}"
-  register: swap_path_stat
-  when: swap_what.startswith('/')
-
-- name: "Copy .swap file to /etc/systemd/system/ (only if valid or network)"
-  ansible.builtin.copy:
-    src: "{{ role_path }}/files/{{ swap_item.path | basename }}"
-    dest: "/etc/systemd/system/{{ swap_item.path | basename }}"
-    owner: root
-    group: root
-    mode: "0644"
-  when: (swap_what.startswith('/') and swap_path_stat.stat.exists) or (not swap_what.startswith('/'))
+- name: "Process swap file using systemd_mount module"
+  systemd_mount:
+    src_dir: "{{ role_path }}/files"
+    swap_file: "{{ swap_item.path | basename }}"
+    dst: "/etc/systemd/system"
+    os_type: "{{ os_release_id }}"
+    mode: "single_swap"
+    state: "present"
   become: true
-  no_log: true
+  register: swap_result
 
-- name: "Enable .swap unit"
-  ansible.builtin.systemd:
-    name: "{{ swap_item.path | basename }}"
-    enabled: true
-    daemon_reload: true
-  when:
-    - not ansible_check_mode
-    - (swap_what.startswith('/') and swap_path_stat.stat.exists) or (not swap_what.startswith('/'))
-  become: true
-  register: enable_swap_result
-  failed_when: >
-    (not ansible_check_mode) and
-    (enable_swap_result is failed) and
-    ("Could not find the requested service" not in (enable_swap_result.msg | default('')))
-  ignore_errors: "{{ ansible_check_mode }}"
-  check_mode: false
+- name: "Debug swap result"
+  ansible.builtin.debug:
+    var: swap_result
+    verbosity: 1

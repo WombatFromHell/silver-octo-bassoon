@@ -4,7 +4,7 @@ Description=Optional "windata" Disk Mount
 [Mount]
 What=/dev/disk/by-uuid/C4C8CF61C8CF507A
 Where=/mnt/windata
-Type=ext4
+Type=ntfs3
 Options=nofail,umask=0000,rw,users,noexec,prealloc,iocharset=utf8,windows_names,noatime,x-gvfs-show,x-systemd.mount-timeout=5
 DirectoryMode=0755
 
