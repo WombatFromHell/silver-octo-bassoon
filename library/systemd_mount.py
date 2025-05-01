@@ -141,8 +141,8 @@ def filter_mount_unit(module, tgt):
 
     if basename.endswith(".automount"):
         mount_file = tgt[: -len(".automount")] + ".mount"
-        if check_mount_device(module, mount_file):
-            return [basename]
+        if os.path.isfile(mount_file) and check_mount_device(module, mount_file):
+            return [basename, os.path.basename(mount_file)]
     elif basename.endswith(".swap"):
         if check_mount_device(module, tgt):
             return [basename]
@@ -150,7 +150,7 @@ def filter_mount_unit(module, tgt):
         if check_mount_device(module, tgt):
             automount_file = tgt[: -len(".mount")] + ".automount"
             if os.path.isfile(automount_file):
-                return [f"{basename[:-len('.mount')]}.automount"]
+                return [basename, os.path.basename(automount_file)]
             else:
                 return [basename]
 
