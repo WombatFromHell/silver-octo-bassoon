@@ -13,7 +13,6 @@ def read_flags(config_path: str) -> List[str]:
         print(f"Error: Flags configuration file '{config_path}' not found")
         sys.exit(1)
     with open(config_path, "r") as f:
-        # One-liner to filter out comments and empty lines
         return [
             line.strip()
             for line in f
@@ -61,8 +60,28 @@ def main() -> None:
         else:  # No package ID found
             cmd = [flatpak] + args + flags
             os.execvp(cmd[0], cmd)
+
+    # Handle distrobox commands
+    elif "distrobox" in command and "--" in args:
+        distrobox_exec = find_executable("distrobox-enter")
+        if distrobox_exec is None:
+            print("Error: distrobox command not found")
+            sys.exit(1)
+
+        dash_dash_index = args.index("--")
+        distrobox_args = args[:dash_dash_index]
+        command_part = args[dash_dash_index + 1 :]
+
+        if command_part:
+            new_command_part = [command_part[0]] + flags + command_part[1:]
+            cmd = [distrobox_exec] + distrobox_args + ["--"] + new_command_part
+            os.execvp(cmd[0], cmd)
+        else:
+            print("Error: No command specified after '--'")
+            sys.exit(1)
+
+    # Standard command execution
     else:
-        # Standard command execution
         cmd = [command] + flags + args
         os.execvp(cmd[0], cmd)
 
