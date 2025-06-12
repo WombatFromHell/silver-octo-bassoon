@@ -164,7 +164,7 @@ function nh_clean
 end
 
 setup_podman_sock
-set -x nvm_default_version v23.6.1
+set -x nvm_default_version v24.1.0
 set -x GPG_TTY (tty)
 set -x XDG_DATA_HOME $HOME/.local/share
 set -x XDG_CONFIG_HOME $HOME/.config
