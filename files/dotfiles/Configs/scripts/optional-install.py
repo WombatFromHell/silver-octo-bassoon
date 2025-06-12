@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 import shutil
 import subprocess
 import argparse
@@ -277,7 +277,7 @@ class Installer:
             elif self.os_type in ("Arch", "CachyOS"):
                 install_args.append("linux")
 
-            install_args.append("--no-confirm")
+            install_args.append("--no-confirm --force")
 
             with NamedTemporaryFile(mode="w+") as temp_script:
                 temp_script.write(script_content)
