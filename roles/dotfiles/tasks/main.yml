@@ -51,9 +51,9 @@
       ansible.builtin.include_tasks: tmux.yml
       tags: [extra, dotfiles, dotfiles_tmux]
 
-    - name: Include pipewire task
-      ansible.builtin.include_tasks: pipewire.yml
-      tags: [extra, dotfiles, dotfiles_pipewire]
+    # - name: Include pipewire task
+    #   ansible.builtin.include_tasks: pipewire.yml
+    #   tags: [extra, dotfiles, dotfiles_pipewire]
 
     - name: Include GPG task
       ansible.builtin.include_tasks: gpg.yml
