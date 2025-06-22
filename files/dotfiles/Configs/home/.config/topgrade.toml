@@ -1,0 +1,9 @@
+[misc]
+only = ["flatpak", "distrobox"]
+
+[flatpak]
+use_sudo = true
+
+[commands]
+"fisher" = "fish -c 'fisher update'"
+"tmux" = "~/.tmux/plugins/tpm/bin/tpm update"
