@@ -16,15 +16,6 @@
         name: "libva-nvidia-driver"
         state: present
 
-    - name: Install mesa driver on Arch
-      when:
-        - ansible_distribution == "Archlinux"
-        - amd_exists | default(false)
-      become: true
-      ansible.builtin.package:
-        name: "mesa"
-        state: present
-
     - name: Install Firefox browser
       community.general.flatpak:
         name: "{{ firefox_app }}"
@@ -35,7 +26,6 @@
       when:
         - firefox_vaapi_fix | default(false)
         - nvidia_exists | default(false)
-        - amd_exists | default(false)
       block:
         - name: Check Firefox VAAPI fix script
           ansible.builtin.stat:
