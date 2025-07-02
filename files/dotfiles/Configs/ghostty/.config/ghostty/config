@@ -1,15 +1,15 @@
 gtk-tabs-location = hidden
 # font-family = "JetBrainsMono Nerd Font"
-font-family = "IosevkaTerm Nerd Font"
+font-family = "Fira Code"
 # font-family = "MesloLGM Nerd Font"
-font-size = 12
+font-size = 10
 theme = dark:catppuccin-mocha,light:catppuccin-latte
 # window-decoration = false
 # shell-integration = fish
 # disable nerd font ligatures
-font-feature = -calt
-font-feature = -liga
-font-feature = -dlig
+#font-feature = -calt
+#font-feature = -liga
+#font-feature = -dlig
 #
 command = ~/.local/bin/scripts/fish.sh
 gtk-single-instance = true
