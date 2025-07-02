@@ -30,8 +30,9 @@
         name: "mesa"
         state: present
 
-    - name: Apply Chromium VAAPI fix
+    - name: Apply Chrome VAAPI fix
       when:
+        - chrome_vaapi_fix | default(false)
         - nvidia_exists | default(false)
         - amd_exists | default(false)
       block:

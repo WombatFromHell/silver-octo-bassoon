@@ -33,6 +33,7 @@
 
     - name: Apply Firefox VAAPI fix
       when:
+        - firefox_vaapi_fix | default(false)
         - nvidia_exists | default(false)
         - amd_exists | default(false)
       block:
