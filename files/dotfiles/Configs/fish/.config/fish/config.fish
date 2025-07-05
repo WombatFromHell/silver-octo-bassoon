@@ -122,17 +122,15 @@ function snap_clean_full
 end
 
 function set_editor
-    set editor (which nvim)
-    set fallback (which nano)
-    if test -n "$editor"
-        set -gx EDITOR $editor[1]
-        set -gx VISUAL $editor[1]
-    else if test -n "$fallback"
-        set -gx EDITOR $fallback[1]
-        set -gx VISUAL $fallback[1]
+    if command -s nvim >/dev/null
+        set -gx EDITOR nvim
+        set -gx VISUAL nvim
+    else if command -s nano >/dev/null
+        set -gx EDITOR nano
+        set -gx VISUAL nano
     else
-        set --erase EDITOR
-        set --erase VISUAL
+        set --erase EDITOR ^/dev/null
+        set --erase VISUAL ^/dev/null
     end
 end
 
@@ -186,15 +184,15 @@ set -U --append __done_exclude '^sudo (nvim|nano|bat|cat|less)'
 set -U --append __done_exclude '^sedit'
 
 if command -q eza
-    set EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --color=auto -A
-    alias l='eza $EZA_STANDARD_OPTIONS'
-    alias la='eza $EZA_STANDARD_OPTIONS --all'
-    alias ll='eza $EZA_STANDARD_OPTIONS --long'
-    alias ls='eza $EZA_STANDARD_OPTIONS'
-    alias lt='eza $EZA_STANDARD_OPTIONS --tree'
-    alias llt='eza $EZA_STANDARD_OPTIONS --long --tree'
-    alias treed='eza $EZA_STANDARD_OPTIONS -DTA -L 1'
-    alias tree='eza $EZA_STANDARD_OPTIONS -TA -L 1'
+    set -g EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --color=auto -A
+    alias l="eza $EZA_STANDARD_OPTIONS"
+    alias la="eza $EZA_STANDARD_OPTIONS --all"
+    alias ll="eza $EZA_STANDARD_OPTIONS --long"
+    alias ls="eza $EZA_STANDARD_OPTIONS"
+    alias lt="eza $EZA_STANDARD_OPTIONS --tree"
+    alias llt="eza $EZA_STANDARD_OPTIONS --long --tree"
+    alias treed="eza $EZA_STANDARD_OPTIONS -DTA -L 1"
+    alias tree="eza $EZA_STANDARD_OPTIONS -TA -L 1"
 end
 #
 alias vi='$EDITOR'

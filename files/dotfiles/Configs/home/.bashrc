@@ -10,12 +10,14 @@ function yy() {
 }
 
 if [[ $- == *i* ]]; then
-	# if which fish &>/dev/null &&
-	# 	[[ $(ps -o comm= -p $PPID) != "fish" ]] &&
-	# 	[[ "$CONTAINER_ID" == "devbox" ]]; then
-	# fi
+	if which fish &>/dev/null &&
+		[[ $(ps -o comm= -p "$PPID") != "fish" ]] &&
+		[[ -z "$__FISH_ENTERED" ]]; then
+		export __FISH_ENTERED=1
+		exec fish -l
+	fi
 
-	if which eza >/dev/null; then
+	if which eza >/dev/null 2>&1; then
 		EZA_STANDARD_OPTIONS="--group --header --group-directories-first --icons --color=auto -A"
 		alias l='eza $EZA_STANDARD_OPTIONS'
 		alias la='eza $EZA_STANDARD_OPTIONS --all'
@@ -63,14 +65,14 @@ if [ -r "$CARGO_SRC" ]; then
 	source "$CARGO_SRC"
 fi
 
-if which direnv &>/dev/null; then
+if which direnv >/dev/null 2>&1; then
 	export DIRENV_LOG_FORMAT=
 	eval "$(direnv hook bash)"
 fi
-if which starship &>/dev/null; then
+if which starship >/dev/null 2>&1; then
 	eval "$(starship init bash)"
 fi
-if which zoxide &>/dev/null; then
+if which zoxide >/dev/null 2>&1; then
 	eval "$(zoxide init bash)"
 	alias cd='z'
 fi
