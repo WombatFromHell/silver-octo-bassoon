@@ -1,5 +1,6 @@
 [misc]
 only = ["flatpak", "distrobox"]
+assume_yes = true
 
 [flatpak]
 use_sudo = true
