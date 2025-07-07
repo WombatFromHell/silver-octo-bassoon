@@ -12,16 +12,11 @@ decorations_theme_variant = "Dark"
 option_as_alt = "OnlyLeft"
 
 [font]
-normal.family = "Iosevka Nerd Font"
-bold.family = "Iosevka Nerd Font"
-italic.family = "Iosevka Nerd Font"
-bold_italic.family = "Iosevka Nerd Font"
-#
-# normal.family = "JetBrainsMono Nerd Font"
-# bold.family = "JetBrainsMono Nerd Font"
-# italic.family = "JetBrainsMono Nerd Font"
-# bold_italic.family = "JetBrainsMono Nerd Font"
-size = 13
+normal.family = "JetBrainsMono Nerd Font"
+bold.family = "JetBrainsMono Nerd Font"
+italic.family = "JetBrainsMono Nerd Font"
+bold_italic.family = "JetBrainsMono Nerd Font"
+size = 11
 
 [cursor]
 style = { shape = "Block", blinking = "On" }
