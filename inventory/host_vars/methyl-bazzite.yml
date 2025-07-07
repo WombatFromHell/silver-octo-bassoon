@@ -62,6 +62,9 @@ install_brave: true
 install_firefox: false
 install_peazip: true
 
+enable_ghostty: false
+enable_alacritty: true
+
 enable_lazyvim: true
 enable_nix: true
 enable_brew: true
