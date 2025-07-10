@@ -76,3 +76,6 @@ if which zoxide >/dev/null 2>&1; then
 	eval "$(zoxide init bash)"
 	alias cd='z'
 fi
+if which atuin >/dev/null 2>&1; then
+	eval "$(atuin init bash)"
+fi

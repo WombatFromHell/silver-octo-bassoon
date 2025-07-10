@@ -48,29 +48,6 @@ if status is-interactive
     end
 end
 
-function fzf_history
-    set -l line (commandline)
-
-    # tac reverses order initially, tiebreak sorts(?), -n2..,.. ignores first two fields, +m means no "--multi"
-    set -l result (atuin search --cmd-only | fzf --tac "-n2..,.." --tiebreak=index "+m" --query="$line")
-
-    set -l key $result[1]
-    set -l selected $result[2]
-
-    if test "$key" = enter
-        commandline --replace $selected
-        commandline -f repaint
-        commandline -f execute
-        return
-    end
-
-    if test -n "$selected"
-        commandline -r -- $selected
-    end
-
-    commandline -f repaint
-end
-
 function yy
     set tmp (mktemp -t "yazi-cwd.XXXXXX")
     yazi $argv --cwd-file="$tmp"
@@ -305,6 +282,9 @@ source "$HOME/.config/fish/catppuccin-fzf-mocha.fish"
 # keep this at the bottom
 if command -q starship
     starship init fish | source
+end
+if command -q atuin
+    atuin init fish --disable-up-arrow | source
 end
 
 set_editor
