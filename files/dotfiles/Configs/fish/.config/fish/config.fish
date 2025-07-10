@@ -48,6 +48,29 @@ if status is-interactive
     end
 end
 
+function fzf_history
+    set -l line (commandline)
+
+    # tac reverses order initially, tiebreak sorts(?), -n2..,.. ignores first two fields, +m means no "--multi"
+    set -l result (atuin search --cmd-only | fzf --tac "-n2..,.." --tiebreak=index "+m" --query="$line")
+
+    set -l key $result[1]
+    set -l selected $result[2]
+
+    if test "$key" = enter
+        commandline --replace $selected
+        commandline -f repaint
+        commandline -f execute
+        return
+    end
+
+    if test -n "$selected"
+        commandline -r -- $selected
+    end
+
+    commandline -f repaint
+end
+
 function yy
     set tmp (mktemp -t "yazi-cwd.XXXXXX")
     yazi $argv --cwd-file="$tmp"
@@ -277,9 +300,14 @@ if test -z $NIX_PROFILES; and test -r "$NIX_DAEMON_FISH_SRC"
     source "$NIX_DAEMON_FISH_SRC"
 end
 
+source "$HOME/.config/fish/catppuccin-fzf-mocha.fish"
+
 # keep this at the bottom
 if command -q starship
     starship init fish | source
 end
 
 set_editor
+
+# Added by LM Studio CLI (lms)
+set -gx PATH $PATH /var/home/josh/.lmstudio/bin
