@@ -8,3 +8,4 @@ use_sudo = true
 [commands]
 "fisher" = "fish -c 'fisher update'"
 "tmux" = "~/.tmux/plugins/tpm/bin/tpm update"
+"rpm-ostree" = "rpm-ostree upgrade"
