@@ -91,6 +91,9 @@ program_handlers:
     - command: "bat cache --build"
       creates: "{{ home_dir }}/.cache/bat"
 
+enable_ghostty: true
+enable_alacritty: false
+
 enable_lazyvim: true
 enable_brew: false
 enable_nix: false

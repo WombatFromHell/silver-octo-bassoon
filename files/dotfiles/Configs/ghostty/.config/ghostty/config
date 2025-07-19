@@ -1,6 +1,6 @@
 gtk-tabs-location = hidden
-# font-family = "JetBrainsMono Nerd Font"
-font-family = "Fira Code"
+font-family = "JetBrainsMono Nerd Font"
+# font-family = "Fira Code"
 # font-family = "MesloLGM Nerd Font"
 font-size = 10
 theme = dark:catppuccin-mocha,light:catppuccin-latte
