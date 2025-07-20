@@ -1,4 +1,2 @@
 %wheel ALL=(ALL) NOPASSWD:/usr/bin/topgrade
-%wheel ALL=(ALL) NOPASSWD:/usr/sbin/topgrade
-
-%wheel ALL=(ALL) NOPASSWD:/usr/bin/flatpak update --system
+%wheel ALL=(ALL) NOPASSWD:/usr/bin/flatpak update *
