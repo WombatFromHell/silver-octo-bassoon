@@ -30,6 +30,10 @@
   ansible.builtin.include_tasks: sudoers.yml
   tags: [extra, sudoers]
 
+- name: Include limitsd configs task
+  ansible.builtin.include_tasks: limits.yml
+  tags: [extra, limitsd]
+
 - name: Include udev-rules.d task
   ansible.builtin.include_tasks: udev.yml
   tags: [extra, udev]

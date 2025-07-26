@@ -1,0 +1,24 @@
+---
+- name: Copy ulimit override to /etc/limits.d
+  tags: [extra, limitsd]
+  block:
+    - name: Find all files in role's files/limits.d directory
+      ansible.builtin.find:
+        paths: "{{ role_path }}/files/limits.d"
+        file_type: file
+        recurse: false
+      register: limitsd_files
+
+    - name: Copy files to /etc/sudoers.d with proper permissions
+      ansible.builtin.copy:
+        src: "{{ limitsd_item.path }}"
+        dest: "/etc/limits.d/{{ limitsd_item.path | basename }}"
+        mode: "0644"
+        remote_src: false
+        backup: true
+      loop: "{{ limitsd_files.files }}"
+      loop_control:
+        loop_var: limitsd_item
+        label: "Copying {{ limitsd_item.path | basename }}"
+      when: limitsd_files.matched > 0
+      become: true
