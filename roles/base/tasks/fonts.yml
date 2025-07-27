@@ -2,25 +2,47 @@
 - name: Copy fonts and refresh user font cache
   tags: [extra, fonts]
   block:
-    - name: Ensure .fonts directory exists
+    - name: Ensure user fontconfig directory exists
       ansible.builtin.file:
-        path: "{{ home_dir }}/.fonts"
+        path: "{{ home_dir }}/.config/fontconfig"
         state: directory
         mode: "0755"
 
-    - name: Extract fonts archive to .fonts directory
+    - name: Link fontconfig file
+      ansible.builtin.file:
+        path: "{{ home_dir }}/.config/fontconfig/fonts.conf"
+        src: "{{ role_path }}/files/fontconfig/fonts.conf"
+        state: link
+
+    - name: Ensure shared fonts directory exists
+      ansible.builtin.file:
+        path: "{{ home_dir }}/.local/share/fonts"
+        state: directory
+        mode: "0755"
+
+    - name: Check marker file before extraction
       when: not ansible_check_mode
+      ansible.builtin.stat:
+        path: "{{ home_dir }}/.local/share/fonts/.fonts-extracted"
+      register: fonts_extracted
+
+    - name: Extract fonts archive to .fonts directory
+      when:
+        - not ansible_check_mode
+        - not fonts_extracted.stat.exists
       ansible.builtin.unarchive:
         src: "{{ playbook_dir }}/files/support/fonts.tar.gz"
-        dest: "{{ home_dir }}/.fonts"
+        dest: "{{ home_dir }}/.local/share/fonts"
         remote_src: false
-        creates: "{{ home_dir }}/.fonts/.fonts-extracted"
+        creates: "{{ home_dir }}/.local/share/fonts/.fonts-extracted"
       notify: refresh_user_font_cache
 
     - name: Create marker file after extraction
-      when: not ansible_check_mode
+      when:
+        - not ansible_check_mode
+        - not fonts_extracted.stat.exists
       ansible.builtin.file:
-        path: "{{ home_dir }}/.fonts/.fonts-extracted"
+        path: "{{ home_dir }}/.local/share/fonts/.fonts-extracted"
         state: touch
         mode: "0644"
       check_mode: false
