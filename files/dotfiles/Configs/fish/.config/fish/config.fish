@@ -13,6 +13,9 @@ end
 if status is-interactive
     set -Ux fish_greeting # disable initial fish greeting
 
+    # respect system file descriptor limits
+    ulimit -n (ulimit -Hn)
+
     # Commands to run in interactive sessions can go here
     function fish_title
         # Get the current working directory
