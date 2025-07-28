@@ -1,12 +1,14 @@
 #!/usr/bin/python3
 
-import re
 import os
-import sys
-import subprocess
+import pty
+import pwd
+import re
 import shlex
+import subprocess
+import sys
 from pathlib import Path
-from typing import Optional, Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 class NSCBConfig:
@@ -35,7 +37,7 @@ class NSCBConfig:
         config = {}
         with open(config_file, "r") as f:
             for line in f:
-                line = line.strip()
+                line = line.rstrip("\n")
                 if line and not line.startswith("#"):
                     key, value = line.split("=", 1)
                     key = key.strip()
@@ -216,6 +218,34 @@ class CommandBuilder:
         return "; ".join(part for part in parts if part)
 
     @classmethod
+    def run_with_pty(cls, cmd: str) -> int:
+        pid, fd = pty.fork()
+        # use the user's shell
+        shell = pwd.getpwuid(os.getuid()).pw_shell
+        if pid == 0:
+            # In child — replace process image with target command
+            os.execvp(shell, [shell, "-c", cmd])
+        else:
+            # In parent — stream output
+            try:
+                with os.fdopen(fd, "rb", buffering=0) as master:
+                    while True:
+                        data = master.read(1024)
+                        if not data:
+                            break
+                        sys.stdout.buffer.write(data)
+                        sys.stdout.flush()
+            except OSError:
+                pass
+
+            _, status = os.waitpid(pid, 0)
+            # Extract real exit code
+            if os.WIFEXITED(status):
+                return os.WEXITSTATUS(status)
+            else:
+                return 1
+
+    @classmethod
     def execute_gamescope_command(cls, final_args: List[str]) -> None:
         """Execute the gamescope command with proper handling."""
         pre_cmd, post_cmd = cls.get_env_commands()
@@ -237,9 +267,14 @@ class CommandBuilder:
             except ValueError:
                 full_command = cls.build_command_string([pre_cmd, post_cmd])
 
-        print("Executing:", full_command)
+        # Execute command safely using subprocess
         if full_command:
-            os.system(full_command)
+            print("Executing:", full_command)
+            try:
+                exit_code = CommandBuilder.run_with_pty(full_command)
+                sys.exit(exit_code)
+            except Exception as e:
+                print(f"Error executing command: {e}")
 
 
 def main() -> None:
