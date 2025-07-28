@@ -62,7 +62,8 @@ install_brave: true
 install_firefox: false
 install_peazip: true
 
-enable_ghostty: true
+# prefer terminals provided in image
+enable_ghostty: false
 enable_alacritty: false
 
 enable_lazyvim: true

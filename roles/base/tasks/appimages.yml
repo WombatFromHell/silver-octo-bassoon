@@ -10,6 +10,44 @@
       loop:
         - "{{ home_dir }}/AppImages"
         - "{{ home_dir }}/.local/bin"
+        - "/usr/local/bin"
+
+    - name: Find xdg-open location
+      command: which xdg-open
+      register: xdg_open_initial
+      changed_when: false
+      failed_when: xdg_open_initial.rc != 0
+
+    - name: Resolve xdg-open symlink
+      command: readlink -f "{{ xdg_open_initial.stdout }}"
+      register: xdg_open_path
+      changed_when: false
+      failed_when: xdg_open_path.rc != 0
+
+    - name: Check if /usr/local/bin/xdg-open is a symlink
+      stat:
+        path: /usr/local/bin/xdg-open
+      register: xdg_symlink_stat
+
+    - name: Create symlink if it does not exist or is incorrect
+      become: true
+      file:
+        src: "{{ xdg_open_path.stdout }}"
+        dest: /usr/local/bin/xdg-open
+        state: link
+        force: yes
+      when: >
+        not (xdg_symlink_stat.stat.exists | default(false)) or
+        not (xdg_symlink_stat.stat.islnk | default(false)) or
+        (xdg_symlink_stat.stat.lnk_target | default('') != xdg_open_path.stdout)
+      register: xdg_open_symlink
+
+    - name: Verify that the xdg-open symlink was created
+      assert:
+        that:
+          - xdg_open_symlink.changed
+        fail_msg: "The xdg-open symlink was not created"
+      when: xdg_open_symlink.changed or (xdg_symlink_stat.stat.islnk and xdg_symlink_stat.stat.readlink == xdg_open_path.stdout)
 
     - name: Install fuse2 on Archlinux (required for AppImage execution)
       become: true
