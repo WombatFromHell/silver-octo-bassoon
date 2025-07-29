@@ -1,14 +1,51 @@
 #!/usr/bin/python3
 
 import os
-import pty
-import pwd
 import re
 import shlex
 import subprocess
+import selectors
 import sys
+import io
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+
+def run_nonblocking(cmd: str) -> int:
+    """Execute a command with non-blocking I/O, forwarding stdout/stderr in real-time."""
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=True,
+        bufsize=0,  # Unbuffered for real-time output
+        text=True,
+    )
+
+    sel = selectors.DefaultSelector()
+    if process.stdout is not None:
+        sel.register(process.stdout, selectors.EVENT_READ)
+    if process.stderr is not None:
+        sel.register(process.stderr, selectors.EVENT_READ)
+
+    while sel.get_map():
+        for key, _ in sel.select():
+            fileobj = key.fileobj
+            # Narrow to TextIO to satisfy type checker
+            if isinstance(fileobj, io.TextIOBase):
+                line = fileobj.readline()
+                if line:
+                    target = sys.stdout if fileobj is process.stdout else sys.stderr
+                    target.write(line)
+                    target.flush()
+                else:
+                    sel.unregister(fileobj)
+                    fileobj.close()
+            else:
+                # Skip unexpected types
+                sel.unregister(fileobj)
+
+    return process.wait()
 
 
 class NSCBConfig:
@@ -190,14 +227,16 @@ class GameScopeChecker:
 
         # Check for steam.sh process with -steampal
         try:
-            result = subprocess.run(
-                ["ps", "ax"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                check=False,
-            )
-            return bool(re.search(r"steam\.sh .+ -steampal", result.stdout))
+            cmd = "ps ax"
+            buffer = io.StringIO()
+            # Temporarily capture stdout/stderr
+            old_out, old_err = sys.stdout, sys.stderr
+            sys.stdout, sys.stderr = buffer, io.StringIO()
+            _ = run_nonblocking(cmd)
+            # Restore stdout/stderr
+            sys.stdout, sys.stderr = old_out, old_err
+            output = buffer.getvalue()
+            return bool(re.search(r"steam\.sh .+ -steampal", output))
         except Exception:
             return False
 
@@ -216,34 +255,6 @@ class CommandBuilder:
     def build_command_string(parts: List[str]) -> str:
         """Build command string from parts, filtering empty parts."""
         return "; ".join(part for part in parts if part)
-
-    @classmethod
-    def run_with_pty(cls, cmd: str) -> int:
-        pid, fd = pty.fork()
-        # use the user's shell
-        shell = pwd.getpwuid(os.getuid()).pw_shell
-        if pid == 0:
-            # In child — replace process image with target command
-            os.execvp(shell, [shell, "-c", cmd])
-        else:
-            # In parent — stream output
-            try:
-                with os.fdopen(fd, "rb", buffering=0) as master:
-                    while True:
-                        data = master.read(1024)
-                        if not data:
-                            break
-                        sys.stdout.buffer.write(data)
-                        sys.stdout.flush()
-            except OSError:
-                pass
-
-            _, status = os.waitpid(pid, 0)
-            # Extract real exit code
-            if os.WIFEXITED(status):
-                return os.WEXITSTATUS(status)
-            else:
-                return 1
 
     @classmethod
     def execute_gamescope_command(cls, final_args: List[str]) -> None:
@@ -267,14 +278,18 @@ class CommandBuilder:
             except ValueError:
                 full_command = cls.build_command_string([pre_cmd, post_cmd])
 
-        # Execute command safely using subprocess
+        # Execute command if there's something to run
         if full_command:
             print("Executing:", full_command)
             try:
-                exit_code = CommandBuilder.run_with_pty(full_command)
+                exit_code = run_nonblocking(full_command)
                 sys.exit(exit_code)
             except Exception as e:
-                print(f"Error executing command: {e}")
+                print(f"Error executing command: {e}", file=sys.stderr)
+                sys.exit(1)
+        else:
+            # No command to execute, exit cleanly
+            sys.exit(0)
 
 
 def main() -> None:
