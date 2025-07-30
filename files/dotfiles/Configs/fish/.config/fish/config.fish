@@ -164,6 +164,28 @@ function nh_clean
     eval $cmd
 end
 
+function tarpzc
+    if not type -q pigz
+        echo "Error: 'pigz' not found!"
+        return 1
+    end
+
+    tar -cvf - "$argv[2..-1]" | pigz -9 >"$argv[1]"
+end
+function tarpzx
+    if not type -q pigz
+        echo "Error: 'pigz' not found!"
+        return 1
+    end
+
+    if test (count $argv) -gt 1
+        set output_dir $argv[2]
+        pigz -dc "$argv[1]" | tar -xvf - -C $output_dir
+    else
+        pigz -dc "$argv[1]" | tar -xvf -
+    end
+end
+
 setup_podman_sock
 set -x nvm_default_version v24.1.0
 set -x GPG_TTY (tty)
