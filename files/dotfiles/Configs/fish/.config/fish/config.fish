@@ -60,29 +60,6 @@ function yy
     rm -f -- "$tmp"
 end
 
-function view_tarzst
-    if test -z "$argv[1]"
-        echo "Usage: view_tarzst <file.tar.zst> [tar-options]"
-        return 1
-    end
-
-    set file $argv[1]
-
-    if test (count $argv) -gt 1
-        # Allow passing multiple tar options if needed
-        set tar_opts $argv[2..-1]
-    else
-        set tar_opts tv
-    end
-
-    if command -q unzstd
-        unzstd -c "$file" | tar $tar_opts
-    else
-        echo "Error: zstd must be accessible in PATH for view_tarzst to work!"
-        return 1
-    end
-end
-
 function to_clip
     $argv 2>&1 | tee /dev/tty | wl-copy
 end
@@ -164,27 +141,75 @@ function nh_clean
     eval $cmd
 end
 
-function tarpzc
-    if not type -q pigz
-        echo "Error: 'pigz' not found!"
+# Helper function to check compressor and get command
+function _tarchk
+    set -l comp (test -n "$argv[1]"; and echo $argv[1]; or echo pigz)
+    command -q $comp; or begin
+        echo "Error: '$comp' not found!"
         return 1
     end
-
-    tar -cvf - "$argv[2..-1]" | pigz -9 >"$argv[1]"
+    echo $comp
 end
-function tarpzx
-    if not type -q pigz
-        echo "Error: 'pigz' not found!"
-        return 1
-    end
-
-    if test (count $argv) -gt 1
-        set output_dir $argv[2]
-        pigz -dc "$argv[1]" | tar -xvf - -C $output_dir
+function tarc
+    set -l comp (_tarchk $argv[1])
+    or return 1
+    if string match -q "*zstd*" $comp
+        tar -cvf - $argv[3..-1] | zstd -12 -T0 >$argv[2]
+    else if string match -q "*pigz*" $comp
+        tar -cvf - $argv[3..-1] | pigz -9 >$argv[2]
     else
-        pigz -dc "$argv[1]" | tar -xvf -
+        echo "Error: '$comp' not supported!"
+        return 1
     end
 end
+function tarx
+    set -l comp (_tarchk $argv[1])
+    or return 1
+    set -l archive $argv[2]
+    set -l output_dir ""
+    set -l specific_paths
+
+    # Parse remaining args: first might be output dir (if starts with / or ./ or ../)
+    # or specific files/dirs to extract
+    if test (count $argv) -gt 2
+        if string match -qr "^(\./|\.\.\/|/)" $argv[3]
+            set output_dir $argv[3]
+            set specific_paths $argv[4..-1]
+        else
+            set specific_paths $argv[3..-1]
+        end
+    end
+
+    if string match -q "*zstd*" $comp
+        if test -n "$output_dir"
+            zstd -dc $archive | tar -xvf - -C $output_dir $specific_paths
+        else
+            zstd -dc $archive | tar -xvf - $specific_paths
+        end
+    else
+        if test -n "$output_dir"
+            pigz -dc $archive | tar -xvf - -C $output_dir $specific_paths
+        else
+            pigz -dc $archive | tar -xvf - $specific_paths
+        end
+    end
+end
+function tarv
+    set -l comp (_tarchk $argv[1])
+    or return 1
+    if string match -q "*zstd*" $comp
+        zstd -dc $argv[2] | tar -tvf -
+    else
+        pigz -dc $argv[2] | tar -tvf -
+    end
+end
+alias tarpzc='tarc pigz'
+alias tarpzx='tarx pigz'
+alias tarpzv='tarv pigz'
+#
+alias tarzsc='tarc zstd'
+alias tarzsx='tarx zstd'
+alias tarzsv='tarv zstd'
 
 setup_podman_sock
 set -x nvm_default_version v24.1.0
