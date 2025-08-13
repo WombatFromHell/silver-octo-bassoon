@@ -7,9 +7,9 @@ theme = dark:catppuccin-mocha,light:catppuccin-latte
 # window-decoration = false
 # shell-integration = fish
 # disable nerd font ligatures
-#font-feature = -calt
-#font-feature = -liga
-#font-feature = -dlig
+font-feature = -calt
+font-feature = -liga
+font-feature = -dlig
 #
 command = ~/.local/bin/scripts/fish.sh
 gtk-single-instance = true

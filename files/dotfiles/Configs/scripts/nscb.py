@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, TextIO, Tuple, cast
 
 
-def print_help():
+def print_help() -> None:
     """Print concise help message about nscb.py functionality."""
     help_text = """neoscopebuddy - gamescope wrapper
 Usage:
@@ -188,22 +188,22 @@ def merge_arguments(profile_args: List[str], override_args: List[str]) -> List[s
             new_others.append((flag, value))
 
     # Build merged flags: [new conflict] + [new resolution] + [existing resolutions]
+    merged_flags = []
+    for pair in conflicts:
+        if not (new_conflict_flag and pair[0] in conflict_set):
+            merged_flags.append(pair)
+
     if new_conflict_flag:
-        merged_flags = [new_conflict_flag] + (new_others + others)
-    else:
-        merged_flags = conflicts + (others + new_others)
+        merged_flags.insert(0, new_conflict_flag)  # Put the override first
+
+    merged_flags.extend(new_others + others)
 
     # Rebuild command parts
-    return (
-        [
-            item
-            for pair in merged_flags
-            for item in ([pair[0]] + ([pair[1]] if pair[1] is not None else []))
-        ]
-        + p_pos
-        + o_pos
-        + o_after
-    )
+    result = []
+    for pair in merged_flags:
+        result.extend([pair[0]] + ([pair[1]] if pair[1] is not None else []))
+
+    return result + p_pos + o_pos + o_after
 
 
 def merge_multiple_profiles(profile_args_list: List[List[str]]) -> List[str]:
@@ -261,24 +261,22 @@ def get_env_commands() -> Tuple[str, str]:
     return pre_cmd.strip(), post_cmd.strip()
 
 
-def build_command_string(parts: List[str]) -> str:
-    """Build command string from parts."""
-    return "; ".join(part for part in parts if part)
-
-
 def build_command(parts: List[str]) -> str:
     """Build command string from parts with proper filtering."""
     # Filter out empty strings before joining to avoid semicolon artifacts
-    return "; ".join(part for part in parts if part)
+    filtered_parts = [part for part in parts if part]
+    return "; ".join(filtered_parts)
 
 
 def execute_gamescope_command(final_args: List[str]) -> None:
     """Execute gamescope command with proper handling."""
     pre_cmd, post_cmd = get_env_commands()
 
-    def build_app_command(args: List[str] | None) -> str:
+    def build_app_command(args: Optional[List[str]]) -> str:
         # Always quote arguments before joining
-        quoted = [shlex.quote(arg) for arg in args or []]
+        if not args:
+            return ""
+        quoted = [shlex.quote(arg) for arg in args]
         return " ".join(quoted)
 
     if not is_gamescope_active():
@@ -288,9 +286,17 @@ def execute_gamescope_command(final_args: List[str]) -> None:
         try:
             dash_index = final_args.index("--")
             app_args = final_args[dash_index + 1 :]
-            full_cmd = build_command([pre_cmd, build_app_command(app_args), post_cmd])
+            # If pre_cmd and post_cmd are both empty, just execute the app args directly
+            if not pre_cmd and not post_cmd:
+                full_cmd = build_app_command(app_args)
+            else:
+                full_cmd = build_command([pre_cmd, build_app_command(app_args), post_cmd])
         except ValueError:
-            full_cmd = build_command([pre_cmd, post_cmd])
+            # If no -- separator found but we have pre/post commands, use those
+            if not pre_cmd and not post_cmd:
+                full_cmd = ""
+            else:
+                full_cmd = build_command([pre_cmd, post_cmd])
 
     if not full_cmd:
         return
@@ -313,7 +319,6 @@ def main() -> None:
     profiles, args = parse_profile_args(sys.argv[1:])
 
     # Merge profile arguments
-    merged_profiles = []
     if profiles:
         config_file = find_config_file()
         if not config_file:
