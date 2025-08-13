@@ -154,7 +154,7 @@ function tarc
     set -l comp (_tarchk $argv[1])
     or return 1
     if string match -q "*zstd*" $comp
-        tar -cvf - $argv[3..-1] | zstd -12 -T0 >$argv[2]
+        tar -cvf - $argv[3..-1] | zstd -19 -T0 >$argv[2]
     else if string match -q "*pigz*" $comp
         tar -cvf - $argv[3..-1] | pigz -9 >$argv[2]
     else
@@ -165,35 +165,20 @@ end
 function tarx
     set -l comp (_tarchk $argv[1])
     or return 1
+
     set -l archive $argv[2]
-    set -l output_dir ""
-    set -l specific_paths
+    set -l tar_args $argv[3..-1]
 
-    # Parse remaining args: first might be output dir (if starts with / or ./ or ../)
-    # or specific files/dirs to extract
-    if test (count $argv) -gt 2
-        if string match -qr "^(\./|\.\.\/|/)" $argv[3]
-            set output_dir $argv[3]
-            set specific_paths $argv[4..-1]
-        else
-            set specific_paths $argv[3..-1]
-        end
-    end
-
-    if string match -q "*zstd*" $comp
-        if test -n "$output_dir"
-            zstd -dc $archive | tar -xvf - -C $output_dir $specific_paths
-        else
-            zstd -dc $archive | tar -xvf - $specific_paths
-        end
+    if string match -q "*zstd*" "$comp"
+        zstd -dc "$archive" | tar -xvf - $tar_args
+    else if string match -q "*pigz*" "$comp"
+        pigz -dc "$archive" | tar -xvf - $tar_args
     else
-        if test -n "$output_dir"
-            pigz -dc $archive | tar -xvf - -C $output_dir $specific_paths
-        else
-            pigz -dc $archive | tar -xvf - $specific_paths
-        end
+        echo "Error: '$comp' not supported!"
+        return 1
     end
 end
+
 function tarv
     set -l comp (_tarchk $argv[1])
     or return 1
