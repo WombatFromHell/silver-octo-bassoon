@@ -47,6 +47,10 @@
       ansible.builtin.include_tasks: systemd.yml
       tags: [extra, dotfiles, dotfiles_systemd]
 
+    - name: Include systemd env.d task
+      ansible.builtin.include_tasks: sysdenv.yml
+      tags: [extra, dotfiles, dotfiles_env]
+
     - name: Include tmux task
       ansible.builtin.include_tasks: tmux.yml
       tags: [extra, dotfiles, dotfiles_tmux]
