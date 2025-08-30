@@ -1,11 +1,14 @@
 gtk-tabs-location = hidden
-font-family = "JetBrainsMono Nerd Font"
+font-family = "Maple Mono"
+# font-family = "MonaspiceNe Nerd Font Mono"
+# font-family = "JetBrainsMonoNL Nerd Font Mono"
 # font-family = "Fira Code"
 # font-family = "MesloLGM Nerd Font"
 font-size = 10.5
 theme = dark:catppuccin-mocha,light:catppuccin-latte
 # window-decoration = false
 # shell-integration = fish
+#
 # disable nerd font ligatures
 font-feature = -calt
 font-feature = -liga

@@ -151,17 +151,52 @@ function _tarchk
     echo $comp
 end
 function tarc
-    set -l comp (_tarchk $argv[1])
-    or return 1
-    if string match -q "*zstd*" $comp
-        tar -cvf - $argv[3..-1] | zstd -19 -T0 >$argv[2]
-    else if string match -q "*pigz*" $comp
-        tar -cvf - $argv[3..-1] | pigz -9 >$argv[2]
-    else
-        echo "Error: '$comp' not supported!"
+    test (count $argv) -lt 3; and begin
+        echo "Usage: tarc COMPRESSOR [TAR_OPTIONS...] OUTPUT_FILE PATHS..." >&2
         return 1
     end
+
+    set comp $argv[1]
+    set argv $argv[2..-1]
+
+    set outfile_idx 0
+    for i in (seq (count $argv))
+        if not string match -q -- '-*' $argv[$i]
+            set outfile_idx $i
+            set outfile $argv[$i]
+            break
+        end
+    end
+
+    test $outfile_idx -eq 0; and begin
+        echo "Error: No output file specified" >&2
+        return 1
+    end
+
+    set opts
+    if test $outfile_idx -gt 1
+        set opts $argv[1..(math $outfile_idx - 1)]
+    end
+    set pathargs $argv[(math $outfile_idx + 1)..-1]
+
+    test (count $pathargs) -eq 0; and begin
+        echo "Error: No paths specified" >&2
+        return 1
+    end
+
+    mkdir -p (dirname $outfile)
+
+    switch $comp
+        case zstd
+            tar $opts -cvf - $pathargs | zstd -19 -T0 >$outfile
+        case pigz
+            tar $opts -cvf - $pathargs | pigz -9 >$outfile
+        case '*'
+            echo "Unknown compressor: $comp" >&2
+            return 1
+    end
 end
+
 function tarx
     set -l comp (_tarchk $argv[1])
     or return 1
