@@ -105,6 +105,7 @@ system_flatpaks:
 user_flatpaks:
   - com.vysp3r.ProtonPlus
   - com.usebottles.bottles
+  - org.deluge_torrent.deluge
 skip_flatpaks:
   - io.github.peazip.PeaZip
 install_peazip: true

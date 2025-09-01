@@ -52,6 +52,7 @@ user_flatpaks:
   - com.github.zocker_160.SyncThingy
   - com.spotify.Client
   - net.agalwood.Motrix
+  - org.deluge_torrent.deluge
   - com.vysp3r.ProtonPlus
   - com.usebottles.bottles
 skip_flatpaks:
