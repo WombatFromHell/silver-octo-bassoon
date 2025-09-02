@@ -11,6 +11,27 @@ from pathlib import Path
 from typing import Dict, List, Optional, TextIO, Tuple, cast
 
 
+GAMESCOPE_ARGS_MAP = {
+    "-W": "--output-width",
+    "-H": "--output-height",
+    "-w": "--nested-width",
+    "-h": "--nested-height",
+    "-b": "--borderless",
+    "-C": "--hide-cursor-delay",
+    "-e": "--steam",
+    "-f": "--fullscreen",
+    "-F": "--filter",
+    "-g": "--grab",
+    "-o": "--nested-unfocused-refresh",
+    "-O": "--prefer-output",
+    "-r": "--nested-refresh",
+    "-R": "--ready-fd",
+    "-s": "--mouse-sensitivity",
+    "-T": "--stats-path",
+    "--sharpness": "--fsr-sharpness",
+}
+
+
 def print_help() -> None:
     """Print concise help message about nscb.py functionality."""
     help_text = """neoscopebuddy - gamescope wrapper
@@ -130,31 +151,58 @@ def split_at_separator(args: List[str]) -> Tuple[List[str], List[str]]:
 def separate_flags_and_positionals(
     args: List[str],
 ) -> Tuple[List[Tuple[str, Optional[str]]], List[str]]:
-    """Separate flag/value pairs from positional arguments."""
-    flags, positionals = [], []
+    """
+    Split arguments into (flags, positionals).
+
+    * `flags` – list of tuples ``(flag, value)`` where *value* is the
+      following argument if it does **not** start with a dash; otherwise
+      ``None``.  Flags are returned unchanged (short or long form).
+    * `positionals` – arguments that do not begin with a dash.
+    """
+    flags: List[Tuple[str, Optional[str]]] = []
+    positionals: List[str] = []
+
     i = 0
     while i < len(args):
         arg = args[i]
+
+        # Positional argument – keep as‑is.
         if not arg.startswith("-"):
             positionals.append(arg)
             i += 1
             continue
 
-        if (
-            (arg in ("-W", "-H", "-w", "-h"))
-            and i + 1 < len(args)
-            and not args[i + 1].startswith("-")
-        ):
+        # Flag that may or may not have an accompanying value.
+        if i + 1 < len(args) and not args[i + 1].startswith("-"):
             flags.append((arg, args[i + 1]))
             i += 2
         else:
             flags.append((arg, None))
             i += 1
+
     return flags, positionals
 
 
 def merge_arguments(profile_args: List[str], override_args: List[str]) -> List[str]:
-    """Merge profile arguments with overrides."""
+    """
+    Merge a profile argument list with an override argument list.
+
+    * Profile arguments are merged with overrides such that:
+        1. Override flags take precedence over profile flags.
+        2. Any conflict flag supplied by the override replaces **all**
+           profile conflict flags (mutual exclusivity).
+        3. Non‑conflict overrides replace matching profile non‑conflict
+           flags.
+    * All override flags are appended after all surviving profile flags,
+      preserving the order in which they were specified.
+    * Positional arguments and everything after a ``--`` separator is
+      preserved verbatim.
+
+    Returns a flat list of strings ready to be passed to
+    `execute_gamescope_command`.
+    """
+    # Split each argument list at the '--' separator (everything after
+    # the separator is treated as application args).
     (p_before, _), (o_before, o_after) = (
         split_at_separator(profile_args),
         split_at_separator(override_args),
@@ -163,45 +211,59 @@ def merge_arguments(profile_args: List[str], override_args: List[str]) -> List[s
     p_flags, p_pos = separate_flags_and_positionals(p_before)
     o_flags, o_pos = separate_flags_and_positionals(o_before)
 
-    # Define mutually exclusive flags
-    conflict_set = {"-f", "--fullscreen", "-b", "--borderless"}
+    # Helper: canonical long form for a flag
+    def canon(flag: str) -> str:
+        return GAMESCOPE_ARGS_MAP.get(flag, flag)
 
-    # Split current profile flags into conflicts and non-conflicts
-    conflicts = []
-    others = []
-    for flag, value in p_flags:
-        if flag in conflict_set:
-            conflicts.append((flag, value))
-        else:
-            others.append((flag, value))
+    conflict_canon_set = {canon("-f"), canon("-b")}
 
-    new_conflict_flag = None
-    new_others = []  # Processed override non-conflict flags
+    # Classify profile flags
+    profile_conflict_flags = [
+        (flag, val) for flag, val in p_flags if canon(flag) in conflict_canon_set
+    ]
+    profile_nonconflict_flags = [
+        (flag, val) for flag, val in p_flags if canon(flag) not in conflict_canon_set
+    ]
 
-    # Handle overrides: process conflicting flags first (for placement at front)
-    for flag, value in o_flags:
-        if flag in conflict_set:
-            new_conflict_flag = (flag, value)  # Keep the latest one
-        else:
-            # Remove existing non-conflicting flags that are overridden
-            others = [(f, v) for f, v in others if f != flag]
-            new_others.append((flag, value))
+    # Classify override flags
+    override_conflict_flags = [
+        (flag, val) for flag, val in o_flags if canon(flag) in conflict_canon_set
+    ]
+    override_nonconflict_flags = [
+        (flag, val) for flag, val in o_flags if canon(flag) not in conflict_canon_set
+    ]
 
-    # Build merged flags: [new conflict] + [new resolution] + [existing resolutions]
-    merged_flags = []
-    for pair in conflicts:
-        if not (new_conflict_flag and pair[0] in conflict_set):
-            merged_flags.append(pair)
+    # Determine which conflict flags survive: any override conflict wins over all profile conflicts.
+    final_conflict_flags = (
+        override_conflict_flags if override_conflict_flags else profile_conflict_flags
+    )
 
-    if new_conflict_flag:
-        merged_flags.insert(0, new_conflict_flag)  # Put the override first
+    # Flags from the profile that are NOT overridden by a non‑conflict override
+    overridden_nonconflict = {canon(f) for f, _ in override_nonconflict_flags}
+    remaining_profile_nonconflict = [
+        (flag, val)
+        for flag, val in profile_nonconflict_flags
+        if canon(flag) not in overridden_nonconflict
+    ]
 
-    merged_flags.extend(new_others + others)
+    # Override flags to be appended after all surviving profile flags
+    override_all_flags = (
+        override_nonconflict_flags  # conflict overrides already handled
+    )
 
-    # Rebuild command parts
-    result = []
-    for pair in merged_flags:
-        result.extend([pair[0]] + ([pair[1]] if pair[1] is not None else []))
+    # Assemble final ordered list of flags:
+    #   [profile conflicts] + [remaining profile non‑conflicts] + [override flags]
+    final_flags: List[Tuple[str, Optional[str]]] = []
+    final_flags.extend(final_conflict_flags)
+    final_flags.extend(remaining_profile_nonconflict)
+    final_flags.extend(override_all_flags)
+
+    # Convert to a flat argument sequence
+    result: List[str] = []
+    for flag, val in final_flags:
+        result.append(flag)
+        if val is not None:
+            result.append(val)
 
     return result + p_pos + o_pos + o_after
 
@@ -290,7 +352,9 @@ def execute_gamescope_command(final_args: List[str]) -> None:
             if not pre_cmd and not post_cmd:
                 full_cmd = build_app_command(app_args)
             else:
-                full_cmd = build_command([pre_cmd, build_app_command(app_args), post_cmd])
+                full_cmd = build_command(
+                    [pre_cmd, build_app_command(app_args), post_cmd]
+                )
         except ValueError:
             # If no -- separator found but we have pre/post commands, use those
             if not pre_cmd and not post_cmd:
