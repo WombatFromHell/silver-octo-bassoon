@@ -55,6 +55,8 @@ cleanup() {
 
 handle_tool() {
   local ENV_PREFIX=(env PULSE_LATENCY_MSEC=60)
+  local KDE_INHIBIT
+  KDE_INHIBIT=$(command -v kde-inhibit)
 
   # pre-commands
   scx_wrapper load
@@ -64,17 +66,20 @@ handle_tool() {
       "${ENV_PREFIX[@]}" "$@" # used when no 'performance' governor exists
     else
       "${ENV_PREFIX[@]}" "$INHIBIT" --why "perfboost.sh is running" \
-        "$PPCTL" launch -p performance -r "Launched with perfboost.sh utility" -- "$@"
+        "$PPCTL" launch -p performance -r "Launched with perfboost.sh utility" -- \
+        "$KDE_INHIBIT" --colorCorrect "$@"
     fi
   elif [ -n "$TUNED" ]; then
     GAME_PROF="throughput-performance-bazzite"
     DESK_PROF="balanced-bazzite"
 
     if ! "$TUNED" list 2>&1 | grep -q "$GAME_PROF"; then
-      "${ENV_PREFIX[@]}" "$@"
+      "${ENV_PREFIX[@]}" \
+        "$KDE_INHIBIT" --colorCorrect "$@"
     else
       "$TUNED" profile "$GAME_PROF"
-      "${ENV_PREFIX[@]}" "$INHIBIT" --why "perfboost.sh is running" -- "$@"
+      "${ENV_PREFIX[@]}" "$INHIBIT" --why "perfboost.sh is running" -- \
+        "$KDE_INHIBIT" --colorCorrect "$@"
       "$TUNED" profile "$DESK_PROF"
     fi
   else
