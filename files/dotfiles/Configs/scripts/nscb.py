@@ -394,11 +394,14 @@ def main() -> None:
             # Load the profile arguments safely
             merged_profiles = []
             for profile in profiles:
+                if profile not in config:
+                    logging.error(f"profile {profile} not found")
+                    sys.exit(1)
                 merged_profiles.append(shlex.split(config[profile]))
             args = merge_multiple_profiles(merged_profiles + [args])
         except KeyError as e:
             logging.error(f"profile {e} not found")
-            sys.exit(1)
+            sys.exit(1)  # Exit with status code 1 on KeyError
 
     execute_gamescope_command(args)
 
