@@ -189,14 +189,9 @@ def merge_arguments(profile_args: List[str], override_args: List[str]) -> List[s
 
     * Profile arguments are merged with overrides such that:
         1. Override flags take precedence over profile flags.
-        2. Any conflict flag supplied by the override replaces **all**
-           profile conflict flags (mutual exclusivity).
-        3. Non‑conflict overrides replace matching profile non‑conflict
-           flags.
-    * All override flags are appended after all surviving profile flags,
-      preserving the order in which they were specified.
-    * Positional arguments and everything after a ``--`` separator is
-      preserved verbatim.
+        2. Display mode conflicts (-f/--fullscreen vs --borderless) are mutually exclusive.
+        3. Non-conflict overrides replace matching profile non-conflict flags.
+        4. Width/height settings are preserved unless explicitly overridden.
 
     Returns a flat list of strings ready to be passed to
     `execute_gamescope_command`.
@@ -215,6 +210,7 @@ def merge_arguments(profile_args: List[str], override_args: List[str]) -> List[s
     def canon(flag: str) -> str:
         return GAMESCOPE_ARGS_MAP.get(flag, flag)
 
+    # Display mode flags are mutually exclusive
     conflict_canon_set = {canon("-f"), canon("-b")}
 
     # Classify profile flags
@@ -238,7 +234,7 @@ def merge_arguments(profile_args: List[str], override_args: List[str]) -> List[s
         override_conflict_flags if override_conflict_flags else profile_conflict_flags
     )
 
-    # Flags from the profile that are NOT overridden by a non‑conflict override
+    # Flags from the profile that are NOT overridden by a non-conflict override
     overridden_nonconflict = {canon(f) for f, _ in override_nonconflict_flags}
     remaining_profile_nonconflict = [
         (flag, val)
@@ -252,7 +248,7 @@ def merge_arguments(profile_args: List[str], override_args: List[str]) -> List[s
     )
 
     # Assemble final ordered list of flags:
-    #   [profile conflicts] + [remaining profile non‑conflicts] + [override flags]
+    #   [profile conflicts] + [remaining profile non-conflicts] + [override flags]
     final_flags: List[Tuple[str, Optional[str]]] = []
     final_flags.extend(final_conflict_flags)
     final_flags.extend(remaining_profile_nonconflict)
