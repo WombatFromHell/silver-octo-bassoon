@@ -9,21 +9,20 @@ check_cmd() {
 }
 
 dep_check() {
-  SCX="${SCX:-}"
-  #
-  PPCTL="$(check_cmd "powerprofilesctl")"
   TUNED="$(check_cmd "tuned-adm")"
-  #
-  if [ -z "$PPCTL" ] && [ -z "$TUNED" ]; then
-    echo "Error: 'powerprofilesctl' or 'tuned-adm' are required, exiting!"
+  if [ -z "$TUNED" ]; then
+    echo "Error: 'tuned-adm' is required, exiting!"
     exit 1
   fi
-  #
-  if ! INHIBIT="$(check_cmd "systemd-inhibit")"; then
+
+  INHIBIT="$(check_cmd "systemd-inhibit")"
+  if [ -z "$INHIBIT" ]; then
     echo "Error: 'systemd-inhibit' is required, exiting!"
     exit 1
   fi
-  if ! DBUS_SEND="$(check_cmd "dbus-send")"; then
+
+  DBUS_SEND="$(check_cmd "dbus-send")"
+  if [ -z "$DBUS_SEND" ]; then
     echo "Error: 'dbus-send' is required, exiting!"
     exit 1
   fi
@@ -31,10 +30,9 @@ dep_check() {
 dep_check # do dependency check early for safety
 
 scx_wrapper() {
-  local scx="${2:-scx_bpfland}"
-  BPFLAND="$(check_cmd "$scx")"
-  [ -z "$SCX" ] && return
-  if [ -z "$BPFLAND" ]; then
+  local scx="${2:-scx_p2dq}" # use scx_lavd as a generic alternative
+  SCXS="$(check_cmd "$scx")"
+  if [ -z "$SCXS" ]; then
     echo "Error: '$scx' required for scx_wrapper(), skipping..."
     return
   fi
@@ -61,30 +59,19 @@ handle_tool() {
   # pre-commands
   scx_wrapper load
 
-  if [ -n "$PPCTL" ]; then
-    if ! "$PPCTL" list 2>&1 | grep -q 'performance:'; then
-      "${ENV_PREFIX[@]}" "$@" # used when no 'performance' governor exists
-    else
-      "${ENV_PREFIX[@]}" "$INHIBIT" --why "perfboost.sh is running" \
-        "$PPCTL" launch -p performance -r "Launched with perfboost.sh utility" -- \
-        "$KDE_INHIBIT" --colorCorrect "$@"
-    fi
-  elif [ -n "$TUNED" ]; then
-    GAME_PROF="throughput-performance-bazzite"
-    DESK_PROF="balanced-bazzite"
+  GAME_PROF="throughput-performance-bazzite"
+  DESK_PROF="balanced-bazzite"
 
-    if ! "$TUNED" list 2>&1 | grep -q "$GAME_PROF"; then
-      "${ENV_PREFIX[@]}" \
-        "$KDE_INHIBIT" --colorCorrect "$@"
-    else
-      "$TUNED" profile "$GAME_PROF"
-      "${ENV_PREFIX[@]}" "$INHIBIT" --why "perfboost.sh is running" -- \
-        "$KDE_INHIBIT" --colorCorrect "$@"
-      "$TUNED" profile "$DESK_PROF"
-    fi
+  if "$TUNED" list 2>&1 | grep -q "$GAME_PROF"; then
+    # we're in "game" mode
+    "$TUNED" profile "$GAME_PROF"
+    "${ENV_PREFIX[@]}" "$INHIBIT" --why "perfboost.sh is running" -- \
+      "$KDE_INHIBIT" --colorCorrect "$@"
+    "$TUNED" profile "$DESK_PROF"
   else
-    echo "Error: 'powerprofilesctl' or 'tuned-adm' required, aborting!"
-    exit 1
+    # just disable Night Mode in KDE
+    "${ENV_PREFIX[@]}" \
+      "$KDE_INHIBIT" --colorCorrect "$@"
   fi
 
   # post-commands
