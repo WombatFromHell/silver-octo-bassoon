@@ -10,6 +10,9 @@ if status is-interactive && ! functions -q fisher
     update_fisher
 end
 
+# include our home-grown tmux helper
+source $HOME/.config/fish/tmux2.fish
+
 if status is-interactive
     set -Ux fish_greeting # disable initial fish greeting
 
@@ -24,16 +27,6 @@ if status is-interactive
         set user_host (whoami)@(hostname)
         # Combine them to form the desired title
         echo "$user_host:$current_dir"
-    end
-
-    if command -q tmux && test "$TERM_PROGRAM" != vscode
-        set fish_tmux_autostart true
-        # set fish_tmux_autostart_once true
-        set fish_tmux_autoconnect true
-        set fish_tmux_autoquit false
-        set fish_tmux_detached true
-    else
-        set fish_tmux_autostart false
     end
 
     if command -q zoxide
