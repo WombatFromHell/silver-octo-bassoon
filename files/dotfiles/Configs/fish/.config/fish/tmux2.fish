@@ -1,4 +1,23 @@
-# Helper function for tmux operations
+# Helper function to check if a tmux session exists
+function _tmux_session_exists -a session
+    tmux has-session -t $session 2>/dev/null
+end
+
+# Helper function to create a new tmux session
+function _tmux_create_session -a session
+    if set -q TMUX
+        tmux new-session -d -s $session
+    else
+        tmux new-session -s $session
+    end
+end
+
+# Helper function to list all tmux sessions
+function _tmux_list_sessions
+    tmux list-sessions -F '#{session_name}' 2>/dev/null
+end
+
+# Helper function to connect to a tmux session
 function _tmux_connect -a session
     if set -q TMUX
         tmux switch-client -t $session
@@ -7,32 +26,32 @@ function _tmux_connect -a session
     end
 end
 
+# Attach to a tmux session (using current directory name if no argument)
 function tma
     set target (test (count $argv) -eq 0 && echo (basename (pwd)) || echo $argv[1])
 
     # Use main session if current directory session doesn't exist and no args
-    if test (count $argv) -eq 0; and not tmux has-session -t $target 2>/dev/null
+    if test (count $argv) -eq 0; and not _tmux_session_exists $target
         set target main
     end
 
     # Create session if needed
-    if not tmux has-session -t $target 2>/dev/null
-        if set -q TMUX
-            tmux new-session -d -s $target
-        else
-            tmux new-session -s $target
+    if not _tmux_session_exists $target
+        _tmux_create_session $target
+        # If not already in tmux, we're done after creating
+        if not set -q TMUX
             return
         end
     end
 
     _tmux_connect $target
 end
-complete -c tma -f -a "(tmux list-sessions -F '#{session_name}' 2>/dev/null)"
 
+# Kill a tmux session (default: main)
 function tmk
     set target (test (count $argv) -eq 0 && echo main || echo $argv[1])
 
-    if tmux has-session -t $target 2>/dev/null
+    if _tmux_session_exists $target
         tmux kill-session -t $target
         test $target = main; and rm -f $_tmux_main_connected
         echo "Killed session '$target'"
@@ -40,25 +59,22 @@ function tmk
         echo "No session '$target' to kill"
     end
 end
-complete -c tmk -f -a "(tmux list-sessions -F '#{session_name}' 2>/dev/null)"
 
+# Create a session for the current directory and attach to it
 function tmds
     set target (basename (pwd))
 
-    if not tmux has-session -t $target 2>/dev/null
-        if set -q TMUX
-            tmux new-session -d -s $target
-            tmux switch-client -t $target
-        else
-            tmux new-session -s $target
-        end
+    if not _tmux_session_exists $target
+        _tmux_create_session $target
         echo "Created TMUX session: $target"
     else
         _tmux_connect $target
-        echo (set -q TMUX && echo "Switched to" || echo "Attached to")" existing TMUX session: $target"
+        set -l action (set -q TMUX && echo "Switched to" || echo "Attached to")
+        echo "$action existing TMUX session: $target"
     end
 end
 
+# Switch to an existing session (only works inside tmux)
 function tms
     if not set -q TMUX
         echo "Not inside a tmux session. Use 'tma <session>' to attach to a session."
@@ -66,29 +82,33 @@ function tms
     end
 
     if test (count $argv) -eq 0
-        echo "Usage: tms <session_name>\nAvailable sessions:"
-        tmux list-sessions -F "#{session_name}"
+        echo "Usage: tms <session_name>"
+        echo "Available sessions:"
+        _tmux_list_sessions
         return 1
     end
 
-    if tmux has-session -t $argv[1] 2>/dev/null
+    if _tmux_session_exists $argv[1]
         tmux switch-client -t $argv[1]
     else
-        echo "Session '$argv[1]' does not exist\nAvailable sessions:"
-        tmux list-sessions -F "#{session_name}"
+        echo "Session '$argv[1]' does not exist"
+        echo "Available sessions:"
+        _tmux_list_sessions
     end
 end
-complete -c tms -f -a "(if set -q TMUX; tmux list-sessions -F '#{session_name}' 2>/dev/null; end)"
 
+# Create a new detached session (optionally with a command)
 function tmn
     if test (count $argv) -eq 0
         echo "Usage: tmn <session_name> [command]"
         return 1
     end
 
-    if tmux has-session -t $argv[1] 2>/dev/null
+    if _tmux_session_exists $argv[1]
         echo "Session '$argv[1]' already exists"
-        echo "Use '"(set -q TMUX && echo tms || echo tma)" $argv[1]' to "(set -q TMUX && echo switch || echo attach)" to it"
+        set -l cmd (set -q TMUX && echo tms || echo tma)
+        set -l action (set -q TMUX && echo switch || echo attach)
+        echo "Use '$cmd $argv[1]' to $action to it"
         return 1
     end
 
@@ -96,6 +116,7 @@ function tmn
     echo "Created detached session: $argv[1]"
 end
 
+# List all tmux sessions
 alias tmls='tmux list-sessions'
 
 # Auto-initialization
@@ -104,9 +125,9 @@ if status is-interactive; and command -q tmux; and test "$TERM_PROGRAM" != vscod
     set -g _tmux_main_connected /tmp/tmux_main_connected
 
     if not test -f $_tmux_main_connected
-        if tmux has-session -t main 2>/dev/null; and test (tmux display-message -p -t main '#{session_attached}' 2>/dev/null) = 0
+        if _tmux_session_exists main; and test (tmux display-message -p -t main '#{session_attached}' 2>/dev/null) = 0
             tmux attach -t main
-        else if not tmux has-session -t main 2>/dev/null
+        else if not _tmux_session_exists main
             tmux new-session -s main
         end
     end
@@ -116,3 +137,8 @@ if status is-interactive; and command -q tmux; and test "$TERM_PROGRAM" != vscod
         set -e _tmux2_loaded
     end
 end
+
+# Completions
+complete -c tma -f -a "(_tmux_list_sessions)"
+complete -c tmk -f -a "(_tmux_list_sessions)"
+complete -c tms -f -a "(if set -q TMUX; _tmux_list_sessions; end)"
