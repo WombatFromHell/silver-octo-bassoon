@@ -234,7 +234,7 @@ set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
 set -x CARGO_HOME $HOME/.cargo
 
 set --erase fish_user_paths
-fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/bob/nvim-bin ~/.rd/bin ~/.spicetify /usr/local/bin $RUSTUP_HOME
+fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/bob/nvim-bin ~/.rd/bin ~/.spicetify /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin
 
 set pure_shorten_prompt_current_directory_length 1
 set pure_truncate_prompt_current_directory_keeps 0
