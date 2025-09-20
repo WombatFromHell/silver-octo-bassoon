@@ -5,7 +5,7 @@ font-family = "Maple Mono"
 # font-family = "Fira Code"
 # font-family = "MesloLGM Nerd Font"
 font-size = 10.5
-theme = dark:catppuccin-mocha,light:catppuccin-latte
+theme = catppuccin-mocha.conf
 # window-decoration = false
 # shell-integration = fish
 #
