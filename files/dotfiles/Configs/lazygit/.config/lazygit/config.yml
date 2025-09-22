@@ -2,6 +2,9 @@
 os:
   edit: "nvim {{filename}}"
 
+git:
+  overrideGpg: true
+
 theme:
   activeBorderColor:
     - "#94e2d5"
