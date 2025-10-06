@@ -42,6 +42,7 @@ if status is-interactive
     if test -f "$cargo_fish_path"
         source "$cargo_fish_path"
     end
+    set -gx SHELL $(command -v fish)
 end
 
 function yy
@@ -353,4 +354,11 @@ end
 set_editor
 
 # Added by LM Studio CLI (lms)
-set -gx PATH $PATH /var/home/josh/.lmstudio/bin
+set -gx PATH $PATH $HOME/.lmstudio/bin
+
+# pnpm
+set -gx PNPM_HOME "$HOME/.local/share/pnpm"
+if not string match -q -- $PNPM_HOME $PATH
+    set -gx PATH "$PNPM_HOME" $PATH
+end
+# pnpm end

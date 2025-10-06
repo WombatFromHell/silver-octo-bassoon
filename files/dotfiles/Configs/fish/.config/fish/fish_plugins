@@ -7,3 +7,4 @@ edc/bass
 g-plane/pnpm-shell-completion
 wfxr/forgit
 oh-my-fish/plugin-foreign-env
+cuducos/dirvenv.fish

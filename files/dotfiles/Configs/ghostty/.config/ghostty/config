@@ -1,8 +1,7 @@
 gtk-tabs-location = hidden
-font-family = "Maple Mono"
-# font-family = "MonaspiceNe Nerd Font Mono"
-# font-family = "JetBrainsMonoNL Nerd Font Mono"
+# font-family = "Maple Mono"
 # font-family = "Fira Code"
+font-family = "JetBrainsMonoNL Nerd Font Mono"
 # font-family = "MesloLGM Nerd Font"
 font-size = 10.5
 theme = catppuccin-mocha.conf
