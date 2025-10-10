@@ -217,9 +217,9 @@ function tarv
         pigz -dc $argv[2] | tar -tvf -
     end
 end
-alias tarpzc='tarc pigz'
-alias tarpzx='tarx pigz'
-alias tarpzv='tarv pigz'
+alias tarzc='tarc pigz'
+alias tarzx='tarx pigz'
+alias tarzv='tarv pigz'
 #
 alias tarzsc='tarc zstd'
 alias tarzsx='tarx zstd'
@@ -276,14 +276,6 @@ alias zda='zellij da'
 alias zr='zellij run'
 alias za='zellij attach'
 alias zd='zellij detach'
-# tmux shortcuts
-alias tmls='tmux ls'
-# alias tmux='tmux a'
-# alias tmc='tmux a -t'
-# alias tmn='tmux new-session -A -s'
-# alias tmka='tmux kill-ses -a'
-# alias tmk='tmux kill-ses -t'
-#
 # rsync shortcuts
 alias _rsync='rsync -avL --partial --update'
 alias _rsyncd='_rsync --dry-run'

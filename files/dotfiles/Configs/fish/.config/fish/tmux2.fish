@@ -160,8 +160,10 @@ function tmsw
         end
     end
 end
+
 # List all tmux sessions
 alias tmls='tmux list-sessions'
+
 # Auto-initialization
 if status is-interactive; and command -q tmux; and test "$TERM_PROGRAM" != vscode; and not set -q _tmux2_loaded; and not set -q TMUX
     set -g _tmux2_loaded true
@@ -177,9 +179,10 @@ if status is-interactive; and command -q tmux; and test "$TERM_PROGRAM" != vscod
         rm -f $_tmux_main_connected 2>/dev/null
         set -e _tmux2_loaded
     end
+
+    # Completions
+    complete -c tma -f -a "(_tmux_list_sessions)"
+    complete -c tmk -f -a "(_tmux_list_sessions)"
+    complete -c tms -f -a "(if set -q TMUX; _tmux_list_sessions; end)"
+    complete -c tmsw -f -a "(_tmux_list_sessions) -"
 end
-# Completions
-complete -c tma -f -a "(_tmux_list_sessions)"
-complete -c tmk -f -a "(_tmux_list_sessions)"
-complete -c tms -f -a "(if set -q TMUX; _tmux_list_sessions; end)"
-complete -c tmsw -f -a "(_tmux_list_sessions) -"
