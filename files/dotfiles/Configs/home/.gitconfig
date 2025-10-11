@@ -21,7 +21,9 @@
 	dev = !git checkout dev && git pull origin dev
   dmerged = "git branch --merged | grep -v '\\*' | xargs -n 1 git branch -d"
 	dstash = !git stash --keep-index && !git stash push -m "staged" --keep-index && !git stash pop stash@{1}
+  dstat = !git diff --cached --shortstat
 	f = "!git ls-files | grep -i"
+  fstat = !git diff --cached --numstat
   gca = gc --auto
   gcagg = !git prune && git gc --aggressive
 	gr = grep -Ii
