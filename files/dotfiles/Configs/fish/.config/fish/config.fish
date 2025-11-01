@@ -329,6 +329,8 @@ alias nixopt='nix-store --gc && nix-store --optimize'
 alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
 #
 alias update_tmux='~/.config/tmux/plugins/tpm/bin/update_plugins all'
+#
+alias kclear="printf '\033[2J\033[3J\033[1;1H'"
 
 set NIX_DAEMON_FISH_SRC /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
 if test -z $NIX_PROFILES; and test -r "$NIX_DAEMON_FISH_SRC"
