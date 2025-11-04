@@ -8,6 +8,7 @@ Fetch and extract the latest ProtonGE GitHub release asset
 
 from __future__ import annotations
 
+# Standard library imports
 import argparse
 import json
 import logging
@@ -19,7 +20,59 @@ import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Iterator, NoReturn, Optional, Any
+
+# Type imports
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Literal,
+    Optional,
+    Protocol,
+    Set,
+    Tuple,
+)
+
+# Type aliases for better readability
+Headers = Dict[str, str]
+ProcessResult = subprocess.CompletedProcess[str]
+ForkName = Literal["GE-Proton", "Proton-EM"]
+AssetInfo = Tuple[str, int]  # (name, size)
+VersionTuple = Tuple[str, int, int, int]  # (prefix, major, minor, patch)
+
+
+class NetworkClientProtocol(Protocol):
+    timeout: int
+
+    def get(
+        self, url: str, headers: Optional[Headers] = None, stream: bool = False
+    ) -> ProcessResult: ...
+    def head(
+        self,
+        url: str,
+        headers: Optional[Headers] = None,
+        follow_redirects: bool = False,
+    ) -> ProcessResult: ...
+    def download(
+        self, url: str, output_path: Path, headers: Optional[Headers] = None
+    ) -> ProcessResult: ...
+
+
+class FileSystemClientProtocol(Protocol):
+    def exists(self, path: Path) -> bool: ...
+    def is_dir(self, path: Path) -> bool: ...
+    def mkdir(
+        self, path: Path, parents: bool = False, exist_ok: bool = False
+    ) -> None: ...
+    def write(self, path: Path, data: bytes) -> None: ...
+    def read(self, path: Path) -> bytes: ...
+    def symlink_to(
+        self, link_path: Path, target_path: Path, target_is_directory: bool = True
+    ) -> None: ...
+    def resolve(self, path: Path) -> Path: ...
+    def unlink(self, path: Path) -> None: ...
+    def rmtree(self, path: Path) -> None: ...
 
 
 class NetworkClient:
@@ -29,8 +82,8 @@ class NetworkClient:
         self.timeout = timeout
 
     def get(
-        self, url: str, headers: Optional[dict[str, str]] = None, stream: bool = False
-    ) -> subprocess.CompletedProcess[str]:
+        self, url: str, headers: Optional[Headers] = None, stream: bool = False
+    ) -> ProcessResult:
         cmd = [
             "curl",
             "-L",  # Follow redirects
@@ -59,9 +112,9 @@ class NetworkClient:
     def head(
         self,
         url: str,
-        headers: Optional[dict[str, str]] = None,
+        headers: Optional[Headers] = None,
         follow_redirects: bool = False,
-    ) -> subprocess.CompletedProcess[str]:
+    ) -> ProcessResult:
         cmd = [
             "curl",
             "-I",  # Header only
@@ -85,8 +138,8 @@ class NetworkClient:
         return result
 
     def download(
-        self, url: str, output_path: Path, headers: Optional[dict[str, str]] = None
-    ) -> subprocess.CompletedProcess[str]:
+        self, url: str, output_path: Path, headers: Optional[Headers] = None
+    ) -> ProcessResult:
         cmd = [
             "curl",
             "-L",  # Follow redirects
@@ -367,17 +420,17 @@ DEFAULT_TIMEOUT = 30
 GITHUB_URL_PATTERN = r"/releases/tag/([^/?#]+)"
 
 # Constants for ProtonGE forks
-FORKS = {
+FORKS: Dict[ForkName, Dict[str, str]] = {
     "GE-Proton": {
         "repo": "GloriousEggroll/proton-ge-custom",
         "archive_format": ".tar.gz",
     },
     "Proton-EM": {"repo": "Etaash-mathamsetty/Proton", "archive_format": ".tar.xz"},
 }
-DEFAULT_FORK = "GE-Proton"
+DEFAULT_FORK: ForkName = "GE-Proton"
 
 
-def parse_version(tag: str, fork: str = "GE-Proton") -> tuple[str, int, int, int]:
+def parse_version(tag: str, fork: ForkName = "GE-Proton") -> VersionTuple:
     """
     Parse a version tag to extract the numeric components for comparison.
 
@@ -408,7 +461,7 @@ def parse_version(tag: str, fork: str = "GE-Proton") -> tuple[str, int, int, int
     return (tag, 0, 0, 0)
 
 
-def compare_versions(tag1: str, tag2: str, fork: str = "GE-Proton") -> int:
+def compare_versions(tag1: str, tag2: str, fork: ForkName = "GE-Proton") -> int:
     """
     Compare two version tags to determine which is newer.
 
@@ -455,11 +508,27 @@ def compare_versions(tag1: str, tag2: str, fork: str = "GE-Proton") -> int:
     return 0  # If all components are equal
 
 
-class FetchError(Exception):
-    """Raised when fetching or extracting a release fails."""
+class ProtonFetcherError(Exception):
+    """Base exception for ProtonFetcher operations."""
 
 
-def get_proton_asset_name(tag: str, fork: str = "GE-Proton") -> str:
+# For backward compatibility with existing code
+FetchError = ProtonFetcherError
+
+
+class NetworkError(ProtonFetcherError):
+    """Raised when network operations fail."""
+
+
+class ExtractionError(ProtonFetcherError):
+    """Raised when archive extraction fails."""
+
+
+class LinkManagementError(ProtonFetcherError):
+    """Raised when link management operations fail."""
+
+
+def get_proton_asset_name(tag: str, fork: ForkName = "GE-Proton") -> str:
     """
     Generate the expected Proton asset name from a tag and fork.
 
@@ -492,107 +561,18 @@ def format_bytes(bytes_value: int) -> str:
         return f"{bytes_value / (1024 * 1024 * 1024):.2f} GB"
 
 
-class GitHubReleaseFetcher:
-    """Handles fetching and extracting GitHub release assets."""
+class ReleaseManager:
+    """Manages release discovery and selection."""
 
     def __init__(
         self,
+        network_client: NetworkClientProtocol,
+        file_system_client: FileSystemClientProtocol,
         timeout: int = DEFAULT_TIMEOUT,
-        network_client: Optional[NetworkClient] = None,
-        file_system_client: Optional[FileSystemClient] = None,
     ) -> None:
+        self.network_client = network_client
+        self.file_system_client = file_system_client
         self.timeout = timeout
-        self.network_client = network_client or NetworkClient(timeout=timeout)
-        self.file_system_client = file_system_client or FileSystemClient()
-
-    def _curl_get(
-        self, url: str, headers: Optional[dict[str, str]] = None, stream: bool = False
-    ) -> subprocess.CompletedProcess[str]:
-        """Make a GET request using curl.
-
-        Args:
-            url: URL to make request to
-            headers: Optional headers to include
-            stream: Whether to stream the response
-
-        Returns:
-            CompletedProcess result from subprocess
-        """
-        return self.network_client.get(url, headers, stream)
-
-    def _curl_head(
-        self,
-        url: str,
-        headers: Optional[dict[str, str]] = None,
-        follow_redirects: bool = False,
-    ) -> subprocess.CompletedProcess[str]:
-        """Make a HEAD request using curl.
-
-        Args:
-            url: URL to make request to
-            headers: Optional headers to include
-            follow_redirects: Whether to follow redirects (useful for getting final content size)
-
-        Returns:
-            CompletedProcess result from subprocess
-        """
-        return self.network_client.head(url, headers, follow_redirects)
-
-    def _download_with_spinner(
-        self, url: str, output_path: Path, headers: Optional[dict[str, str]] = None
-    ) -> None:
-        """Download a file with progress spinner using urllib."""
-
-        # Create a request with headers
-        req = urllib.request.Request(url, headers=headers or {})
-
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as response:
-                total_size = int(response.headers.get("Content-Length", 0))
-
-                with open(output_path, "wb") as f:
-                    chunk_size = 8192
-                    downloaded = 0
-
-                    # Create spinner with total size if available
-                    with (
-                        Spinner(
-                            desc=f"Downloading {output_path.name}",
-                            total=total_size,
-                            unit="B",
-                            unit_scale=True,
-                            disable=False,
-                            fps_limit=30.0,  # Limit to 15 FPS during download to prevent excessive terminal updates
-                            show_progress=True,
-                        ) as spinner
-                    ):
-                        while True:
-                            chunk = response.read(chunk_size)
-                            if not chunk:
-                                break
-
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            # Update spinner with the amount downloaded since last call
-                            spinner.update(len(chunk))
-
-        except Exception as e:
-            self._raise(f"Failed to download {url}: {str(e)}")
-
-    def _curl_download(
-        self, url: str, output_path: Path, headers: Optional[dict[str, str]] = None
-    ) -> subprocess.CompletedProcess[str]:
-        """Download a file using curl.
-
-        Args:
-            url: URL to download from
-            output_path: Path to save the file
-            headers: Optional headers to include
-
-        Returns:
-            CompletedProcess result from subprocess
-        """
-        return self.network_client.download(url, output_path, headers)
 
     def fetch_latest_tag(self, repo: str) -> str:
         """Get the latest release tag by following the redirect from /releases/latest.
@@ -608,11 +588,13 @@ class GitHubReleaseFetcher:
         """
         url = f"https://github.com/{repo}/releases/latest"
         try:
-            response = self._curl_head(url)
+            response = self.network_client.head(url)
             if response.returncode != 0:
-                self._raise(f"Failed to fetch latest tag for {repo}: {response.stderr}")
+                raise NetworkError(
+                    f"Failed to fetch latest tag for {repo}: {response.stderr}"
+                )
         except Exception as e:
-            self._raise(f"Failed to fetch latest tag for {repo}: {e}")
+            raise NetworkError(f"Failed to fetch latest tag for {repo}: {e}")
 
         # Parse the redirect URL from curl response headers
         location_match = re.search(
@@ -639,13 +621,17 @@ class GitHubReleaseFetcher:
 
         match = re.search(GITHUB_URL_PATTERN, redirected_url)
         if not match:
-            self._raise(f"Could not determine latest tag from URL: {redirected_url}")
+            raise NetworkError(
+                f"Could not determine latest tag from URL: {redirected_url}"
+            )
 
         tag = match.group(1)
         logger.info(f"Found latest tag: {tag}")
         return tag
 
-    def find_asset_by_name(self, repo: str, tag: str, fork: str = "GE-Proton") -> str:
+    def find_asset_by_name(
+        self, repo: str, tag: str, fork: ForkName = "GE-Proton"
+    ) -> str:
         """Find the Proton asset in a GitHub release using the GitHub API first,
         falling back to HTML parsing if API fails.
 
@@ -669,7 +655,7 @@ class GitHubReleaseFetcher:
                 "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
                 "Accept": "application/vnd.github.v3+json",
             }
-            response = self._curl_get(api_url, headers=headers)
+            response = self.network_client.get(api_url, headers=headers)
             if response.returncode != 0:
                 logger.debug(f"API request failed: {response.stderr}")
                 raise Exception(
@@ -677,7 +663,7 @@ class GitHubReleaseFetcher:
                 )
 
             try:
-                release_data = json.loads(response.stdout)
+                release_data: Dict[str, Any] = json.loads(response.stdout)
             except json.JSONDecodeError as e:
                 logger.debug(f"Failed to parse JSON response: {e}")
                 raise Exception(f"Failed to parse JSON: {e}")
@@ -686,7 +672,7 @@ class GitHubReleaseFetcher:
             if "assets" not in release_data:
                 raise Exception("No assets found in release API response")
 
-            assets = release_data["assets"]
+            assets: List[Dict[str, Any]] = release_data["assets"]
 
             # Determine the expected extension based on fork
             expected_extension = (
@@ -728,13 +714,15 @@ class GitHubReleaseFetcher:
             logger.info(f"Fetching release page: {url}")
 
             try:
-                response = self._curl_get(url)
+                response = self.network_client.get(url)
                 if response.returncode != 0:
-                    self._raise(
+                    raise NetworkError(
                         f"Failed to fetch release page for {repo}/{tag}: {response.stderr}"
                     )
             except Exception as e:
-                self._raise(f"Failed to fetch release page for {repo}/{tag}: {e}")
+                raise NetworkError(
+                    f"Failed to fetch release page for {repo}/{tag}: {e}"
+                )
 
             # Look for the expected asset name in the page
             if expected_asset_name in response.stdout:
@@ -749,7 +737,9 @@ class GitHubReleaseFetcher:
             )
             logger.debug(f"HTML snippet: {html_snippet}")
 
-            self._raise(f"Asset '{expected_asset_name}' not found in {repo}/{tag}")
+            raise NetworkError(
+                f"Asset '{expected_asset_name}' not found in {repo}/{tag}"
+            )
 
     def get_remote_asset_size(self, repo: str, tag: str, asset_name: str) -> int:
         """Get the size of a remote asset using HEAD request.
@@ -770,11 +760,11 @@ class GitHubReleaseFetcher:
 
         try:
             # First try with HEAD request following redirects
-            result = self._curl_head(url, follow_redirects=True)
+            result = self.network_client.head(url, follow_redirects=True)
             if result.returncode != 0:
                 if "404" in result.stderr or "not found" in result.stderr.lower():
-                    self._raise(f"Remote asset not found: {asset_name}")
-                self._raise(
+                    raise NetworkError(f"Remote asset not found: {asset_name}")
+                raise NetworkError(
                     f"Failed to get remote asset size for {asset_name}: {result.stderr}"
                 )
 
@@ -809,7 +799,9 @@ class GitHubReleaseFetcher:
                 if redirect_url and redirect_url != url:
                     logger.debug(f"Following redirect to: {redirect_url}")
                     # Make another HEAD request to the redirect URL
-                    result = self._curl_head(redirect_url, follow_redirects=False)
+                    result = self.network_client.head(
+                        redirect_url, follow_redirects=False
+                    )
                     if result.returncode == 0:
                         for line in result.stdout.splitlines():
                             if "content-length" in line.lower():
@@ -833,12 +825,142 @@ class GitHubReleaseFetcher:
 
             # If we still can't find the content-length, log the response for debugging
             logger.debug(f"Response headers received: {result.stdout}")
-            self._raise(f"Could not determine size of remote asset: {asset_name}")
+            raise NetworkError(
+                f"Could not determine size of remote asset: {asset_name}"
+            )
         except Exception as e:
-            self._raise(f"Failed to get remote asset size for {asset_name}: {e}")
+            raise NetworkError(f"Failed to get remote asset size for {asset_name}: {e}")
+
+    def list_recent_releases(self, repo: str) -> List[str]:
+        """Fetch and return a list of recent release tags from the GitHub API.
+
+        Args:
+            repo: Repository in format 'owner/repo'
+
+        Returns:
+            List of the 20 most recent tag names
+
+        Raises:
+            FetchError: If unable to fetch or parse the releases
+        """
+        url = f"https://api.github.com/repos/{repo}/releases"
+
+        try:
+            response = self.network_client.get(url)
+            if response.returncode != 0:
+                # Check if it's a rate limit error (HTTP 403) or contains rate limit message
+                if "403" in response.stderr or "rate limit" in response.stderr.lower():
+                    raise NetworkError(
+                        "API rate limit exceeded. Please wait a few minutes before trying again."
+                    )
+                raise NetworkError(
+                    f"Failed to fetch releases for {repo}: {response.stderr}"
+                )
+        except Exception as e:
+            raise NetworkError(f"Failed to fetch releases for {repo}: {e}")
+
+        # Check for rate limiting in stdout as well
+        if "rate limit" in response.stdout.lower():
+            raise NetworkError(
+                "API rate limit exceeded. Please wait a few minutes before trying again."
+            )
+
+        try:
+            releases_data: List[Dict[str, Any]] = json.loads(response.stdout)
+        except json.JSONDecodeError as e:
+            raise NetworkError(f"Failed to parse JSON response: {e}")
+
+        # Extract tag_name from each release and limit to first 20
+        tag_names: List[str] = []
+        for release in releases_data:
+            if "tag_name" in release:
+                tag_names.append(release["tag_name"])
+
+        return tag_names[:20]
+
+
+class AssetDownloader:
+    """Manages asset downloads."""
+
+    def __init__(
+        self,
+        network_client: NetworkClientProtocol,
+        file_system_client: FileSystemClientProtocol,
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> None:
+        self.network_client = network_client
+        self.file_system_client = file_system_client
+        self.timeout = timeout
+
+    def curl_get(
+        self, url: str, headers: Optional[Headers] = None, stream: bool = False
+    ) -> ProcessResult:
+        """Make a GET request using curl."""
+        return self.network_client.get(url, headers, stream)
+
+    def curl_head(
+        self,
+        url: str,
+        headers: Optional[Headers] = None,
+        follow_redirects: bool = False,
+    ) -> ProcessResult:
+        """Make a HEAD request using curl."""
+        return self.network_client.head(url, headers, follow_redirects)
+
+    def curl_download(
+        self, url: str, output_path: Path, headers: Optional[Headers] = None
+    ) -> ProcessResult:
+        """Download a file using curl."""
+        return self.network_client.download(url, output_path, headers)
+
+    def download_with_spinner(
+        self, url: str, output_path: Path, headers: Optional[Headers] = None
+    ) -> None:
+        """Download a file with progress spinner using urllib."""
+
+        # Create a request with headers
+        req = urllib.request.Request(url, headers=headers or {})
+
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as response:
+                total_size = int(response.headers.get("Content-Length", 0))
+
+                with open(output_path, "wb") as f:
+                    chunk_size = 8192
+                    downloaded = 0
+
+                    # Create spinner with total size if available
+                    with (
+                        Spinner(
+                            desc=f"Downloading {output_path.name}",
+                            total=total_size,
+                            unit="B",
+                            unit_scale=True,
+                            disable=False,
+                            fps_limit=30.0,  # Limit to 15 FPS during download to prevent excessive terminal updates
+                            show_progress=True,
+                        ) as spinner
+                    ):
+                        while True:
+                            chunk = response.read(chunk_size)
+                            if not chunk:
+                                break
+
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            # Update spinner with the amount downloaded since last call
+                            spinner.update(len(chunk))
+
+        except Exception as e:
+            raise NetworkError(f"Failed to download {url}: {str(e)}")
 
     def download_asset(
-        self, repo: str, tag: str, asset_name: str, out_path: Path
+        self,
+        repo: str,
+        tag: str,
+        asset_name: str,
+        out_path: Path,
+        release_manager: ReleaseManager,
     ) -> Path:
         """Download a specific asset from a GitHub release with progress bar.
         If a local file with the same name and size already exists, skip download.
@@ -848,6 +970,7 @@ class GitHubReleaseFetcher:
             tag: Release tag
             asset_name: Asset filename to download
             out_path: Path where the asset will be saved
+            release_manager: ReleaseManager instance to get remote asset size
 
         Returns:
             Path to the downloaded file
@@ -863,7 +986,7 @@ class GitHubReleaseFetcher:
             local_size = (
                 out_path.stat().st_size
             )  # Note: .stat() is still a Path method; we can't fully abstract this
-            remote_size = self.get_remote_asset_size(repo, tag, asset_name)
+            remote_size = release_manager.get_remote_asset_size(repo, tag, asset_name)
 
             if local_size == remote_size:
                 logger.info(
@@ -886,23 +1009,37 @@ class GitHubReleaseFetcher:
 
         try:
             # Use the new spinner-based download method
-            self._download_with_spinner(url, out_path, headers)
+            self.download_with_spinner(url, out_path, headers)
         except Exception as e:
             # Fallback to original curl method for compatibility
             logger.warning(f"Spinner download failed: {e}, falling back to curl")
             try:
-                result = self._curl_download(url, out_path, headers)
+                result = self.curl_download(url, out_path, headers)
                 if result.returncode != 0:
                     if "404" in result.stderr or "not found" in result.stderr.lower():
-                        self._raise(f"Asset not found: {asset_name}")
-                    self._raise(f"Failed to download {asset_name}: {result.stderr}")
+                        raise NetworkError(f"Asset not found: {asset_name}")
+                    raise NetworkError(
+                        f"Failed to download {asset_name}: {result.stderr}"
+                    )
             except Exception as fallback_error:
-                self._raise(f"Failed to download {asset_name}: {fallback_error}")
+                raise NetworkError(f"Failed to download {asset_name}: {fallback_error}")
 
         logger.info(f"Downloaded asset to: {out_path}")
         return out_path
 
-    def _get_archive_info(self, archive_path: Path) -> tuple[int, int]:
+
+class ArchiveExtractor:
+    """Handles archive extraction."""
+
+    def __init__(
+        self,
+        file_system_client: FileSystemClientProtocol,
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> None:
+        self.file_system_client = file_system_client
+        self.timeout = timeout
+
+    def get_archive_info(self, archive_path: Path) -> Tuple[int, int]:
         """
         Get information about the archive without fully extracting it.
 
@@ -916,7 +1053,7 @@ class GitHubReleaseFetcher:
                 total_size = sum(m.size for m in members)
                 return total_files, total_size
         except Exception as e:
-            self._raise(f"Error reading archive: {e}")
+            raise ExtractionError(f"Error reading archive: {e}")
 
     def extract_archive(
         self,
@@ -938,26 +1075,19 @@ class GitHubReleaseFetcher:
             FetchError: If extraction fails
         """
         # Determine the archive format and dispatch to the appropriate method
-        if archive_path.name.endswith(".tar.gz"):
+        if archive_path.name.endswith((".tar.gz", ".tar.xz")):
             # First try with spinner-based extraction for progress indication
             # If it fails (e.g., invalid archive), fall back to system tar for compatibility
             try:
-                self._extract_with_tarfile(
+                self.extract_with_tarfile(
                     archive_path, target_dir, show_progress, show_file_details
                 )
-            except FetchError:
+            except ProtonFetcherError:
                 # If spinner-based extraction fails, fall back to system tar command
-                self.extract_gz_archive(archive_path, target_dir)
-        elif archive_path.name.endswith(".tar.xz"):
-            # First try with spinner-based extraction for progress indication
-            # If it fails (e.g., invalid archive), fall back to system tar for compatibility
-            try:
-                self._extract_with_tarfile(
-                    archive_path, target_dir, show_progress, show_file_details
-                )
-            except FetchError:
-                # If spinner-based extraction fails, fall back to system tar command
-                self.extract_xz_archive(archive_path, target_dir)
+                if archive_path.name.endswith(".tar.gz"):
+                    self.extract_gz_archive(archive_path, target_dir)
+                elif archive_path.name.endswith(".tar.xz"):
+                    self.extract_xz_archive(archive_path, target_dir)
         else:
             # For other formats, use a subprocess approach with tar command
             # This handles cases like the test.zip file in the failing test
@@ -982,28 +1112,28 @@ class GitHubReleaseFetcher:
             if result.returncode != 0:
                 # If tar command fails, try with tarfile as a fallback for the actual tar operations
                 # but handle the case where the file might not be a tar archive
-                if not self._is_tar_file(archive_path):
+                if not self.is_tar_file(archive_path):
                     # For non-tar files, we'd need a different extraction approach
                     # Since the test expects the subprocess to work, let's handle it the way the test expects
                     # For the test case with zip files, we'll need to adapt
-                    self._raise(
+                    raise ExtractionError(
                         f"Failed to extract archive {archive_path}: {result.stderr}"
                     )
                 else:
                     # Use tarfile as fallback for tar files
-                    self._extract_with_tarfile(
+                    self.extract_with_tarfile(
                         archive_path, target_dir, show_progress, show_file_details
                     )
 
-    def _is_tar_file(self, archive_path: Path) -> bool:
+    def is_tar_file(self, archive_path: Path) -> bool:
         """Check if the file is a tar file."""
         try:
             with tarfile.open(archive_path, "r:*") as _:
                 return True
-        except tarfile.ReadError:
+        except (tarfile.ReadError, FileNotFoundError):
             return False
 
-    def _extract_with_tarfile(
+    def extract_with_tarfile(
         self,
         archive_path: Path,
         target_dir: Path,
@@ -1015,13 +1145,13 @@ class GitHubReleaseFetcher:
 
         # Get archive info
         try:
-            total_files, total_size = self._get_archive_info(archive_path)
+            total_files, total_size = self.get_archive_info(archive_path)
             logger.info(
                 f"Archive contains {total_files} files, total size: {format_bytes(total_size)}"
             )
         except Exception as e:
             logger.error(f"Error reading archive: {e}")
-            self._raise(f"Failed to read archive {archive_path}: {e}")
+            raise ExtractionError(f"Failed to read archive {archive_path}: {e}")
 
         # Initialize spinner
         spinner = Spinner(
@@ -1068,7 +1198,7 @@ class GitHubReleaseFetcher:
             logger.info(f"Extracted {archive_path} to {target_dir}")
         except Exception as e:
             logger.error(f"Error extracting archive: {e}")
-            self._raise(f"Failed to extract archive {archive_path}: {e}")
+            raise ExtractionError(f"Failed to extract archive {archive_path}: {e}")
 
     def extract_gz_archive(self, archive_path: Path, target_dir: Path) -> None:
         """Extract .tar.gz archive using system tar command with checkpoint features.
@@ -1098,7 +1228,7 @@ class GitHubReleaseFetcher:
         )
 
         if result.returncode != 0:
-            self._raise(result.stderr)
+            raise ExtractionError(result.stderr)
 
     def extract_xz_archive(self, archive_path: Path, target_dir: Path) -> None:
         """Extract .tar.xz archive using system tar command with checkpoint features.
@@ -1128,96 +1258,23 @@ class GitHubReleaseFetcher:
         )
 
         if result.returncode != 0:
-            self._raise(result.stderr)
+            raise ExtractionError(result.stderr)
 
-    def _ensure_directory_is_writable(self, directory: Path) -> None:
-        """
-        Ensure that the directory exists and is writable.
 
-        Args:
-            directory: Path to the directory to check
+class LinkManager:
+    """Manages symbolic links for Proton installations."""
 
-        Raises:
-            FetchError: If the directory doesn't exist, isn't a directory, or isn't writable
-        """
-        try:
-            if not self.file_system_client.exists(directory):
-                try:
-                    self.file_system_client.mkdir(
-                        directory, parents=True, exist_ok=True
-                    )
-                except OSError as e:
-                    self._raise(f"Failed to create directory {directory}: {e}")
+    def __init__(
+        self,
+        file_system_client: FileSystemClientProtocol,
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> None:
+        self.file_system_client = file_system_client
+        self.timeout = timeout
 
-            if not self.file_system_client.is_dir(directory):
-                self._raise(f"{directory} exists but is not a directory")
-
-            # Test if directory is writable by trying to create a temporary file
-            test_file = directory / ".write_test"
-            try:
-                self.file_system_client.write(test_file, b"")  # Create empty file
-                self.file_system_client.unlink(test_file)  # Remove the test file
-            except (OSError, AttributeError) as e:
-                self._raise(f"Directory {directory} is not writable: {e}")
-        except PermissionError as e:
-            # Handle the case where Path operations raise PermissionError (like mocked exists)
-            self._raise(f"Failed to create {directory}: {str(e)}")
-        except Exception as e:
-            # Handle the case where directory is mocked and operations raise exceptions
-            self._raise(f"Failed to create {directory}: {str(e)}")
-
-    def list_recent_releases(self, repo: str) -> list[str]:
-        """Fetch and return a list of recent release tags from the GitHub API.
-
-        Args:
-            repo: Repository in format 'owner/repo'
-
-        Returns:
-            List of the 20 most recent tag names
-
-        Raises:
-            FetchError: If unable to fetch or parse the releases
-        """
-        url = f"https://api.github.com/repos/{repo}/releases"
-
-        try:
-            response = self._curl_get(url)
-            if response.returncode != 0:
-                # Check if it's a rate limit error (HTTP 403) or contains rate limit message
-                if "403" in response.stderr or "rate limit" in response.stderr.lower():
-                    self._raise(
-                        "API rate limit exceeded. Please wait a few minutes before trying again."
-                    )
-                self._raise(f"Failed to fetch releases for {repo}: {response.stderr}")
-        except Exception as e:
-            self._raise(f"Failed to fetch releases for {repo}: {e}")
-
-        # Check for rate limiting in stdout as well
-        if "rate limit" in response.stdout.lower():
-            self._raise(
-                "API rate limit exceeded. Please wait a few minutes before trying again."
-            )
-
-        try:
-            releases_data = json.loads(response.stdout)
-        except json.JSONDecodeError as e:
-            self._raise(f"Failed to parse JSON response: {e}")
-
-        # Extract tag_name from each release and limit to first 20
-        tag_names: list[str] = []
-        for release in releases_data:
-            if "tag_name" in release:
-                tag_names.append(release["tag_name"])
-
-        return tag_names[:20]
-
-    def _raise(self, message: str) -> NoReturn:
-        """Raise a FetchError with the given message."""
-        raise FetchError(message)
-
-    def _get_link_names_for_fork(
-        self, extract_dir: Path, fork: str
-    ) -> tuple[Path, Path, Path]:
+    def get_link_names_for_fork(
+        self, extract_dir: Path, fork: ForkName
+    ) -> Tuple[Path, Path, Path]:
         """Get the symlink names for a specific fork."""
         if fork == "Proton-EM":
             main, fb1, fb2 = (
@@ -1233,8 +1290,8 @@ class GitHubReleaseFetcher:
             )
         return main, fb1, fb2
 
-    def _find_tag_directory(
-        self, extract_dir: Path, tag: str, fork: str, is_manual_release: bool
+    def find_tag_directory(
+        self, extract_dir: Path, tag: str, fork: ForkName, is_manual_release: bool
     ) -> Optional[Path]:
         """Find the tag directory for manual releases."""
         if not is_manual_release:
@@ -1265,11 +1322,11 @@ class GitHubReleaseFetcher:
 
         return None
 
-    def _find_version_candidates(
-        self, extract_dir: Path, fork: str
-    ) -> list[tuple[tuple[str, int, int, int], Path]]:
+    def find_version_candidates(
+        self, extract_dir: Path, fork: ForkName
+    ) -> List[Tuple[VersionTuple, Path]]:
         """Find all directories that look like Proton builds and parse their versions."""
-        candidates: list[tuple[tuple[str, int, int, int], Path]] = []
+        candidates: List[Tuple[VersionTuple, Path]] = []
         for entry in extract_dir.iterdir():
             if self.file_system_client.is_dir(entry) and not entry.is_symlink():
                 # For Proton-EM, strip the proton- prefix before parsing
@@ -1314,16 +1371,16 @@ class GitHubReleaseFetcher:
                     candidates.append((parse_version(tag_name, fork), entry))
         return candidates
 
-    def _create_symlinks(
+    def create_symlinks(
         self,
         main: Path,
         fb1: Path,
         fb2: Path,
-        top_3: list[tuple[tuple[str, int, int, int], Path]],
+        top_3: List[Tuple[VersionTuple, Path]],
     ) -> None:
         """Create symlinks pointing to the top 3 versions."""
         # Build the wants dictionary
-        wants: dict[Path, Path] = {}
+        wants: Dict[Path, Path] = {}
         if len(top_3) > 0:
             wants[main] = top_3[0][1]  # Main always gets the newest
 
@@ -1392,8 +1449,8 @@ class GitHubReleaseFetcher:
                 continue  # Continue to the next link instead of failing the entire function
 
     def list_links(
-        self, extract_dir: Path, fork: str = "GE-Proton"
-    ) -> dict[str, Optional[str]]:
+        self, extract_dir: Path, fork: ForkName = "GE-Proton"
+    ) -> Dict[str, Optional[str]]:
         """
         List recognized symbolic links and their associated Proton fork folders.
 
@@ -1405,9 +1462,9 @@ class GitHubReleaseFetcher:
             Dictionary mapping link names to their target paths (or None if link doesn't exist)
         """
         # Get symlink names for the fork
-        main, fb1, fb2 = self._get_link_names_for_fork(extract_dir, fork)
+        main, fb1, fb2 = self.get_link_names_for_fork(extract_dir, fork)
 
-        links_info: dict[str, Optional[str]] = {}
+        links_info: Dict[str, Optional[str]] = {}
 
         # Check each link and get its target
         for link_name in [main, fb1, fb2]:
@@ -1424,7 +1481,7 @@ class GitHubReleaseFetcher:
         return links_info
 
     def remove_release(
-        self, extract_dir: Path, tag: str, fork: str = "GE-Proton"
+        self, extract_dir: Path, tag: str, fork: ForkName = "GE-Proton"
     ) -> bool:
         """
         Remove a specific Proton fork release folder and its associated symbolic links.
@@ -1450,13 +1507,15 @@ class GitHubReleaseFetcher:
 
         # Check if the release directory exists
         if not self.file_system_client.exists(release_path):
-            self._raise(f"Release directory does not exist: {release_path}")
+            raise LinkManagementError(
+                f"Release directory does not exist: {release_path}"
+            )
 
         # Get symlink names for the fork to check if they point to this release
-        main, fb1, fb2 = self._get_link_names_for_fork(extract_dir, fork)
+        main, fb1, fb2 = self.get_link_names_for_fork(extract_dir, fork)
 
         # Identify links that point to this release directory
-        links_to_remove: list[Path] = []
+        links_to_remove: List[Path] = []
         for link in [main, fb1, fb2]:
             if self.file_system_client.exists(link) and link.is_symlink():
                 try:
@@ -1472,7 +1531,9 @@ class GitHubReleaseFetcher:
             self.file_system_client.rmtree(release_path)
             logger.info(f"Removed release directory: {release_path}")
         except Exception as e:
-            self._raise(f"Failed to remove release directory {release_path}: {e}")
+            raise LinkManagementError(
+                f"Failed to remove release directory {release_path}: {e}"
+            )
 
         # Remove the associated symbolic links that point to this release
         for link in links_to_remove:
@@ -1483,15 +1544,15 @@ class GitHubReleaseFetcher:
                 logger.error(f"Failed to remove symbolic link {link}: {e}")
 
         # Regenerate the link management system to ensure consistency
-        self._manage_proton_links(extract_dir, tag, fork)
+        self.manage_proton_links(extract_dir, tag, fork)
 
         return True
 
-    def _manage_proton_links(
+    def manage_proton_links(
         self,
         extract_dir: Path,
         tag: str,
-        fork: str = "GE-Proton",
+        fork: ForkName = "GE-Proton",
         is_manual_release: bool = False,
     ) -> None:
         """
@@ -1499,10 +1560,10 @@ class GitHubReleaseFetcher:
         versions, regardless of the order in which they were downloaded.
         """
         # Get symlink names for the fork
-        main, fb1, fb2 = self._get_link_names_for_fork(extract_dir, fork)
+        main, fb1, fb2 = self.get_link_names_for_fork(extract_dir, fork)
 
         # For manual releases, first check if the target directory exists
-        tag_dir = self._find_tag_directory(extract_dir, tag, fork, is_manual_release)
+        tag_dir = self.find_tag_directory(extract_dir, tag, fork, is_manual_release)
 
         # If it's a manual release and no directory is found, log warning and return
         if is_manual_release and tag_dir is None:
@@ -1517,7 +1578,7 @@ class GitHubReleaseFetcher:
             return
 
         # Find all version candidates
-        candidates = self._find_version_candidates(extract_dir, fork)
+        candidates = self.find_version_candidates(extract_dir, fork)
 
         if not candidates:  # nothing to do
             logger.warning("No extracted Proton directories found – not touching links")
@@ -1525,14 +1586,14 @@ class GitHubReleaseFetcher:
 
         # Remove duplicate versions, preferring directories with standard naming over prefixed naming
         # Group candidates by parsed version
-        version_groups: dict[tuple[str, int, int, int], list[Path]] = {}
+        version_groups: Dict[VersionTuple, List[Path]] = {}
         for parsed_version, directory_path in candidates:
             if parsed_version not in version_groups:
                 version_groups[parsed_version] = []
             version_groups[parsed_version].append(directory_path)
 
         # For each group of directories with the same version, prefer the canonical name
-        unique_candidates: list[tuple[tuple[str, int, int, int], Path]] = []
+        unique_candidates: List[Tuple[VersionTuple, Path]] = []
         for parsed_version, directories in version_groups.items():
             # Prefer directories without "proton-" prefix for Proton-EM, or standard names in general
             # Sort by directory name to have a consistent preference - shorter/simpler names first
@@ -1557,7 +1618,7 @@ class GitHubReleaseFetcher:
             tag_version = parse_version(tag, fork)
 
             # Check if this version is already in candidates to avoid duplicates
-            existing_versions: set[tuple[str, int, int, int]] = {
+            existing_versions: Set[VersionTuple] = {
                 candidate[0] for candidate in candidates
             }
             if tag_version not in existing_versions:
@@ -1567,14 +1628,92 @@ class GitHubReleaseFetcher:
             candidates.sort(key=lambda t: t[0], reverse=True)
 
             # Take top 3
-            top_3: list[tuple[tuple[str, int, int, int], Path]] = candidates[:3]
+            top_3: List[Tuple[VersionTuple, Path]] = candidates[:3]
         else:
             # sort descending by version (newest first)
             candidates.sort(key=lambda t: t[0], reverse=True)
-            top_3: list[tuple[tuple[str, int, int, int], Path]] = candidates[:3]
+            top_3: List[Tuple[VersionTuple, Path]] = candidates[:3]
 
         # Create the symlinks
-        self._create_symlinks(main, fb1, fb2, top_3)
+        self.create_symlinks(main, fb1, fb2, top_3)
+
+
+class GitHubReleaseFetcher:
+    """Handles fetching and extracting GitHub release assets."""
+
+    def __init__(
+        self,
+        timeout: int = DEFAULT_TIMEOUT,
+        network_client: Optional[NetworkClientProtocol] = None,
+        file_system_client: Optional[FileSystemClientProtocol] = None,
+    ) -> None:
+        self.timeout = timeout
+        self.network_client = network_client or NetworkClient(timeout=timeout)
+        self.file_system_client = file_system_client or FileSystemClient()
+
+        # Initialize the smaller, focused classes
+        self.release_manager = ReleaseManager(
+            self.network_client, self.file_system_client, timeout
+        )
+        self.asset_downloader = AssetDownloader(
+            self.network_client, self.file_system_client, timeout
+        )
+        self.archive_extractor = ArchiveExtractor(self.file_system_client, timeout)
+        self.link_manager = LinkManager(self.file_system_client, timeout)
+
+    def _ensure_directory_is_writable(self, directory: Path) -> None:
+        """
+        Ensure that the directory exists and is writable.
+
+        Args:
+            directory: Path to the directory to check
+
+        Raises:
+            FetchError: If the directory doesn't exist, isn't a directory, or isn't writable
+        """
+        try:
+            if not self.file_system_client.exists(directory):
+                try:
+                    self.file_system_client.mkdir(
+                        directory, parents=True, exist_ok=True
+                    )
+                except OSError as e:
+                    raise ProtonFetcherError(
+                        f"Failed to create directory {directory}: {e}"
+                    )
+
+            if not self.file_system_client.is_dir(directory):
+                raise LinkManagementError(f"{directory} exists but is not a directory")
+
+            # Test if directory is writable by trying to create a temporary file
+            test_file = directory / ".write_test"
+            try:
+                self.file_system_client.write(test_file, b"")  # Create empty file
+                self.file_system_client.unlink(test_file)  # Remove the test file
+            except (OSError, AttributeError) as e:
+                raise LinkManagementError(f"Directory {directory} is not writable: {e}")
+        except PermissionError as e:
+            # Handle the case where Path operations raise PermissionError (like mocked exists)
+            raise ProtonFetcherError(f"Failed to create {directory}: {str(e)}")
+        except Exception as e:
+            # Handle the case where directory is mocked and operations raise exceptions
+            raise ProtonFetcherError(f"Failed to create {directory}: {str(e)}")
+
+    def list_recent_releases(self, repo: str) -> List[str]:
+        """Fetch and return a list of recent release tags from the GitHub API."""
+        return self.release_manager.list_recent_releases(repo)
+
+    def list_links(
+        self, extract_dir: Path, fork: ForkName = "GE-Proton"
+    ) -> Dict[str, Optional[str]]:
+        """List recognized symbolic links and their associated Proton fork folders."""
+        return self.link_manager.list_links(extract_dir, fork)
+
+    def remove_release(
+        self, extract_dir: Path, tag: str, fork: ForkName = "GE-Proton"
+    ) -> bool:
+        """Remove a specific Proton fork release folder and its associated symbolic links."""
+        return self.link_manager.remove_release(extract_dir, tag, fork)
 
     def fetch_and_extract(
         self,
@@ -1582,7 +1721,7 @@ class GitHubReleaseFetcher:
         output_dir: Path,
         extract_dir: Path,
         release_tag: Optional[str] = None,
-        fork: str = "GE-Proton",
+        fork: ForkName = "GE-Proton",
         show_progress: bool = True,
         show_file_details: bool = True,
     ) -> Path:
@@ -1605,7 +1744,7 @@ class GitHubReleaseFetcher:
         """
         # Validate that curl is available
         if shutil.which("curl") is None:
-            self._raise("curl is not available")
+            raise NetworkError("curl is not available")
 
         # Validate directories are writable
         self._ensure_directory_is_writable(output_dir)
@@ -1615,9 +1754,9 @@ class GitHubReleaseFetcher:
         is_manual_release = release_tag is not None
 
         if release_tag is None:
-            release_tag = self.fetch_latest_tag(repo)
+            release_tag = self.release_manager.fetch_latest_tag(repo)
 
-        asset_name = self.find_asset_by_name(repo, release_tag, fork)
+        asset_name = self.release_manager.find_asset_by_name(repo, release_tag, fork)
 
         # Check if unpacked directory already exists
         unpacked = extract_dir / release_tag
@@ -1626,7 +1765,7 @@ class GitHubReleaseFetcher:
                 f"Unpacked directory already exists: {unpacked}, skipping download and extraction"
             )
             # Still manage links for consistency
-            self._manage_proton_links(
+            self.link_manager.manage_proton_links(
                 extract_dir, release_tag, fork, is_manual_release=is_manual_release
             )
             return extract_dir
@@ -1641,7 +1780,7 @@ class GitHubReleaseFetcher:
                 f"Unpacked directory exists after download: {unpacked}, skipping extraction"
             )
             # Still manage links for consistency
-            self._manage_proton_links(
+            self.link_manager.manage_proton_links(
                 extract_dir, release_tag, fork, is_manual_release=is_manual_release
             )
             return extract_dir
@@ -1657,14 +1796,152 @@ class GitHubReleaseFetcher:
             logger.info(f"Unpacked directory exists after extraction: {unpacked}")
         # Note: We don't create an empty directory if it doesn't exist
         # The extracted archive may have a different directory structure
-        # The _manage_proton_links will find all available directories
+        # The manage_proton_links will find all available directories
 
         # Manage symbolic links
-        self._manage_proton_links(
+        self.link_manager.manage_proton_links(
             extract_dir, release_tag, fork, is_manual_release=is_manual_release
         )
 
         return extract_dir
+
+    def fetch_latest_tag(self, repo: str) -> str:
+        """Get the latest release tag by following the redirect from /releases/latest."""
+        return self.release_manager.fetch_latest_tag(repo)
+
+    def find_asset_by_name(
+        self, repo: str, tag: str, fork: ForkName = "GE-Proton"
+    ) -> str:
+        """Find the Proton asset in a GitHub release using the GitHub API first."""
+        return self.release_manager.find_asset_by_name(repo, tag, fork)
+
+    def get_remote_asset_size(self, repo: str, tag: str, asset_name: str) -> int:
+        """Get the size of a remote asset using HEAD request."""
+        return self.release_manager.get_remote_asset_size(repo, tag, asset_name)
+
+    def download_asset(
+        self, repo: str, tag: str, asset_name: str, out_path: Path
+    ) -> Path:
+        """Download a specific asset from a GitHub release with progress bar."""
+        return self.asset_downloader.download_asset(
+            repo, tag, asset_name, out_path, self.release_manager
+        )
+
+    def extract_archive(
+        self,
+        archive_path: Path,
+        target_dir: Path,
+        show_progress: bool = True,
+        show_file_details: bool = True,
+    ) -> None:
+        """Extract archive to the target directory with progress bar."""
+        return self.archive_extractor.extract_archive(
+            archive_path, target_dir, show_progress, show_file_details
+        )
+
+    def get_link_names_for_fork(
+        self, extract_dir: Path, fork: ForkName
+    ) -> Tuple[Path, Path, Path]:
+        """Get the symlink names for a specific fork."""
+        return self.link_manager.get_link_names_for_fork(extract_dir, fork)
+
+    def _get_link_names_for_fork(
+        self, extract_dir: Path, fork: ForkName
+    ) -> Tuple[Path, Path, Path]:
+        """Get the symlink names for a specific fork."""
+        return self.link_manager.get_link_names_for_fork(extract_dir, fork)
+
+    def find_tag_directory(
+        self, extract_dir: Path, tag: str, fork: ForkName, is_manual_release: bool
+    ) -> Optional[Path]:
+        """Find the tag directory for manual releases."""
+        return self.link_manager.find_tag_directory(
+            extract_dir, tag, fork, is_manual_release
+        )
+
+    def _find_tag_directory(
+        self, extract_dir: Path, tag: str, fork: ForkName, is_manual_release: bool
+    ) -> Optional[Path]:
+        """Find the tag directory for manual releases."""
+        return self.link_manager.find_tag_directory(
+            extract_dir, tag, fork, is_manual_release
+        )
+
+    def find_version_candidates(
+        self, extract_dir: Path, fork: ForkName
+    ) -> List[Tuple[VersionTuple, Path]]:
+        """Find all directories that look like Proton builds and parse their versions."""
+        return self.link_manager.find_version_candidates(extract_dir, fork)
+
+    def _find_version_candidates(
+        self, extract_dir: Path, fork: ForkName
+    ) -> List[Tuple[VersionTuple, Path]]:
+        """Find all directories that look like Proton builds and parse their versions."""
+        return self.link_manager.find_version_candidates(extract_dir, fork)
+
+    def create_symlinks(
+        self,
+        main: Path,
+        fb1: Path,
+        fb2: Path,
+        top_3: List[Tuple[VersionTuple, Path]],
+    ) -> None:
+        """Create symlinks pointing to the top 3 versions."""
+        return self.link_manager.create_symlinks(main, fb1, fb2, top_3)
+
+    def _create_symlinks(
+        self,
+        main: Path,
+        fb1: Path,
+        fb2: Path,
+        top_3: List[Tuple[VersionTuple, Path]],
+    ) -> None:
+        """Internal method to create symlinks (private wrapper around link_manager)."""
+        return self.link_manager.create_symlinks(main, fb1, fb2, top_3)
+
+    def manage_proton_links(
+        self,
+        extract_dir: Path,
+        tag: str,
+        fork: ForkName = "GE-Proton",
+        is_manual_release: bool = False,
+    ) -> None:
+        """Ensure the three symlinks always point to the three *newest* extracted versions."""
+        return self.link_manager.manage_proton_links(
+            extract_dir, tag, fork, is_manual_release
+        )
+
+    def _manage_proton_links(
+        self,
+        extract_dir: Path,
+        tag: str,
+        fork: ForkName = "GE-Proton",
+        is_manual_release: bool = False,
+    ) -> None:
+        """Internal method to manage proton links (private wrapper around link_manager)."""
+        return self.link_manager.manage_proton_links(
+            extract_dir, tag, fork, is_manual_release
+        )
+
+    def extract_gz_archive(self, archive_path: Path, target_dir: Path) -> None:
+        """Extract .tar.gz archive using system tar command."""
+        return self.archive_extractor.extract_gz_archive(archive_path, target_dir)
+
+    def _get_archive_info(self, archive_path: Path) -> Tuple[int, int]:
+        """Get information about the archive without fully extracting it."""
+        return self.archive_extractor.get_archive_info(archive_path)
+
+    def _extract_with_tarfile(
+        self,
+        archive_path: Path,
+        target_dir: Path,
+        show_progress: bool = True,
+        show_file_details: bool = True,
+    ) -> None:
+        """Extract archive using tarfile library."""
+        return self.archive_extractor.extract_with_tarfile(
+            archive_path, target_dir, show_progress, show_file_details
+        )
 
 
 def main() -> None:
@@ -1774,9 +2051,12 @@ def main() -> None:
             if not hasattr(args, "fork") or args.fork is None:
                 forks_to_check = list(FORKS.keys())
             else:
-                forks_to_check = [args.fork]
+                # Validate and narrow the type
+                assert args.fork in FORKS, f"Invalid fork: {args.fork}"
+                forks_to_check: List[ForkName] = [args.fork]
 
             for fork in forks_to_check:
+                # fork is now properly typed as ForkName
                 links_info = fetcher.list_links(extract_dir, fork)
                 print(f"Links for {fork}:")
                 for link_name, target_path in links_info.items():
@@ -1794,7 +2074,9 @@ def main() -> None:
 
         # Get the repo based on selected fork
         if hasattr(args, "fork") and args.fork is not None:
-            target_fork = args.fork
+            # Validate and narrow the type
+            assert args.fork in FORKS, f"Invalid fork: {args.fork}"
+            target_fork: ForkName = args.fork
         else:
             target_fork = DEFAULT_FORK
         repo = FORKS[target_fork]["repo"]
@@ -1836,7 +2118,7 @@ def main() -> None:
             fork=actual_fork,
         )
         print("Success")
-    except FetchError as e:
+    except ProtonFetcherError as e:
         print(f"Error: {e}")
         raise SystemExit(1) from e
 
