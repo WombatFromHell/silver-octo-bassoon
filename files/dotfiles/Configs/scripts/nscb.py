@@ -129,6 +129,18 @@ class EnvironmentHelper:
 
         return False
 
+    @staticmethod
+    def should_disable_ld_preload_wrap() -> bool:
+        """Check if LD_PRELOAD wrapping should be disabled."""
+        disable_var = os.environ.get("NSCB_DISABLE_LD_PRELOAD_WRAP", "").lower()
+        if disable_var in ("1", "true", "yes", "on"):
+            return True
+        
+        # Automatically disable LD_PRELOAD wrapping when launched with faugus-launcher
+        # by checking for the FAUGUS_LOG environment variable
+        faugus_log = os.environ.get("FAUGUS_LOG")
+        return faugus_log is not None
+
 
 class ProfileManager:
     """Manages profile parsing and merging functionality."""
@@ -412,27 +424,85 @@ class CommandExecutor:
         args: ArgsList, pre_cmd: str, post_cmd: str
     ) -> str:
         """Build command when gamescope is not active."""
-        app_args = ["gamescope"] + args
-        return CommandExecutor.build_command(
-            [pre_cmd, CommandExecutor._build_app_command(app_args), post_cmd]
-        )
+        # Check if LD_PRELOAD wrapping should be disabled
+        disable_ld_preload_wrap = EnvironmentHelper.should_disable_ld_preload_wrap()
+        # Check if LD_PRELOAD is set in the environment
+        has_ld_preload = "LD_PRELOAD" in os.environ and not disable_ld_preload_wrap
+
+        # Process the args to handle the -- separator properly
+        try:
+            dash_index = args.index("--")
+            gamescope_args = args[:dash_index]
+            app_args = args[dash_index + 1 :]
+
+            # Build gamescope command - only use env -u LD_PRELOAD if LD_PRELOAD is set and not disabled
+            if has_ld_preload:
+                gamescope_cmd = CommandExecutor._build_app_command(
+                    ["env", "-u", "LD_PRELOAD", "gamescope"] + gamescope_args
+                )
+            else:
+                gamescope_cmd = CommandExecutor._build_app_command(
+                    ["gamescope"] + gamescope_args
+                )
+
+            # Build app command - only wrap with LD_PRELOAD if it was originally set and not disabled
+            if has_ld_preload:
+                ld_preload_value = os.environ.get("LD_PRELOAD", "")
+                # Wrap app in env LD_PRELOAD="..." to preserve the original LD_PRELOAD
+                app_cmd_parts = [
+                    "env",
+                    f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
+                ] + app_args
+                final_app_cmd = CommandExecutor._build_app_command(app_cmd_parts)
+            else:
+                final_app_cmd = CommandExecutor._build_app_command(app_args)
+
+            # Combine with the -- separator
+            full_cmd = f"{gamescope_cmd} -- {final_app_cmd}"
+        except ValueError:
+            # If no -- separator found, just run gamescope appropriately
+            if has_ld_preload:
+                gamescope_cmd = CommandExecutor._build_app_command(
+                    ["env", "-u", "LD_PRELOAD", "gamescope"] + args
+                )
+            else:
+                gamescope_cmd = CommandExecutor._build_app_command(["gamescope"] + args)
+            full_cmd = gamescope_cmd
+
+        return CommandExecutor.build_command([pre_cmd, full_cmd, post_cmd])
 
     @staticmethod
     def _build_active_gamescope_command(
         args: ArgsList, pre_cmd: str, post_cmd: str
     ) -> str:
         """Build command when gamescope is already active."""
+        # Check if LD_PRELOAD wrapping should be disabled
+        disable_ld_preload_wrap = EnvironmentHelper.should_disable_ld_preload_wrap()
+        # Check if LD_PRELOAD is set in the environment
+        has_ld_preload = "LD_PRELOAD" in os.environ and not disable_ld_preload_wrap
+
         try:
             dash_index = args.index("--")
             app_args = args[dash_index + 1 :]
 
+            # Build app command, preserving LD_PRELOAD for the application if it exists and not disabled
+            if has_ld_preload:
+                # Use shlex.quote to properly handle the LD_PRELOAD value
+                ld_preload_value = os.environ.get("LD_PRELOAD", "")
+                # Wrap app in env LD_PRELOAD="..." to preserve the original LD_PRELOAD
+                app_cmd_parts = [
+                    "env",
+                    f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
+                ] + app_args
+                final_app_cmd = CommandExecutor._build_app_command(app_cmd_parts)
+            else:
+                final_app_cmd = CommandExecutor._build_app_command(app_args)
+
             # If pre_cmd and post_cmd are both empty, just execute the app args directly
             if not pre_cmd and not post_cmd:
-                return CommandExecutor._build_app_command(app_args)
+                return final_app_cmd
             else:
-                return CommandExecutor.build_command(
-                    [pre_cmd, CommandExecutor._build_app_command(app_args), post_cmd]
-                )
+                return CommandExecutor.build_command([pre_cmd, final_app_cmd, post_cmd])
         except ValueError:
             # If no -- separator found but we have pre/post commands, use those
             if not pre_cmd and not post_cmd:
