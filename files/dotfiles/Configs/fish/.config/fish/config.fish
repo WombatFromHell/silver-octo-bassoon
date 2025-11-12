@@ -135,24 +135,49 @@ function nh_clean
     eval $cmd
 end
 
-# Helper function to check compressor and get command
+# Helper: Validate compressor and return full command with flags for best perf/compression
 function _tarchk
     set -l comp (test -n "$argv[1]"; and echo $argv[1]; or echo pigz)
-    command -q $comp; or begin
-        echo "Error: '$comp' not found!"
-        return 1
+
+    switch $comp
+        case pigz
+            command -q pigz; or return 1
+            set -g _tarchk_result pigz -9 --processes 0
+        case zstd
+            command -q zstd; or return 1
+            set -g _tarchk_result zstd -15 --long=28 --threads=0
+        case '*'
+            echo "Error: unsupported compressor '$comp'" >&2
+            return 1
     end
-    echo $comp
 end
+
+function _use_pv
+    if command -q pv
+        # Calculate total size of all paths passed as arguments
+        set size (du -sb $argv 2>/dev/null | awk '{s+=$1} END{print s+0}')
+
+        if test $size -gt 0
+            pv -s $size -w 80 -B 1M
+        else
+            cat
+        end
+    else
+        cat # pass-through if pv not installed
+    end
+end
+
 function tarc
-    test (count $argv) -lt 3; and begin
+    if test (count $argv) -lt 3
         echo "Usage: tarc COMPRESSOR [TAR_OPTIONS...] OUTPUT_FILE PATHS..." >&2
         return 1
     end
 
-    set comp $argv[1]
+    _tarchk $argv[1]; or return 1
+    set comp_cmd $_tarchk_result
     set argv $argv[2..-1]
 
+    # Find first non-option argument → output file
     set outfile_idx 0
     for i in (seq (count $argv))
         if not string match -q -- '-*' $argv[$i]
@@ -162,59 +187,76 @@ function tarc
         end
     end
 
-    test $outfile_idx -eq 0; and begin
+    if test $outfile_idx -eq 0
         echo "Error: No output file specified" >&2
         return 1
     end
 
+    # Extract tar options (only if they exist before outfile)
     set opts
     if test $outfile_idx -gt 1
         set opts $argv[1..(math $outfile_idx - 1)]
     end
-    set pathargs $argv[(math $outfile_idx + 1)..-1]
 
-    test (count $pathargs) -eq 0; and begin
-        echo "Error: No paths specified" >&2
+    # Paths to archive (after outfile)
+    set paths $argv[(math $outfile_idx + 1)..-1]
+    if test (count $paths) -eq 0
+        echo "Error: No paths to archive" >&2
         return 1
     end
 
-    mkdir -p (dirname $outfile)
+    mkdir -p (dirname -- $outfile)
+    tar $opts -cf - $paths | _use_pv $paths | $comp_cmd >$outfile
+end
 
-    switch $comp
+# Decompress: tarx COMPRESSOR ARCHIVE [TAR_EXTRA_ARGS...]
+function tarx
+    if test (count $argv) -lt 2
+        echo "Usage: tarx COMPRESSOR ARCHIVE [TAR_ARGS...]" >&2
+        return 1
+    end
+
+    set comp_cmd (_tarchk $argv[1]); or return 1
+    set archive $argv[2]
+    set tar_args $argv[3..-1]
+
+    # Extract base compressor name for switch
+    set comp_name (string split ' ' $comp_cmd)[1]
+    set comp_name (basename $comp_name)
+
+    # Decompress → pv → tar
+    switch $comp_name
+        case pigz gzip
+            pigz -dc $archive | pv | tar -xvf - $tar_args
         case zstd
-            tar $opts -cvf - $pathargs | zstd -19 -T0 >$outfile
-        case pigz
-            tar $opts -cvf - $pathargs | pigz -9 >$outfile
+            zstd -dc $archive | pv | tar -xvf - $tar_args
         case '*'
-            echo "Unknown compressor: $comp" >&2
+            echo "Internal error: unknown compressor '$comp_name'" >&2
             return 1
     end
 end
 
-function tarx
-    set -l comp (_tarchk $argv[1])
-    or return 1
-
-    set -l archive $argv[2]
-    set -l tar_args $argv[3..-1]
-
-    if string match -q "*zstd*" "$comp"
-        zstd -dc "$archive" | tar -xvf - $tar_args
-    else if string match -q "*pigz*" "$comp"
-        pigz -dc "$archive" | tar -xvf - $tar_args
-    else
-        echo "Error: '$comp' not supported!"
+# List contents: tarv COMPRESSOR ARCHIVE
+function tarv
+    if test (count $argv) -ne 2
+        echo "Usage: tarv COMPRESSOR ARCHIVE" >&2
         return 1
     end
-end
 
-function tarv
-    set -l comp (_tarchk $argv[1])
-    or return 1
-    if string match -q "*zstd*" $comp
-        zstd -dc $argv[2] | tar -tvf -
-    else
-        pigz -dc $argv[2] | tar -tvf -
+    set comp_cmd (_tarchk $argv[1]); or return 1
+    set archive $argv[2]
+
+    set comp_name (string split ' ' $comp_cmd)[1]
+    set comp_name (basename $comp_name)
+
+    switch $comp_name
+        case pigz gzip
+            pigz -dc $archive | tar -tvf -
+        case zstd
+            zstd -dc $archive | tar -tvf -
+        case '*'
+            echo "Error: unsupported compressor '$comp_name'" >&2
+            return 1
     end
 end
 alias tarzc='tarc pigz'
