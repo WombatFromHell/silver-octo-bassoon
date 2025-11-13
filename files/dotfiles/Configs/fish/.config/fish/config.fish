@@ -275,9 +275,10 @@ set -x XDG_CONFIG_HOME $HOME/.config
 
 set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
 set -x CARGO_HOME $HOME/.cargo
+set -x MASON_BIN $HOME/.local/share/nvim/mason/bin
 
 set --erase fish_user_paths
-fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/bob/nvim-bin ~/.rd/bin ~/.spicetify /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin
+fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/bob/nvim-bin ~/.rd/bin ~/.spicetify /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MASON_BIN
 
 set pure_shorten_prompt_current_directory_length 1
 set pure_truncate_prompt_current_directory_keeps 0
@@ -374,11 +375,6 @@ alias update_tmux='~/.config/tmux/plugins/tpm/bin/update_plugins all'
 #
 alias kclear="printf '\033[2J\033[3J\033[1;1H'"
 
-set NIX_DAEMON_FISH_SRC /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
-if test -z $NIX_PROFILES; and test -r "$NIX_DAEMON_FISH_SRC"
-    source "$NIX_DAEMON_FISH_SRC"
-end
-
 source "$HOME/.config/fish/catppuccin-fzf-mocha.fish"
 
 # keep this at the bottom
@@ -390,9 +386,6 @@ if command -q atuin
 end
 
 set_editor
-
-# Added by LM Studio CLI (lms)
-set -gx PATH $PATH $HOME/.lmstudio/bin
 
 # pnpm
 set -gx PNPM_HOME "$HOME/.local/share/pnpm"
