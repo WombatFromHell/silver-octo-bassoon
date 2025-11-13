@@ -4,7 +4,7 @@
   when: enable_flatpak | default(false)
   block:
     - name: Ensure Flatpak is installed (Archlinux)
-      when: ansible_distribution == "Archlinux"
+      when: ansible_facts['distribution'] == "Archlinux"
       ansible.builtin.package:
         name: "flatpak"
         state: present
@@ -12,7 +12,7 @@
       tags: flatpak_install
 
     - name: Check for flatpak executable
-      when: ansible_distribution != "Archlinux"
+      when: ansible_facts['distribution'] != "Archlinux"
       ansible.builtin.command: which flatpak
       register: flatpak_check
       changed_when: false
@@ -21,7 +21,7 @@
     - name: Validate flatpak installation
       when:
         - not ansible_check_mode
-        - ansible_distribution != "Archlinux"
+        - ansible_facts['distribution'] != "Archlinux"
       ansible.builtin.assert:
         that:
           - flatpak_check is defined

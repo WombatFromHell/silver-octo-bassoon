@@ -1,16 +1,16 @@
 ---
 - name: Include package management task
-  when: ansible_distribution == "Archlinux"
+  when: ansible_facts['distribution'] == "Archlinux"
   ansible.builtin.include_tasks: pacman.yml
   tags: [core, pacman]
 
 - name: Include AUR management task
-  when: ansible_distribution == "Archlinux"
+  when: ansible_facts['distribution'] == "Archlinux"
   ansible.builtin.include_tasks: aur.yml
   tags: [core, aur]
 
 - name: Include zram enablement task
-  when: ansible_distribution == "Archlinux"
+  when: ansible_facts['distribution'] == "Archlinux"
   ansible.builtin.include_tasks: zram.yml
   tags: [core, zram]
 

@@ -5,7 +5,7 @@
   block:
     - name: Look for rEFInd
       when:
-        - ansible_distribution == "Archlinux"
+        - ansible_facts['distribution'] == "Archlinux"
         - kernel_args is defined and kernel_args | trim != ""
       block:
         - name: Check if refind_linux.conf exists
@@ -23,7 +23,7 @@
 
     - name: Look for GRUB
       when:
-        - ansible_distribution == "Archlinux"
+        - ansible_facts['distribution'] == "Archlinux"
         - kernel_args is defined and kernel_args | trim != ""
       block:
         - name: Check if /etc/default/grub exists

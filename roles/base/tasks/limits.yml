@@ -9,7 +9,14 @@
         recurse: false
       register: limitsd_files
 
-    - name: Copy files to /etc/sudoers.d with proper permissions
+    - name: Ensure /etc/limits.d directory exists
+      ansible.builtin.file:
+        path: /etc/limits.d
+        state: directory
+        mode: "0755"
+      become: true
+
+    - name: Copy files to /etc/limits.d with proper permissions
       ansible.builtin.copy:
         src: "{{ limitsd_item.path }}"
         dest: "/etc/limits.d/{{ limitsd_item.path | basename }}"

@@ -8,7 +8,7 @@ elif which /home/linuxbrew/.linuxbrew/bin/fish &>/dev/null; then
   exec /home/linuxbrew/.linuxbrew/bin/fish "$@"
 else
   # default to whatever else is in the environment
-  FISH="$(/usr/bin/env fish)"
+  FISH="$(which fish)"
   if [ -e "$FISH" ]; then
     exec "$FISH" "$@"
   fi

@@ -45,16 +45,19 @@
     - name: Verify that the xdg-open symlink was created
       assert:
         that:
-          - xdg_open_symlink.changed
-        fail_msg: "The xdg-open symlink was not created"
-      when: xdg_open_symlink.changed or (xdg_symlink_stat.stat.islnk and xdg_symlink_stat.stat.readlink == xdg_open_path.stdout)
+        - xdg_open_symlink.changed or
+            (xdg_symlink_stat.stat.exists and
+            xdg_symlink_stat.stat.islnk and
+            xdg_symlink_stat.stat.lnk_target == xdg_open_path.stdout)
+        fail_msg: "The xdg-open symlink was not created correctly"
+      when: xdg_open_symlink.changed or xdg_symlink_stat.stat.exists
 
     - name: Install fuse2 on Archlinux (required for AppImage execution)
       become: true
       ansible.builtin.package:
         name: "fuse2"
         state: present
-      when: ansible_distribution == "Archlinux"
+      when: ansible_facts['distribution'] == "Archlinux"
 
     - name: Find all AppImages in source directory
       ansible.builtin.find:

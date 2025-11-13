@@ -1,5 +1,7 @@
 #!/usr/bin/python
+
 from ansible.module_utils.basic import AnsibleModule
+from ansible.module_utils.common.text.converters import to_bytes, to_native
 from typing import Optional, Tuple, Dict
 import os
 import re
@@ -65,7 +67,7 @@ def write_config(
 
 
 def update_grub_config(module: AnsibleModule, config_file: str) -> None:
-    rc, _, err = module.run_command(f"grub-mkconfig -o {config_file}", check_rc=False)
+    rc, _, err = module.run_command(["grub-mkconfig", "-o", config_file], check_rc=False)
     if rc != 0:
         module.warn("Failed to update grub config: " + err)
 

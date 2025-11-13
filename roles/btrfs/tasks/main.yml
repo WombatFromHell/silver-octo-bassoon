@@ -3,7 +3,7 @@
   become: true
   tags: [extra, btrfs]
   when:
-    - ansible_distribution == "Archlinux"
+    - ansible_facts['distribution'] == "Archlinux"
     - enable_btrfs_snapper | default(false)
   vars:
     # User-configurable variables
@@ -51,7 +51,7 @@
 
     - name: Include snapper installation tasks
       ansible.builtin.include_tasks: packages.yml
-      when: ansible_distribution == "Archlinux"
+      when: ansible_facts['distribution'] == "Archlinux"
       tags: [extra, btrfs, btrfs_install]
 
     - name: Include snapper configuration tasks

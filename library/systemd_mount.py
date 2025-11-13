@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 from ansible.module_utils.basic import AnsibleModule
+from ansible.module_utils.common.text.converters import to_bytes, to_native
 import os
 import re
 import glob
@@ -23,7 +24,7 @@ def run_systemctl(module, command, unit=None, check_rc=True):
     """
     args = ["systemctl", command]
     if unit is not None:
-        args += unit
+        args.append(unit)
 
     rc, stdout, stderr = module.run_command(args, check_rc=check_rc)
 
@@ -131,7 +132,7 @@ def remove_existing_mounts(module):
                 module.fail_json(msg=f"Failed to remove unit file: {unit} - {e}")
 
     if changed:
-        run_systemctl(module, "daemon-reload", "", check_rc=True)
+        run_systemctl(module, "daemon-reload", unit=None, check_rc=True)
 
     return changed
 
@@ -169,7 +170,7 @@ def setup_external_mounts(module):
 
     # Process all mount, automount, and swap files
     for unit_type in ["mount", "automount", "swap"]:
-        for file in module.find_glob(f"{src}/*mnt-*.{unit_type}"):
+        for file in glob.glob(f"{src}/*mnt-*.{unit_type}"):
             enabled_units = filter_mount_unit(module, file)
 
             if not enabled_units:
@@ -198,7 +199,7 @@ def setup_external_mounts(module):
                         module.fail_json(
                             msg=f"Failed to process {original_file}: {str(e)}"
                         )
-                elif "arch" in os_type:
+                elif "arch" in os_type or "cachyos" in os_type:
                     dest_path = os.path.join(dst, basename)
                     shutil.copy(original_file, dest_path)
                     changed = True
@@ -210,7 +211,7 @@ def setup_external_mounts(module):
                     return False
 
     if unit_files:
-        run_systemctl(module, "daemon-reload", "", check_rc=True)
+        run_systemctl(module, "daemon-reload", unit=None, check_rc=True)
         changed = manage_systemd_units(module, unit_files, enable=True, start=True)
 
     return changed
@@ -252,7 +253,7 @@ def process_single_mount(module):
                 unit_files.append(new_basename)
             except Exception as e:
                 module.fail_json(msg=f"Failed to process {original_file}: {str(e)}")
-        elif "arch" in os_type:
+        elif "arch" in os_type or "cachyos" in os_type:
             dest_path = os.path.join(dst, basename)
             shutil.copy(original_file, dest_path)
             changed = True
@@ -262,7 +263,7 @@ def process_single_mount(module):
             return False
 
     if unit_files:
-        run_systemctl(module, "daemon-reload", "", check_rc=True)
+        run_systemctl(module, "daemon-reload", unit=None, check_rc=True)
         changed = manage_systemd_units(module, unit_files, enable=True, start=True)
 
     return module.exit_json(
@@ -308,7 +309,7 @@ def process_single_swap(module):
             unit_files.append(new_basename)
         except Exception as e:
             module.fail_json(msg=f"Failed to process {original_file}: {str(e)}")
-    elif "arch" in os_type:
+    elif "arch" in os_type or "cachyos" in os_type:
         dest_path = os.path.join(dst, basename)
         shutil.copy(original_file, dest_path)
         changed = True
@@ -318,7 +319,7 @@ def process_single_swap(module):
         return False
 
     if changed:
-        run_systemctl(module, "daemon-reload", "", check_rc=True)
+        run_systemctl(module, "daemon-reload", unit=None, check_rc=True)
         changed = manage_systemd_units(module, [basename], enable=True, start=False)
 
     return module.exit_json(

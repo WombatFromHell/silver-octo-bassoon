@@ -42,7 +42,7 @@ if status is-interactive
     if test -f "$cargo_fish_path"
         source "$cargo_fish_path"
     end
-    set -gx SHELL $(command -v fish)
+    set -gx SHELL $(command -v fish.sh || command -v fish)
 end
 
 function yy

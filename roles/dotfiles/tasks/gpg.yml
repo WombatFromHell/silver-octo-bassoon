@@ -36,7 +36,7 @@
       ansible.builtin.command: >
         gpg --list-keys "{{ public_key_fingerprint }}"
       register: check_public_key
-      ignore_errors: true
+      failed_when: check_public_key.rc not in [0, 2]
       changed_when: false
 
     - name: Import public key (if not present)
@@ -44,17 +44,17 @@
         gpg --import "{{ gnupg_key_dir }}/public-key.asc"
       when:
         - public_key_fingerprint is defined
+        - check_public_key is defined
         - check_public_key.rc != 0
       register: import_public
       changed_when: "'imported' in import_public.stdout"
-      ignore_errors: true
 
     - name: Check if private key is already imported
       when: public_key_fingerprint is defined
       ansible.builtin.command: >
         gpg --list-secret-keys "{{ public_key_fingerprint }}"
       register: check_private_key
-      ignore_errors: true
+      failed_when: check_private_key.rc not in [0, 2]
       changed_when: false
 
     - name: Import private key with passphrase (if not present)
@@ -66,11 +66,11 @@
         stdin: "{{ gpg_secrets.gpg_passphrase }}"
       when:
         - public_key_fingerprint is defined
+        - check_private_key is defined
         - check_private_key.rc != 0
       register: import_private
       changed_when: "'imported' in import_private.stdout"
       no_log: true
-      ignore_errors: true
 
     - name: Ensure SSH directory exists with correct permissions
       ansible.builtin.file:
@@ -82,8 +82,8 @@
       ansible.builtin.copy:
         src: "{{ ssh_key_dir }}/{{ ssh_item.key }}"
         dest: "{{ home_dir }}/.ssh/{{ ssh_item.key }}"
-        owner: "{{ ansible_user_id }}"
-        group: "{{ ansible_user_gid }}"
+        owner: "{{ ansible_facts.user_id }}"
+        group: "{{ ansible_facts.user_gid }}"
         mode: "{{ ssh_item.mode }}"
       loop:
         - { key: "id_rsa", mode: "0600" }
@@ -91,3 +91,22 @@
       loop_control:
         loop_var: ssh_item
         label: "{{ ssh_item.key }}"
+
+    - name: Ensure known_hosts file exists with correct permissions for user
+      ansible.builtin.file:
+        path: "{{ home_dir }}/.ssh/known_hosts"
+        state: touch
+        owner: "{{ ansible_facts.user_id }}"
+        group: "{{ ansible_facts.user_gid }}"
+        mode: '0644'
+      become_user: "{{ ansible_facts.user_id }}"
+      become: yes
+
+    - name: Add GitHub.com to known_hosts for user
+      ansible.builtin.known_hosts:
+        path: "{{ home_dir }}/.ssh/known_hosts"
+        name: github.com
+        key: "{{ lookup('pipe', 'ssh-keyscan -t rsa,ed25519 github.com 2>/dev/null || ssh-keyscan -t rsa github.com 2>/dev/null || echo \"# Manually add github.com key later\"') }}" # Fetch the key
+        state: present
+      become_user: "{{ ansible_facts.user_id }}"
+      become: yes

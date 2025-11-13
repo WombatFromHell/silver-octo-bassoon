@@ -20,8 +20,8 @@
     - methyl-cachyos
     - methyl-bazzite
   vars:
-    home_realpath: "{{ ansible_env.HOME | realpath }}"
-    os_release_id: "{{ ansible_facts.lsb.id | default(ansible_distribution, true) | lower }}"
+    home_realpath: "{{ ansible_facts['env']['HOME'] | realpath }}"
+    os_release_id: "{{ ansible_facts.lsb.id | default(ansible_facts['distribution'], true) | lower }}"
     os_variant_id: "{{
       lookup('file', '/etc/os-release') |
       regex_search('^VARIANT_ID=(.*)$', '\\1', multiline=True) | first |

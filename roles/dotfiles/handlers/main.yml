@@ -21,7 +21,7 @@
     path: "/var/.Trash-{{ this_uid }}"
     state: directory
     mode: "0755"
-    owner: "{{ ansible_user_id }}"
+    owner: "{{ ansible_facts.user_id }}"
   register: fix_yazi_result
   ignore_errors: true
   changed_when: fix_yazi_result.rc is defined and fix_yazi_result.rc == 0

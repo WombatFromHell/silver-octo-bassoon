@@ -7,7 +7,7 @@
 
   tags: [extra, vfio]
   when:
-    - ansible_distribution == "Archlinux"
+    - ansible_facts['distribution'] == "Archlinux"
     - enable_vfio | default(false)
   block:
     - name: Install required packages
@@ -62,7 +62,7 @@
 
     - name: Add current user to libvirt group
       ansible.builtin.user:
-        name: "{{ ansible_user_id }}"
+        name: "{{ ansible_facts.user_id }}"
         groups: libvirt
         append: true
         state: present

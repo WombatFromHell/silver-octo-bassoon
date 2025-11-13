@@ -19,6 +19,30 @@
       become: true
       no_log: true
 
+    - name: Get active zram devices
+      ansible.builtin.command: zramctl --output NAME --noheadings --raw
+      become: true
+      register: zram_devices
+      changed_when: false
+      ignore_errors: true
+
+    - name: Disable swap on zram0 if active
+      ansible.builtin.command: swapoff /dev/zram0
+      become: true
+      failed_when: >
+        swapoff_result.rc != 0 and
+        "'Invalid argument' not in swapoff_result.stderr"
+      register: swapoff_result
+      ignore_errors: false
+
+    - name: Reset zram0 if it exists
+      ansible.builtin.command: tee /sys/block/zram0/reset
+      become: true
+      args:
+        stdin: "1"
+      when: '"/dev/zram0" in zram_devices.stdout'
+      ignore_errors: true
+
     - name: Enable service units
       ansible.builtin.systemd:
         name: "systemd-zram-setup@zram0.service"

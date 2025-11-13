@@ -5,6 +5,7 @@ import os
 import shutil
 import time
 from ansible.module_utils.basic import AnsibleModule
+from ansible.module_utils.common.text.converters import to_bytes, to_native
 from typing import Tuple, List, Optional, Dict, Any
 
 

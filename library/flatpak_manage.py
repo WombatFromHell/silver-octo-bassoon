@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 from ansible.module_utils.basic import AnsibleModule
+from ansible.module_utils.common.text.converters import to_bytes, to_native
 import subprocess
 from typing import Dict, List, Union, Literal
 

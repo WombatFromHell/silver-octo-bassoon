@@ -25,4 +25,4 @@
     #   changed_when:
     #     - "'already up to date' not in aur_install.stdout"
     #     - "'there is nothing to do' not in aur_install.stdout"
-    #   when: ansible_distribution == "Archlinux" and aur_packages | length > 0
+    #   when: ansible_facts['distribution'] == "Archlinux" and aur_packages | length > 0

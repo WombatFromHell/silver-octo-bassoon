@@ -9,7 +9,7 @@
   block:
     - name: Install libva-nvidia-driver on Archlinux for Firefox
       when:
-        - ansible_distribution == "Archlinux"
+        - ansible_facts['distribution'] == "Archlinux"
         - nvidia_exists | default(false)
       become: true
       ansible.builtin.package:
