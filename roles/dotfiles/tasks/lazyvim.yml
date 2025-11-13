@@ -5,7 +5,7 @@
   vars:
     config_repo: "git@github.com:WombatFromHell/lazyvim.git"
     repo_dest: "{{ home_realpath }}/.config/nvim"
-    repo_ver: "bb6e9b844d0ee2d3174cda44752138730672fea3" # pin to 4-8-25
+    # repo_ver: "6f790def3a1f222c7ac5439ebe5e7436505282cd" # pin to 11-13-25
   block:
     - name: Check for 'nvim'
       ansible.builtin.command: which nvim
@@ -43,5 +43,5 @@
         - ssh_git_success is defined
       ansible.builtin.git:
         repo: "{{ config_repo }}"
-        version: "{{ repo_ver }}"
+        version: master
         dest: "{{ repo_dest }}"
