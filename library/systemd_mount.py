@@ -1,12 +1,12 @@
 #!/usr/bin/python3
 
-from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.common.text.converters import to_bytes, to_native
+import glob
 import os
 import re
-import glob
-import tempfile
 import shutil
+import tempfile
+
+from ansible.module_utils.basic import AnsibleModule
 
 
 def run_systemctl(module, command, unit=None, check_rc=True):
@@ -182,11 +182,10 @@ def setup_external_mounts(module):
                 if "bazzite" in os_type:
                     new_basename = f"var-{basename}"
                     try:
-                        with open(
-                            original_file, "r"
-                        ) as f_in, tempfile.NamedTemporaryFile(
-                            "w", delete=False
-                        ) as f_out:
+                        with (
+                            open(original_file, "r") as f_in,
+                            tempfile.NamedTemporaryFile("w", delete=False) as f_out,
+                        ):
                             for line in f_in:
                                 f_out.write(line.replace("/mnt/", "/var/mnt/"))
                         dest_path = os.path.join(dst, new_basename)
@@ -240,9 +239,10 @@ def process_single_mount(module):
         if "bazzite" in os_type:
             new_basename = f"var-{basename}"
             try:
-                with open(original_file, "r") as f_in, tempfile.NamedTemporaryFile(
-                    "w", delete=False
-                ) as f_out:
+                with (
+                    open(original_file, "r") as f_in,
+                    tempfile.NamedTemporaryFile("w", delete=False) as f_out,
+                ):
                     for line in f_in:
                         f_out.write(line.replace("/mnt/", "/var/mnt/"))
                 dest_path = os.path.join(dst, new_basename)
@@ -296,9 +296,10 @@ def process_single_swap(module):
     if "bazzite" in os_type:
         new_basename = f"var-{basename}"
         try:
-            with open(original_file, "r") as f_in, tempfile.NamedTemporaryFile(
-                "w", delete=False
-            ) as f_out:
+            with (
+                open(original_file, "r") as f_in,
+                tempfile.NamedTemporaryFile("w", delete=False) as f_out,
+            ):
                 for line in f_in:
                     f_out.write(line.replace("/mnt/", "/var/mnt/"))
             dest_path = os.path.join(dst, new_basename)

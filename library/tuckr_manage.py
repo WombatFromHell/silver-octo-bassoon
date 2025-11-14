@@ -1,12 +1,12 @@
 #!/usr/bin/python3
 
-import subprocess
 import os
 import shutil
+import subprocess
 import time
+from typing import Any, Dict, List, Optional, Tuple
+
 from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.common.text.converters import to_bytes, to_native
-from typing import Tuple, List, Optional, Dict, Any
 
 
 class TuckrManager:

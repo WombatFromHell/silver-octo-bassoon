@@ -1,11 +1,11 @@
 #!/usr/bin/python
 
-from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.common.text.converters import to_bytes, to_native
-from typing import Optional, Tuple, Dict
 import os
 import re
 import shutil
+from typing import Dict, Optional, Tuple
+
+from ansible.module_utils.basic import AnsibleModule
 
 
 def detect_bootloader() -> str:
@@ -67,7 +67,9 @@ def write_config(
 
 
 def update_grub_config(module: AnsibleModule, config_file: str) -> None:
-    rc, _, err = module.run_command(["grub-mkconfig", "-o", config_file], check_rc=False)
+    rc, _, err = module.run_command(
+        ["grub-mkconfig", "-o", config_file], check_rc=False
+    )
     if rc != 0:
         module.warn("Failed to update grub config: " + err)
 
@@ -115,27 +117,43 @@ def modify_refind_config(
             new_lines.append(line)
             continue
 
-        match = re.match(r'^(\s*"[^"]*"\s*)(.*)', line)
+        match = re.match(r'^(\s*"[^"]*"\s*)(".*")', line)
         if not match:
             new_lines.append(line)
             continue
 
-        description, params = match.groups()
-        original_params = params
+        description, quoted_params = match.groups()
+
+        # Extract the content inside quotes
+        if quoted_params.startswith('"') and quoted_params.endswith('"'):
+            inner_params = quoted_params[1:-1]  # Remove surrounding quotes
+        else:
+            inner_params = quoted_params
+
+        original_inner_params = inner_params
 
         if not first_match_modified:
             if text_to_remove:
-                params = re.sub(
-                    r"(^|\s)" + re.escape(text_to_remove) + r"(\s|$)", " ", params
+                # Remove text with proper boundary handling for space-separated params
+                inner_params = re.sub(
+                    r"(^|\s)" + re.escape(text_to_remove) + r"(\s|$)",
+                    r"\1 \2",
+                    inner_params,
                 )
-                params = params.strip()
+                # Clean up extra spaces
+                inner_params = re.sub(r"\s+", " ", inner_params).strip()
 
-            if text_to_add and text_to_add not in params.split():
-                params = f"{params} {text_to_add}".strip()
+            if text_to_add and text_to_add not in inner_params.split():
+                if inner_params:
+                    inner_params = f"{inner_params} {text_to_add}"
+                else:
+                    inner_params = text_to_add
 
-            if params != original_params:
+            if inner_params != original_inner_params:
                 needs_change = True
-                new_lines.append(f"{description}{params}")
+                # Reconstruct the quoted string
+                new_quoted_params = f'"{inner_params}"'
+                new_lines.append(f"{description}{new_quoted_params}")
                 first_match_modified = True
                 continue
             else:
@@ -197,12 +215,24 @@ def modify_grub_config(
 
         def add_to_grub_cmdline():
             nonlocal new_content, needs_change
-            regex = r'^(GRUB_CMDLINE_LINUX(_DEFAULT)?="[^"]*)'
+            regex = r'^(GRUB_CMDLINE_LINUX(_DEFAULT)?="[^"]*")'
             match = re.search(regex, new_content, re.MULTILINE)
             if match:
                 current_value = match.group(1)
+                # current_value now includes the closing quote, so we need to insert before it
                 if text_to_add not in current_value:
-                    replacement = re.sub(r'(")$', f' {text_to_add}"', current_value)
+                    # Find the position of the last quote and insert the new parameter before it
+                    pos = current_value.rfind('"')
+                    if pos > 0:
+                        replacement = (
+                            current_value[:pos]
+                            + f" {text_to_add}"
+                            + current_value[pos:]
+                        )
+                    else:
+                        # Fallback in case of unexpected format
+                        replacement = current_value + f" {text_to_add}"
+
                     new_content, count = re.subn(
                         regex, replacement, new_content, count=1, flags=re.MULTILINE
                     )

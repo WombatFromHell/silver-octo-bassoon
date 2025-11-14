@@ -1,5 +1,7 @@
+.coverage
 .vault_pass
 
+.venv
 .ansible
 support
 __pycache__
