@@ -2,7 +2,6 @@
 - name: Configure snapper
   become: true
   tags: [extra, btrfs, btrfs_snapper]
-
   block:
     - name: Create @snapshots subvolume if it doesn't exist
       ansible.builtin.command: btrfs subvolume create {{ btrfs_mount }}/@snapshots
@@ -14,7 +13,7 @@
       ansible.builtin.command: snapper -c root create-config /
       args:
         creates: /etc/snapper/configs/root
-      register: snapper_root_created
+      register: btrfs_snapper_root_created
 
     - name: Move root snapshots
       ansible.builtin.command: mv {{ btrfs_mount }}/@/.snapshots {{ btrfs_mount }}/@snapshots/root
@@ -33,7 +32,7 @@
       ansible.builtin.lineinfile:
         path: /etc/fstab
         line: >
-          UUID={{ root_fs_uuid }} /.snapshots btrfs
+          UUID={{ btrfs_root_fs_uuid }} /.snapshots btrfs
           subvol=/@snapshots/root,defaults,noatime,compress={{ compress_algorithm }},commit={{ commit_interval }} 0 0
         state: present
         regexp: ".* /.snapshots .*"
@@ -42,7 +41,7 @@
       ansible.builtin.command: snapper -c home create-config /home
       args:
         creates: /etc/snapper/configs/home
-      register: snapper_home_created
+      register: btrfs_snapper_home_created
 
     - name: Move home snapshots
       ansible.builtin.command: mv {{ btrfs_mount }}/@home/.snapshots {{ btrfs_mount }}/@snapshots/home
@@ -53,7 +52,7 @@
       ansible.builtin.lineinfile:
         path: /etc/fstab
         line: >
-          UUID={{ root_fs_uuid }} /home/.snapshots btrfs
+          UUID={{ btrfs_root_fs_uuid }} /home/.snapshots btrfs
           subvol=/@snapshots/home,defaults,noatime,compress={{ compress_algorithm }},commit={{ commit_interval }} 0 0
         state: present
         regexp: ".* /home/.snapshots .*"

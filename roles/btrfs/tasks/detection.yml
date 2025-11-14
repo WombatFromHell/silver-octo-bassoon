@@ -6,54 +6,54 @@
       ansible.builtin.shell: |
         set -o pipefail
         findmnt -D -T / | awk 'NR==2 {print $2}'
-      register: root_fs_type_result
+      register: btrfs_root_fs_type_result
       changed_when: false
       check_mode: false
 
     - name: Set root filesystem type fact
       ansible.builtin.set_fact:
-        root_fs_type: "{{ root_fs_type_result.stdout }}"
+        btrfs_root_fs_type: "{{ btrfs_root_fs_type_result.stdout }}"
       check_mode: false
 
     - name: Skip remaining tasks if root is not BTRFS
       ansible.builtin.meta: end_play
-      when: root_fs_type != "btrfs"
+      when: btrfs_root_fs_type != "btrfs"
 
     - name: Get root filesystem device
       ansible.builtin.shell: |
         set -o pipefail
         df -T / | awk 'NR==2 {print $1}'
-      register: root_fs_dev_result
+      register: btrfs_root_fs_dev_result
       changed_when: false
       check_mode: false
 
     - name: Set root filesystem device fact
       ansible.builtin.set_fact:
-        root_fs_dev: "{{ root_fs_dev_result.stdout }}"
+        btrfs_root_fs_dev: "{{ btrfs_root_fs_dev_result.stdout }}"
       check_mode: false
 
     - name: Get root filesystem UUID
       ansible.builtin.shell: |
         set -o pipefail
-        blkid -s UUID -o value {{ root_fs_dev }}
-      register: root_fs_uuid_result
+        blkid -s UUID -o value {{ btrfs_root_fs_dev }}
+      register: btrfs_root_fs_uuid_result
       changed_when: false
       check_mode: false
 
     - name: Set root filesystem UUID fact
       ansible.builtin.set_fact:
-        root_fs_uuid: "{{ root_fs_uuid_result.stdout }}"
+        btrfs_root_fs_uuid: "{{ btrfs_root_fs_uuid_result.stdout }}"
       check_mode: false
 
     - name: Check home filesystem type
       ansible.builtin.shell: |
         set -o pipefail
         findmnt -D -T /home | awk 'NR==2 {print $2}'
-      register: home_fs_type_result
+      register: btrfs_home_fs_type_result
       changed_when: false
       check_mode: false
 
     - name: Set home filesystem type fact
       ansible.builtin.set_fact:
-        home_fs_type: "{{ home_fs_type_result.stdout }}"
+        btrfs_home_fs_type: "{{ btrfs_home_fs_type_result.stdout }}"
       check_mode: false

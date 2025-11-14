@@ -15,12 +15,8 @@
         file_type: file
         recurse: false
         # conditionally exclude nvidia related binaries
-        excludes: "{{
-          ['nvidia-pm.py', 'veridian-controller']
-          if not nvidia_exists | default(false)
-          else []
-          }}"
-      register: bin_files
+        excludes: "{{ ['nvidia-pm.py', 'veridian-controller'] if not nvidia_exists | default(false) else [] }}"
+      register: base_bin_files
 
     - name: Copy binary files to /usr/local/bin with proper permissions
       ansible.builtin.copy:
@@ -29,9 +25,9 @@
         mode: "0755"
         remote_src: false
         backup: true
-      loop: "{{ bin_files.files }}"
+      loop: "{{ base_bin_files.files }}"
       loop_control:
         loop_var: file_item
         label: "Copying {{ file_item.path | basename }}"
-      when: bin_files.matched > 0
+      when: base_bin_files.matched > 0
       become: true

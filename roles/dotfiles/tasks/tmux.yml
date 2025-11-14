@@ -1,14 +1,15 @@
+---
 - name: Process tmux configuration
   tags: [extra, dotfiles, dotfiles_tmux]
   block:
     - name: Check if tmux is installed
       ansible.builtin.command: which tmux
-      register: tmux_check
+      register: dotfiles_tmux_check
       ignore_errors: true
       changed_when: false
 
     - name: Configure tmux if installed
-      when: tmux_check.rc is defined and tmux_check.rc == 0
+      when: dotfiles_tmux_check.rc is defined and dotfiles_tmux_check.rc == 0
       block:
         - name: Manage tmux config with tuckr
           tuckr_manage:
@@ -34,14 +35,14 @@
         - name: Check TPM repository status
           ansible.builtin.stat:
             path: "{{ home_dir }}/.config/tmux/plugins/tpm/.git"
-          register: tpm_repo
+          register: dotfiles_tpm_repo
 
         - name: Clone TPM if needed
           ansible.builtin.git:
             repo: "https://github.com/tmux-plugins/tpm"
             dest: "{{ home_dir }}/.config/tmux/plugins/tpm"
             version: 99469c4a9b1ccf77fade25842dc7bafbc8ce9946 # pin to 02-27-23
-          when: not tpm_repo.stat.exists
+          when: not dotfiles_tpm_repo.stat.exists
 
         - name: Set permissions for TPM executables
           ansible.builtin.file:
@@ -53,4 +54,4 @@
             - { path: "{{ home_dir }}/.config/tmux/plugins/tpm/scripts/install_plugins.sh" }
             - { path: "{{ home_dir }}/.config/tmux/plugins/tpm/scripts/update_plugin.sh" }
             - { path: "{{ home_dir }}/.config/tmux/plugins/tpm/scripts/clean_plugins.sh" }
-          when: tpm_repo.stat.exists
+          when: dotfiles_tpm_repo.stat.exists

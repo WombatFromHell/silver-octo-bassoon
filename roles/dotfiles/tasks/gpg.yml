@@ -1,10 +1,11 @@
+---
 - name: GPG and SSH key install and setup
   tags: [extra, dotfiles, dotfiles_gpg]
   block:
     - name: Load GPG secrets from vault
       ansible.builtin.include_vars:
         file: "{{ vault_file }}"
-        name: gpg_secrets
+        name: dotfiles_secrets
       no_log: true
 
     - name: Ensure GPG directory exists
@@ -16,45 +17,45 @@
     - name: Get fingerprint of public key file
       ansible.builtin.command: >
         gpg --show-keys "{{ gnupg_key_dir }}/public-key.asc"
-      register: public_key_info
+      register: dotfiles_public_key_info
       changed_when: false
 
     - name: Extract fingerprint when 'Key fingerprint =' is present
       ansible.builtin.set_fact:
-        public_key_fingerprint: "{{ public_key_info.stdout | regex_search('Key fingerprint\\s*=\\s*([0-9A-F\\s]+)', '\\1') | trim }}"
-      when: "'Key fingerprint' in public_key_info.stdout"
+        dotfiles_public_key_fingerprint: "{{ dotfiles_public_key_info.stdout | regex_search('Key fingerprint\\s*=\\s*([0-9A-F\\s]+)', '\\1') | trim }}"
+      when: "'Key fingerprint' in dotfiles_public_key_info.stdout"
 
     - name: Extract fingerprint from second line when not present in output
       ansible.builtin.set_fact:
-        public_key_fingerprint: "{{ public_key_info.stdout_lines[1] | trim }}"
+        dotfiles_public_key_fingerprint: "{{ dotfiles_public_key_info.stdout_lines[1] | trim }}"
       when:
-        - public_key_info.stdout_lines | length > 0
-        - public_key_fingerprint is not defined
+        - dotfiles_public_key_info.stdout_lines | length > 0
+        - dotfiles_public_key_fingerprint is not defined
 
     - name: Check if public key is already imported
-      when: public_key_fingerprint is defined
+      when: dotfiles_public_key_fingerprint is defined
       ansible.builtin.command: >
-        gpg --list-keys "{{ public_key_fingerprint }}"
-      register: check_public_key
-      failed_when: check_public_key.rc not in [0, 2]
+        gpg --list-keys "{{ dotfiles_public_key_fingerprint }}"
+      register: dotfiles_check_public_key
+      failed_when: dotfiles_check_public_key.rc not in [0, 2]
       changed_when: false
 
     - name: Import public key (if not present)
       ansible.builtin.command: >
         gpg --import "{{ gnupg_key_dir }}/public-key.asc"
       when:
-        - public_key_fingerprint is defined
-        - check_public_key is defined
-        - check_public_key.rc != 0
-      register: import_public
-      changed_when: "'imported' in import_public.stdout"
+        - dotfiles_public_key_fingerprint is defined
+        - dotfiles_check_public_key is defined
+        - dotfiles_check_public_key.rc != 0
+      register: dotfiles_import_public
+      changed_when: "'imported' in dotfiles_import_public.stdout"
 
     - name: Check if private key is already imported
-      when: public_key_fingerprint is defined
+      when: dotfiles_public_key_fingerprint is defined
       ansible.builtin.command: >
-        gpg --list-secret-keys "{{ public_key_fingerprint }}"
-      register: check_private_key
-      failed_when: check_private_key.rc not in [0, 2]
+        gpg --list-secret-keys "{{ dotfiles_public_key_fingerprint }}"
+      register: dotfiles_check_private_key
+      failed_when: dotfiles_check_private_key.rc not in [0, 2]
       changed_when: false
 
     - name: Import private key with passphrase (if not present)
@@ -63,13 +64,13 @@
         --passphrase-fd 0 --import
         "{{ gnupg_key_dir }}/private-key.asc"
       args:
-        stdin: "{{ gpg_secrets.gpg_passphrase }}"
+        stdin: "{{ dotfiles_secrets.dotfiles_passphrase }}"
       when:
-        - public_key_fingerprint is defined
-        - check_private_key is defined
-        - check_private_key.rc != 0
-      register: import_private
-      changed_when: "'imported' in import_private.stdout"
+        - dotfiles_public_key_fingerprint is defined
+        - dotfiles_check_private_key is defined
+        - dotfiles_check_private_key.rc != 0
+      register: dotfiles_import_private
+      changed_when: "'imported' in dotfiles_import_private.stdout"
       no_log: true
 
     - name: Ensure SSH directory exists with correct permissions
@@ -98,15 +99,30 @@
         state: touch
         owner: "{{ ansible_facts.user_id }}"
         group: "{{ ansible_facts.user_gid }}"
-        mode: '0644'
+        mode: "0644"
       become_user: "{{ ansible_facts.user_id }}"
-      become: yes
+      become: true
 
-    - name: Add GitHub.com to known_hosts for user
-      ansible.builtin.known_hosts:
+    - name: Add various hosts to known_hosts for user
+      ansible.builtin.lineinfile:
         path: "{{ home_dir }}/.ssh/known_hosts"
-        name: github.com
-        key: "{{ lookup('pipe', 'ssh-keyscan -t rsa,ed25519 github.com 2>/dev/null || ssh-keyscan -t rsa github.com 2>/dev/null || echo \"# Manually add github.com key later\"') }}" # Fetch the key
-        state: present
+        line: "{{ item.key_line }}"
+        create: true
+        mode: "0600"
       become_user: "{{ ansible_facts.user_id }}"
-      become: yes
+      become: true
+      loop:
+        - key_line: >-
+            {{
+              lookup(
+                'pipe',
+                'ssh-keyscan -t rsa,ed25519 github.com 2>/dev/null || echo "# Manually add github.com key later"'
+              )
+            }}
+        - key_line: >-
+            {{
+              lookup(
+                'pipe',
+                'ssh-keyscan -t rsa,ed25519,ecdsa-sha2-nistp256 -p 2222 192.168.1.153 2>/dev/null || echo "# Manually add NAS key later"'
+              )
+            }}

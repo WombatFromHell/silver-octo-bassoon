@@ -7,14 +7,11 @@
   block:
     - name: Check if Homebrew is already installed
       ansible.builtin.stat:
-        path: "{{
-          '/opt/homebrew/bin/brew' if ansible_system == 'Darwin'
-          else '/home/linuxbrew/.linuxbrew/bin/brew'
-          }}"
-      register: brew_installed
+        path: "{{ '/opt/homebrew/bin/brew' if ansible_system == 'Darwin' else '/home/linuxbrew/.linuxbrew/bin/brew' }}"
+      register: base_brew_installed
 
     - name: Install Homebrew
-      when: brew_installed is not defined
+      when: base_brew_installed is not defined
       block:
         - name: Download Homebrew installation script
           ansible.builtin.get_url:
@@ -26,10 +23,9 @@
           ansible.builtin.command: /tmp/install_homebrew.sh
           environment:
             NONINTERACTIVE: "1"
-          when: not brew_installed.stat.exists
-          register: homebrew_install_output
-          changed_when: homebrew_install_output.rc != 0 and
-            "'already installed' not in homebrew_install_output.stderr"
+          when: not base_brew_installed.stat.exists
+          register: base_homebrew_install_output
+          changed_when: base_homebrew_install_output.rc != 0 and "'already installed' not in base_homebrew_install_output.stderr"
 
         - name: Remove the installation script
           ansible.builtin.file:
@@ -60,15 +56,15 @@
 
     - name: Manage Homebrew packages
       when:
-        - brew_installed.stat.exists
+        - base_brew_installed.stat.exists
         - brew_packages is defined
       block:
         - name: Ensure Homebrew is up to date
           community.general.homebrew:
             update_homebrew: true
             state: latest
-          register: brew_update
-          changed_when: brew_update.changed
+          register: base_brew_update
+          changed_when: base_brew_update.changed
 
         - name: Install/update Homebrew packages
           community.general.homebrew:
@@ -76,8 +72,8 @@
             state: latest
           loop: "{{ brew_packages | default([]) }}"
           when: brew_packages is defined
-          register: brew_package_results
+          register: base_brew_package_results
           retries: 1
           delay: 3
-          until: brew_package_results is not failed
-          changed_when: brew_package_results.changed
+          until: base_brew_package_results is not failed
+          changed_when: base_brew_package_results.changed

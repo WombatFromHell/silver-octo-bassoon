@@ -9,12 +9,12 @@
       ansible.builtin.find:
         paths: "{{ role_path }}/files/exported"
         patterns: "*.desktop"
-      register: shortcut_files
+      register: base_shortcut_files
 
     - name: Ensure '~/.local/share/applications/' exists
       ansible.builtin.stat:
         path: "{{ home_realpath }}/.local/share/applications"
-      register: apps_exists
+      register: base_apps_exists
 
     - name: Install '.desktop' shortcut files
       ansible.builtin.template:
@@ -22,11 +22,11 @@
         dest: "{{ home_realpath }}/.local/share/applications/{{ item.path | basename }}"
         mode: "0644"
         force: true
-      loop: "{{ shortcut_files.files }}"
+      loop: "{{ base_shortcut_files.files }}"
       loop_control:
         label: "{{ item.path | basename }}"
       when: >
-        (apps_exists.stat.exists and apps_exists.stat.isdir) and
+        (base_apps_exists.stat.exists and base_apps_exists.stat.isdir) and
         (
           (item.path | basename) not in bazzite_deck_includes or
           os_variant_id == 'bazzite-deck' and (item.path | basename) in bazzite_deck_includes

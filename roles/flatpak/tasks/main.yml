@@ -35,7 +35,7 @@
         state: present
         flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
         method: user
-      register: repo_exists
+      register: flatpak_repo_exists
 
     - name: Install system packages
       become: true
@@ -49,7 +49,7 @@
 
     - name: Install user packages
       when:
-        - repo_exists is defined
+        - flatpak_repo_exists is defined
         - user_flatpaks is defined and user_flatpaks | length > 0
       flatpak_manage:
         packages: "{{ user_flatpaks | default([]) }}"
@@ -73,14 +73,15 @@
           tags: [extra, flatpak, flatpak_extra, flatpak_peazip]
 
         - name: Install OBS Studio and plugins
-          when: install_obs | default(false)
-          tags: [exta, flatpak, flatpak_extra, flatpak_obs]
           community.general.flatpak:
-            name:
-              - org.freedesktop.Platform.VulkanLayer.OBSVkCapture
-              - com.obsproject.Studio.Plugin.OBSVkCapture
-              - com.obsproject.Studio.Plugin.Gstreamer
-              - com.obsproject.Studio.Plugin.GStreamerVaapi
-              - com.obsproject.Studio
+            name: "{{ item }}"
             state: present
             method: user
+          loop:
+            - org.freedesktop.Platform.VulkanLayer.OBSVkCapture
+            - com.obsproject.Studio.Plugin.OBSVkCapture
+            - com.obsproject.Studio.Plugin.Gstreamer
+            - com.obsproject.Studio.Plugin.GStreamerVaapi
+            - com.obsproject.Studio
+          when: install_obs | default(false)
+          tags: [exta, flatpak, flatpak_extra, flatpak_obs]

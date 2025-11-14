@@ -11,11 +11,11 @@
         - name: Check if refind_linux.conf exists
           ansible.builtin.stat:
             path: "/boot/refind_linux.conf"
-          register: refind_exists
+          register: base_refind_exists
 
         - name: Detect kernel args (refind)
           when:
-            - refind_exists.stat.exists
+            - base_refind_exists.stat.exists
           bootloader_mod:
             bootloader: "{{ bootloader }}"
             config_file: "/boot/refind_linux.conf"
@@ -29,16 +29,16 @@
         - name: Check if /etc/default/grub exists
           ansible.builtin.stat:
             path: "/etc/default/grub"
-          register: grub_exists
+          register: base_grub_exists
 
         - name: Detect kernel args (grub)
           when:
-            - grub_exists.stat.exists
+            - base_grub_exists.stat.exists
           bootloader_mod:
             bootloader: "{{ bootloader }}"
             config_file: "/etc/default/grub"
             check_args: "{{ kernel_args }}"
-          register: check_grub_result
+          register: base_check_grub_result
 
     - name: Change kernel args (ostree)
       when:
@@ -49,13 +49,13 @@
           ansible.builtin.shell: |
             set -o pipefail
             cat /proc/cmdline | grep "{{ kernel_args }}"
-          register: kernel_args_rc
+          register: base_kernel_args_rc
           failed_when: false
           changed_when: false
           check_mode: false
 
         - name: Append missing kernel arguments
           ansible.builtin.command: rpm-ostree kargs --append-if-missing="{{ kernel_args }}"
-          when: kernel_args_rc.rc != 0
-          register: kargs_result
-          changed_when: "'Already present' not in kargs_result.stderr"
+          when: base_kernel_args_rc.rc != 0
+          register: base_kargs_result
+          changed_when: "'Already present' not in base_kargs_result.stderr"

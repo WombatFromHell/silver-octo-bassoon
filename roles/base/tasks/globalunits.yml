@@ -15,7 +15,7 @@
         file_type: file
         recurse: false
         excludes: "{{ ['nvidia-tdp.*', 'veridian-controller.service'] if not nvidia_exists | default(false) else [] }}"
-      register: unit_files
+      register: base_unit_files
 
     - name: Copy unit files to /etc/systemd/system with proper permissions
       ansible.builtin.copy:
@@ -24,11 +24,11 @@
         mode: "0644"
         remote_src: false
         backup: true
-      loop: "{{ unit_files.files }}"
+      loop: "{{ base_unit_files.files }}"
       loop_control:
         loop_var: file_item
         label: "Copying {{ file_item.path | basename }}"
-      when: unit_files.matched > 0
+      when: base_unit_files.matched > 0
       notify: reload_global_systemd
 
     # - name: Enable service units
@@ -38,7 +38,7 @@
     #     daemon_reload: true
     #     enabled: true
     #     state: started
-    #   loop: "{{ unit_files.files }}"
+    #   loop: "{{ base_unit_files.files }}"
     #   loop_control:
     #     loop_var: unit_file
     #     label: "Enabling {{ unit_file.path | basename }}"

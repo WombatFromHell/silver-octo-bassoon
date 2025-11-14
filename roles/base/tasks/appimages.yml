@@ -13,44 +13,42 @@
         - "/usr/local/bin"
 
     - name: Find xdg-open location
-      command: which xdg-open
-      register: xdg_open_initial
+      ansible.builtin.command: which xdg-open
+      register: base_xdg_open_initial
       changed_when: false
-      failed_when: xdg_open_initial.rc != 0
+      failed_when: base_xdg_open_initial.rc != 0
 
     - name: Resolve xdg-open symlink
-      command: readlink -f "{{ xdg_open_initial.stdout }}"
-      register: xdg_open_path
+      ansible.builtin.command: readlink -f "{{ base_xdg_open_initial.stdout }}"
+      register: base_xdg_open_path
       changed_when: false
-      failed_when: xdg_open_path.rc != 0
+      failed_when: base_xdg_open_path.rc != 0
 
     - name: Check if /usr/local/bin/xdg-open is a symlink
-      stat:
+      ansible.builtin.stat:
         path: /usr/local/bin/xdg-open
-      register: xdg_symlink_stat
+      register: base_xdg_symlink_stat
 
     - name: Create symlink if it does not exist or is incorrect
       become: true
-      file:
-        src: "{{ xdg_open_path.stdout }}"
+      ansible.builtin.file:
+        src: "{{ base_xdg_open_path.stdout }}"
         dest: /usr/local/bin/xdg-open
         state: link
-        force: yes
+        force: true
       when: >
-        not (xdg_symlink_stat.stat.exists | default(false)) or
-        not (xdg_symlink_stat.stat.islnk | default(false)) or
-        (xdg_symlink_stat.stat.lnk_target | default('') != xdg_open_path.stdout)
-      register: xdg_open_symlink
+        not (base_xdg_symlink_stat.stat.exists | default(false)) or
+        not (base_xdg_symlink_stat.stat.islnk | default(false)) or
+        (base_xdg_symlink_stat.stat.lnk_target | default('') != base_xdg_open_path.stdout)
+      register: base_xdg_open_symlink
 
     - name: Verify that the xdg-open symlink was created
-      assert:
+      ansible.builtin.assert:
         that:
-        - xdg_open_symlink.changed or
-            (xdg_symlink_stat.stat.exists and
-            xdg_symlink_stat.stat.islnk and
-            xdg_symlink_stat.stat.lnk_target == xdg_open_path.stdout)
+          - base_xdg_open_symlink.changed or (base_xdg_symlink_stat.stat.exists and base_xdg_symlink_stat.stat.islnk and base_xdg_symlink_stat.stat.lnk_target
+            == base_xdg_open_path.stdout)
         fail_msg: "The xdg-open symlink was not created correctly"
-      when: xdg_open_symlink.changed or xdg_symlink_stat.stat.exists
+      when: base_xdg_open_symlink.changed or base_xdg_symlink_stat.stat.exists
 
     - name: Install fuse2 on Archlinux (required for AppImage execution)
       become: true
@@ -64,7 +62,7 @@
         paths: "{{ playbook_dir }}/files/support/appimages"
         patterns: "*.AppImage"
         file_type: file
-      register: appimages_to_copy
+      register: base_appimages_to_copy
       ignore_errors: true # Continue even if directory doesn't exist
 
     - name: Check for existing lowercase appimage files
@@ -72,44 +70,45 @@
         paths: "{{ home_dir }}/AppImages"
         patterns: "*.appimage"
         file_type: file
-      register: existing_lowercase_appimages
+      register: base_existing_lowercase_appimages
       ignore_errors: true
 
     - name: Process found AppImages
-      when: appimages_to_copy.matched > 0
+      when: base_appimages_to_copy.matched > 0
       block:
         - name: Create list of lowercase filenames that already exist
           ansible.builtin.set_fact:
-            existing_lowercase_filenames: "{{
-              existing_lowercase_appimages.files |
-              map(attribute='path') |
-              map('basename') |
-              map('regex_replace', '\\.appimage$', '') |
-              list
-              }}"
+            base_existing_lowercase_filenames: >-
+              {{
+                base_existing_lowercase_appimages.files
+                | map(attribute='path')
+                | map('basename')
+                | map('regex_replace', '\\.appimage$', '')
+                | list
+              }}
 
         - name: Extract basenames from AppImages to copy
           ansible.builtin.set_fact:
-            source_appimage_paths: "{{ appimages_to_copy.files | map(attribute='path') | list }}"
-            source_appimage_basenames: "{{ appimages_to_copy.files | map(attribute='path') | map('basename') | list }}"
+            base_source_appimage_paths: "{{ base_appimages_to_copy.files | map(attribute='path') | list }}"
+            base_source_appimage_basenames: "{{ base_appimages_to_copy.files | map(attribute='path') | map('basename') | list }}"
 
         - name: Create list of AppImage basenames without extension
           ansible.builtin.set_fact:
-            source_appimage_names: "{{ source_appimage_basenames | map('regex_replace', '\\.AppImage$', '') | list }}"
+            base_source_appimage_names: "{{ base_source_appimage_basenames | map('regex_replace', '\\.AppImage$', '') | list }}"
 
         - name: Filter AppImages to copy (skip those with lowercase versions)
           ansible.builtin.set_fact:
-            final_appimages: "{{ [] }}"
+            base_final_appimages: "{{ [] }}"
 
         - name: Build final AppImages list
           ansible.builtin.set_fact:
-            final_appimages: "{{ final_appimages + [source_appimage_paths[idx]] }}"
-          loop: "{{ source_appimage_names }}"
+            base_final_appimages: "{{ base_final_appimages + [base_source_appimage_paths[idx]] }}"
+          loop: "{{ base_source_appimage_names }}"
           loop_control:
             index_var: idx
           when: >
-            (source_appimage_names[idx] not in existing_lowercase_filenames) or
-            (source_appimage_names[idx] == 'ghostty' and 'ghostty' not in existing_lowercase_filenames)
+            (base_source_appimage_names[idx] not in base_existing_lowercase_filenames) or
+            (base_source_appimage_names[idx] == 'ghostty' and 'ghostty' not in base_existing_lowercase_filenames)
 
         - name: Copy AppImages with proper permissions
           ansible.builtin.copy:
@@ -117,14 +116,14 @@
             dest: "{{ home_dir }}/AppImages/{{ item | basename }}"
             remote_src: false
             mode: "0755"
-          loop: "{{ final_appimages | default([]) }}"
+          loop: "{{ base_final_appimages | default([]) }}"
           loop_control:
             label: "{{ item | basename }}"
-          when: final_appimages | default([]) | length > 0
+          when: base_final_appimages | default([]) | length > 0
           failed_when: false # Continue on individual copy failures
 
     - name: Process exports (icons/desktop) for AppImages
-      when: appimages_to_copy.matched > 0
+      when: base_appimages_to_copy.matched > 0
       block:
         - name: Ensure 'applications' directory exists
           ansible.builtin.file:
@@ -136,18 +135,18 @@
         - name: Ensure 'exported' directory exists
           ansible.builtin.stat:
             path: "{{ role_path }}/files/exported"
-          register: stat_exported
+          register: base_stat_exported
 
         - name: Find all '.desktop' files in exported dir
-          when: stat_exported.stat is defined and stat_exported.stat.exists
+          when: base_stat_exported.stat is defined and base_stat_exported.stat.exists
           ansible.builtin.find:
             paths: "{{ role_path }}/files/exported"
             patterns: "*.desktop.j2"
-          register: desktop_files
+          register: base_desktop_files
 
         - name: Check if update-desktop-database exists
           ansible.builtin.command: which update-desktop-database
-          register: desktop_db_check
+          register: base_desktop_db_check
           changed_when: false
           ignore_errors: true
 
@@ -157,7 +156,7 @@
             dest: "{{ home_realpath }}/.local/share/applications/{{ item.path | basename | regex_replace('\\.j2$', '') }}"
             mode: "0644"
             force: true
-          loop: "{{ desktop_files.files }}"
+          loop: "{{ base_desktop_files.files }}"
           loop_control:
             label: "{{ item.path | basename }}"
           notify: update_desktop_database
@@ -165,7 +164,7 @@
         - name: Ensure '.desktop' files installed exist
           ansible.builtin.stat:
             path: "{{ home_realpath }}/.local/share/applications/{{ item.path | basename }}"
-          loop: "{{ desktop_files.files }}"
+          loop: "{{ base_desktop_files.files }}"
           loop_control:
             label: "{{ item.path | basename }}"
 
@@ -175,7 +174,7 @@
             state: directory
             mode: "0755"
             force: true
-          register: icons_source
+          register: base_icons_source
 
         - name: Ensure '.icons' target directory exists
           ansible.builtin.file:
@@ -183,43 +182,43 @@
             state: directory
             mode: "0755"
             force: true
-          register: icons_target
+          register: base_icons_target
 
         - name: Find all '.icons' files in
           when:
-            - icons_source.state == "directory"
-            - stat_exported.stat is defined and stat_exported.stat.exists
+            - base_icons_source.state == "directory"
+            - base_stat_exported.stat is defined and base_stat_exported.stat.exists
           ansible.builtin.find:
-            paths: "{{ icons_source.path }}"
+            paths: "{{ base_icons_source.path }}"
             patterns: "*.png"
-          register: icon_files
+          register: base_icon_files
 
         - name: Install '.icons' files
           when:
-            - icons_target.state == "directory"
-            - icon_files.files is defined and icon_files.files | length > 0
+            - base_icons_target.state == "directory"
+            - base_icon_files.files is defined and base_icon_files.files | length > 0
           ansible.builtin.copy:
             src: "{{ item.path }}"
             dest: "{{ home_realpath }}/AppImages/.icons/{{ item.path | basename }}"
             mode: "0644"
             force: true
             checksum: false
-          loop: "{{ icon_files.files }}"
+          loop: "{{ base_icon_files.files }}"
           loop_control:
             label: "Copying {{ item.path }}"
 
         - name: Ensure '.icons' files installed exist
           ansible.builtin.stat:
             path: "{{ home_realpath }}/AppImages/.icons/{{ item.path | basename }}"
-          loop: "{{ icon_files.files }}"
+          loop: "{{ base_icon_files.files }}"
           loop_control:
             label: "{{ item.path | basename }}"
 
     - name: Process Alacritty
       when: >
         enable_alacritty | default(false) and
-        appimages_to_copy.matched > 0 and
-        ('alacritty.AppImage' in (appimages_to_copy.files | map(attribute='path') | map('basename') | list))
+        base_appimages_to_copy.matched > 0 and
+        ('alacritty.AppImage' in (base_appimages_to_copy.files | map(attribute='path') | map('basename') | list))
       block:
         - name: Check for existing Ghostty installations
           ansible.builtin.stat:
@@ -229,7 +228,7 @@
             - "appimage"
           loop_control:
             label: "alacritty.{{ item }}"
-          register: alacritty_check
+          register: base_alacritty_check
           changed_when: false
 
         - name: Rename Alacritty to lowercase if needed
@@ -238,9 +237,9 @@
           args:
             creates: "{{ home_dir }}/AppImages/alacritty.appimage"
           when:
-            - alacritty_check.results[0].stat.exists | default(false)
-            - not alacritty_check.results[1].stat.exists | default(false)
-          register: alacritty_moved
+            - base_alacritty_check.results[0].stat.exists | default(false)
+            - not base_alacritty_check.results[1].stat.exists | default(false)
+          register: base_alacritty_moved
 
         - name: Create symlink for Alacritty
           ansible.builtin.file:
@@ -249,14 +248,14 @@
             state: link
             force: true
           when: >
-            (alacritty_check.results[1].stat.exists | default(false)) or
-            (alacritty_moved is defined and alacritty_moved.changed | default(false))
+            (base_alacritty_check.results[1].stat.exists | default(false)) or
+            (base_alacritty_moved is defined and base_alacritty_moved.changed | default(false))
 
     - name: Process Ghostty
       when: >
         enable_ghostty | default(false) and
-        appimages_to_copy.matched > 0 and
-        ('ghostty.AppImage' in (appimages_to_copy.files | map(attribute='path') | map('basename') | list))
+        base_appimages_to_copy.matched > 0 and
+        ('ghostty.AppImage' in (base_appimages_to_copy.files | map(attribute='path') | map('basename') | list))
       block:
         - name: Check for existing Ghostty installations
           ansible.builtin.stat:
@@ -266,7 +265,7 @@
             - "appimage"
           loop_control:
             label: "ghostty.{{ item }}"
-          register: ghostty_check
+          register: base_ghostty_check
           changed_when: false
 
         - name: Rename Ghostty to lowercase if needed
@@ -275,9 +274,9 @@
           args:
             creates: "{{ home_dir }}/AppImages/ghostty.appimage"
           when:
-            - ghostty_check.results[0].stat.exists | default(false)
-            - not ghostty_check.results[1].stat.exists | default(false)
-          register: ghostty_moved
+            - base_ghostty_check.results[0].stat.exists | default(false)
+            - not base_ghostty_check.results[1].stat.exists | default(false)
+          register: base_ghostty_moved
 
         - name: Create symlink for Ghostty
           ansible.builtin.file:
@@ -286,5 +285,5 @@
             state: link
             force: true
           when: >
-            (ghostty_check.results[1].stat.exists | default(false)) or
-            (ghostty_moved is defined and ghostty_moved.changed | default(false))
+            (base_ghostty_check.results[1].stat.exists | default(false)) or
+            (base_ghostty_moved is defined and base_ghostty_moved.changed | default(false))

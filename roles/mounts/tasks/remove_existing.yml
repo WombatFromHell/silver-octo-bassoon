@@ -4,9 +4,9 @@
     state: absent
     os_type: "{{ os_release_id }}"
   become: true
-  register: mounts_removed
+  register: mounts_mounts_removed
 
 - name: "Debug removed mounts"
   ansible.builtin.debug:
-    var: mounts_removed
+    var: mounts_mounts_removed
     verbosity: 1

@@ -8,9 +8,9 @@
     mode: "single_swap"
     state: "present"
   become: true
-  register: swap_result
+  register: mounts_swap_result
 
 - name: "Debug swap result"
   ansible.builtin.debug:
-    var: swap_result
+    var: mounts_swap_result
     verbosity: 1

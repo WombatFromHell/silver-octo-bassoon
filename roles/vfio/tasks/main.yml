@@ -22,21 +22,21 @@
       bootloader_mod:
         bootloader: "{{ bootloader }}"
         check_args: "{{ vm_grub_args }}"
-      register: check_result
+      register: vfio_check_result
 
     - name: Modify kernel args for VFIO support
       bootloader_mod:
         bootloader: "{{ bootloader }}"
         text_to_add: "{{ vm_grub_args }}"
-      when: not check_result.args_exist
-      register: add_args_result
+      when: not vfio_check_result.args_exist
+      register: vfio_add_args_result
 
     - name: Update GRUB config
       ansible.builtin.command:
         cmd: grub-mkconfig -o /boot/grub/grub.cfg
       when:
-        - add_args_result is defined
-        - add_args_result.changed
+        - vfio_add_args_result is defined
+        - vfio_add_args_result.changed
         - bootloader == "grub"
       changed_when: false
 

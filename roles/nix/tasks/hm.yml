@@ -22,26 +22,26 @@
       ansible.builtin.command: which home-manager
       ignore_errors: true
       changed_when: false
-      register: hm_exists
+      register: nix_hm_exists
 
     - name: Install home-manager
       ansible.builtin.command:
         cmd: "nix {{ home_manager_installer }} {{ hm_args }}"
       when:
         - nix_exists.rc is defined and nix_exists.rc == 0
-        - hm_exists.rc is defined and hm_exists.rc != 0 # only if home-manager doesn't exist
-      register: hm_install_result
-      changed_when: hm_install_result.rc is defined and hm_install_result.rc == 0
+        - nix_hm_exists.rc is defined and nix_hm_exists.rc != 0 # only if home-manager doesn't exist
+      register: nix_hm_install_result
+      changed_when: nix_hm_install_result.rc is defined and nix_hm_install_result.rc == 0
 
     - name: Check if 'home-manager' binary exists
       ansible.builtin.stat:
         path: "{{ hm_binary }}"
-      register: stat_hm_binary
+      register: nix_stat_hm_binary
 
     - name: Check if '~/.nix' exists
       ansible.builtin.stat:
         path: "{{ home_realpath }}/.nix"
-      register: stat_home_nix
+      register: nix_stat_home
 
     - name: Clone personal config
       ansible.builtin.git:
@@ -49,7 +49,7 @@
         version: c03ee4930a9a68c65d9f871fe93e622d66393a5d # pin to 03-24-25
         dest: "{{ home_realpath }}/.nix"
       when:
-        - stat_home_nix.stat is defined
-        - not stat_home_nix.stat.exists
-        - stat_hm_binary.stat is defined
-        - stat_hm_binary.stat.exists and stat_hm_binary.stat.executable
+        - nix_stat_home.stat is defined
+        - not nix_stat_home.stat.exists
+        - nix_stat_hm_binary.stat is defined
+        - nix_stat_hm_binary.stat.exists and nix_stat_hm_binary.stat.executable

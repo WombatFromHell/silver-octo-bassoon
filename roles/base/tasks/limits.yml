@@ -7,7 +7,7 @@
         paths: "{{ role_path }}/files/limits.d"
         file_type: file
         recurse: false
-      register: limitsd_files
+      register: base_limitsd_files
 
     - name: Ensure /etc/limits.d directory exists
       ansible.builtin.file:
@@ -23,9 +23,9 @@
         mode: "0644"
         remote_src: false
         backup: true
-      loop: "{{ limitsd_files.files }}"
+      loop: "{{ base_limitsd_files.files }}"
       loop_control:
         loop_var: limitsd_item
         label: "Copying {{ limitsd_item.path | basename }}"
-      when: limitsd_files.matched > 0
+      when: base_limitsd_files.matched > 0
       become: true

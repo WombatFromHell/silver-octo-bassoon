@@ -8,9 +8,9 @@
     mode: "single_mount"
     state: "present"
   become: true
-  register: mount_result
+  register: mounts_mount_result
 
 - name: "Debug mount result"
   ansible.builtin.debug:
-    var: mount_result
+    var: mounts_mount_result
     verbosity: 1

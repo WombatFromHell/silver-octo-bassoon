@@ -1,3 +1,4 @@
+---
 - name: Handle Brave browser installation
   when:
     - enable_flatpak
@@ -29,22 +30,22 @@
         - name: Check Brave VAAPI fix script
           ansible.builtin.stat:
             path: "{{ dotfiles_root }}/Configs/scripts/fix-vaapi-chromium-flatpak.sh"
-          register: brave_script
+          register: flatpak_brave_script
           ignore_errors: true
 
         - name: Set executable permission for Brave fix script
           ansible.builtin.file:
-            path: "{{ brave_script.stat.path }}"
+            path: "{{ flatpak_brave_script.stat.path }}"
             mode: "0755"
           when:
-            - brave_script.stat.exists is defined
-            - brave_script.stat.exists
-            - not brave_script.stat.isdir
+            - flatpak_brave_script.stat.exists is defined
+            - flatpak_brave_script.stat.exists
+            - not flatpak_brave_script.stat.isdir
 
         - name: Check if VAAPI driver files exist
           ansible.builtin.stat:
             path: "{{ home_realpath }}/.var/app/{{ brave_app }}/dri/{{ item }}"
-          register: vaapi_fix_check
+          register: flatpak_vaapi_fix_check
           ignore_errors: true
           changed_when: false
           loop:
@@ -54,20 +55,20 @@
         - name: Assert at least one VAAPI driver file exists
           ansible.builtin.assert:
             that:
-              - vaapi_fix_check is success
-              - vaapi_fix_check.results | selectattr('stat.exists') | list | length > 0
+              - flatpak_vaapi_fix_check is success
+              - flatpak_vaapi_fix_check.results | selectattr('stat.exists') | list | length > 0
             fail_msg: "No VAAPI driver files found, will attempt to apply fix"
             success_msg: "VAAPI driver files already exist"
-          register: vaapi_check
+          register: flatpak_vaapi_check
           ignore_errors: true
 
         - name: Apply Brave VAAPI fix
           when:
-            - brave_script.stat.exists is defined
-            - brave_script.stat.exists
-            - not brave_script.stat.isdir
-            - vaapi_check is failed # Only run if the assert failed (no drivers found)
-          ansible.builtin.script: "{{ brave_script.stat.path }}"
-          register: chromium_vaapi_fix
+            - flatpak_brave_script.stat.exists is defined
+            - flatpak_brave_script.stat.exists
+            - not flatpak_brave_script.stat.isdir
+            - flatpak_vaapi_check is failed # Only run if the assert failed (no drivers found)
+          ansible.builtin.script: "{{ flatpak_brave_script.stat.path }}"
+          register: flatpak_chromium_vaapi_fix
           ignore_errors: true
-          changed_when: chromium_vaapi_fix.rc == 0
+          changed_when: flatpak_chromium_vaapi_fix.rc == 0

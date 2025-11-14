@@ -34,20 +34,20 @@
         fi
       args:
         creates: /usr/bin/{{ aur_helper }}
-      register: aur_present
+      register: base_aur_present
 
     - name: Install AUR packages
-      tags: aur_install
+      tags: base_aur_install
       become: true
       become_user: "{{ aur_builder_user }}"
       ansible.builtin.command: "{{ aur_helper }} -Sy --needed --noconfirm {{ aur_item }}"
       loop: "{{ aur_packages }}"
       loop_control:
         loop_var: aur_item
-      register: aur_install
+      register: base_aur_install
       changed_when:
-        - "'already up to date' not in aur_install.stdout"
-        - "'there is nothing to do' not in aur_install.stdout"
+        - "'already up to date' not in base_aur_install.stdout"
+        - "'there is nothing to do' not in base_aur_install.stdout"
       when: aur_packages | length > 0
 
     - name: Update existing AUR packages
@@ -55,8 +55,8 @@
       become: true
       become_user: "{{ aur_builder_user }}"
       ansible.builtin.command: "{{ aur_helper }} -Syu --noconfirm"
-      register: upgrade_result
+      register: base_upgrade_result
       changed_when:
-        - "'there is nothing to do' not in upgrade_result.stdout"
-        - "'Packages are up to date' not in upgrade_result.stdout"
-        - "'No packages to upgrade' not in upgrade_result.stdout"
+        - "'there is nothing to do' not in base_upgrade_result.stdout"
+        - "'Packages are up to date' not in base_upgrade_result.stdout"
+        - "'No packages to upgrade' not in base_upgrade_result.stdout"

@@ -30,22 +30,22 @@
         - name: Check Firefox VAAPI fix script
           ansible.builtin.stat:
             path: "{{ dotfiles_root }}/Configs/scripts/fix-vaapi-firefox.sh"
-          register: firefox_script
+          register: flatpak_firefox_script
           ignore_errors: true
 
         - name: Set executable permission for Firefox fix script
           ansible.builtin.file:
-            path: "{{ firefox_script.stat.path }}"
+            path: "{{ flatpak_firefox_script.stat.path }}"
             mode: "0755"
           when:
-            - firefox_script.stat.exists is defined
-            - firefox_script.stat.exists
-            - not firefox_script.stat.isdir
+            - flatpak_firefox_script.stat.exists is defined
+            - flatpak_firefox_script.stat.exists
+            - not flatpak_firefox_script.stat.isdir
 
         - name: Check if VAAPI driver files exist
           ansible.builtin.stat:
             path: "{{ home_realpath }}/.var/app/{{ firefox_app }}/dri/{{ item }}"
-          register: firefox_vaapi_fix_check
+          register: flatpak_firefox_vaapi_fix_check
           ignore_errors: true
           changed_when: false
           loop:
@@ -55,20 +55,20 @@
         - name: Assert at least one VAAPI driver file exists
           ansible.builtin.assert:
             that:
-              - firefox_vaapi_fix_check is success
-              - firefox_vaapi_fix_check.results | selectattr('stat.exists') | list | length > 0
+              - flatpak_firefox_vaapi_fix_check is success
+              - flatpak_firefox_vaapi_fix_check.results | selectattr('stat.exists') | list | length > 0
             fail_msg: "No VAAPI driver files found for Firefox, will attempt to apply fix"
             success_msg: "Firefox VAAPI driver files already exist"
-          register: firefox_vaapi_check
+          register: flatpak_firefox_vaapi_check
           ignore_errors: true
 
         - name: Apply Firefox VAAPI fix
           when:
-            - firefox_script.stat.exists is defined
-            - firefox_script.stat.exists
-            - not firefox_script.stat.isdir
-            - firefox_vaapi_check is failed # Only run if the assert failed (no drivers found)
-          ansible.builtin.script: "{{ firefox_script.stat.path }}"
-          register: firefox_vaapi_script_applied
+            - flatpak_firefox_script.stat.exists is defined
+            - flatpak_firefox_script.stat.exists
+            - not flatpak_firefox_script.stat.isdir
+            - flatpak_firefox_vaapi_check is failed # Only run if the assert failed (no drivers found)
+          ansible.builtin.script: "{{ flatpak_firefox_script.stat.path }}"
+          register: flatpak_firefox_vaapi_script_applied
           ignore_errors: true
-          changed_when: firefox_vaapi_script_applied.rc == 0
+          changed_when: flatpak_firefox_vaapi_script_applied.rc == 0

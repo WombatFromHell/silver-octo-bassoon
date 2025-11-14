@@ -7,7 +7,7 @@
         paths: "{{ role_path }}/files/udev-rules.d"
         file_type: file
         recurse: false
-      register: udev_files
+      register: base_udev_files
 
     - name: Copy files to /etc/udev/rules.d with proper permissions
       ansible.builtin.copy:
@@ -16,11 +16,11 @@
         mode: "0644"
         remote_src: false
         backup: true
-      loop: "{{ udev_files.files }}"
-      register: copy_results
+      loop: "{{ base_udev_files.files }}"
+      register: base_copy_results
       loop_control:
         loop_var: udev_item
         label: "Copying {{ udev_item.path | basename }}"
-      when: udev_files.matched > 0
+      when: base_udev_files.matched > 0
       become: true
       notify: reload_udev

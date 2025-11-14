@@ -43,7 +43,7 @@
         - name: Mount BTRFS root volume
           ansible.posix.mount:
             path: "{{ btrfs_mount }}"
-            src: "{{ root_fs_dev }}"
+            src: "{{ btrfs_root_fs_dev }}"
             fstype: btrfs
             opts: "subvolid=5,noatime"
             state: mounted

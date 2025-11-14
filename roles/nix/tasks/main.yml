@@ -7,15 +7,14 @@
       block:
         - name: Check if 'findmnt /' comes back as read-write
           ansible.builtin.command: findmnt /
-          register: findmnt_root_result
+          register: nix_findmnt_root_result
           changed_when: false
           failed_when: false
 
         - name: Set findmnt read-write fact
-          when: findmnt_root_result.stdout is defined
+          when: nix_findmnt_root_result.stdout is defined
           ansible.builtin.set_fact:
-            findmnt_root_rw: "{{ findmnt_root_result.stdout is defined and
-              'rw,' in findmnt_root_result.stdout }}"
+            nix_findmnt_root_rw: "{{ nix_findmnt_root_result.stdout is defined and 'rw,' in nix_findmnt_root_result.stdout }}"
 
         - name: Check if '/nix' directory already exists
           ansible.builtin.stat:
@@ -24,9 +23,7 @@
           changed_when: false
 
     - name: Do nix enablement
-      when: nix_stat_result.stat is defined and
-        nix_stat_result.stat.exists and nix_stat_result.stat.isdir
-        or findmnt_root_rw
+      when: nix_stat_result.stat is defined and nix_stat_result.stat.exists and nix_stat_result.stat.isdir or nix_findmnt_root_rw
       block:
         - name: Check if Nix is already installed
           ansible.builtin.command: which nix

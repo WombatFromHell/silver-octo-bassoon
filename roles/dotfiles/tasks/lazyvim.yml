@@ -9,38 +9,38 @@
   block:
     - name: Check for 'nvim'
       ansible.builtin.command: which nvim
-      register: check_nvim
+      register: dotfiles_check_nvim
       ignore_errors: true
       changed_when: false
-      failed_when: check_nvim.rc is defined and check_nvim.rc != 0
+      failed_when: dotfiles_check_nvim.rc is defined and dotfiles_check_nvim.rc != 0
 
     - name: Check if '~/.config/nvim' exists
       ansible.builtin.stat:
         path: "{{ repo_dest }}"
       changed_when: false
-      register: stat_nvim
+      register: dotfiles_stat_nvim
 
     - name: Check that ssh private keys are installed
-      when: stat_nvim.stat is defined and not stat_nvim.stat.exists
+      when: dotfiles_stat_nvim.stat is defined and not dotfiles_stat_nvim.stat.exists
       ansible.builtin.shell: |
         set -o pipefail
         ssh -T git@github.com 2>&1
-      register: ssh_git_check
-      failed_when: "'successfully authenticated' not in ssh_git_check.stdout"
+      register: dotfiles_ssh_git_check
+      failed_when: "'successfully authenticated' not in dotfiles_ssh_git_check.stdout"
       ignore_errors: true
       changed_when: false
 
     - name: Set ssh verified fact
-      when: stat_nvim.stat is defined and not stat_nvim.stat.exists
+      when: dotfiles_stat_nvim.stat is defined and not dotfiles_stat_nvim.stat.exists
       ansible.builtin.set_fact:
-        ssh_git_success:
-          - "'successfully authenticated' in ssh_git_check.stdout"
+        dotfiles_ssh_git_success:
+          - "'successfully authenticated' in dotfiles_ssh_git_check.stdout"
 
     - name: Clone our personal private config to "~/.config/nvim"
       when:
         - not ansible_check_mode
-        - stat_nvim.stat is defined and not stat_nvim.stat.exists
-        - ssh_git_success is defined
+        - dotfiles_stat_nvim.stat is defined and not dotfiles_stat_nvim.stat.exists
+        - dotfiles_ssh_git_success is defined
       ansible.builtin.git:
         repo: "{{ config_repo }}"
         version: master

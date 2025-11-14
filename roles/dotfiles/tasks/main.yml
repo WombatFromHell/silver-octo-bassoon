@@ -21,12 +21,12 @@
             file_type: directory
             recurse: false
             excludes: "home,scripts,pipewire,systemd,tmux"
-          register: dotfile_dirs
+          register: dotfiles_dirs
           no_log: true
 
         - name: Process programs with tuckr
           ansible.builtin.include_tasks: process_program.yml
-          loop: "{{ dotfile_dirs.files }}"
+          loop: "{{ dotfiles_dirs.files }}"
           loop_control:
             loop_var: program_item
             label: "{{ program_item.path | basename }}"

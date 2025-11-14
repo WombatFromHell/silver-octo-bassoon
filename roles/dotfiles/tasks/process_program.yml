@@ -1,7 +1,7 @@
 ---
 - name: Check if binary available in PATH - '{{ binary_name | default('') }}'
   ansible.builtin.shell: "which {{ binary_name }}"
-  register: check_program
+  register: dotfiles_check_program
   changed_when: false
   failed_when: false
   args:
@@ -16,14 +16,14 @@
     state: present
     force: "{{ force_tuckr_overwrite | default(false) }}"
     backup: "{{ tuckr_backup_conflicts | default(true) }}"
-  when: check_program.rc == 0
-  register: tuckr_result
-  changed_when: tuckr_result is changed
+  when: dotfiles_check_program.rc == 0
+  register: dotfiles_tuckr_result
+  changed_when: dotfiles_tuckr_result is changed
   failed_when: >
-    (tuckr_result is failed and
-      not (force_tuckr_overwrite|default(false) and 'conflicts' in tuckr_result)) or
-    (tuckr_result.rc is defined and tuckr_result.rc != 0 and
-      not (force_tuckr_overwrite|default(false) and 'conflicts' in tuckr_result))
+    (dotfiles_tuckr_result is failed and
+      not (force_tuckr_overwrite|default(false) and 'conflicts' in dotfiles_tuckr_result)) or
+    (dotfiles_tuckr_result.rc is defined and dotfiles_tuckr_result.rc != 0 and
+      not (force_tuckr_overwrite|default(false) and 'conflicts' in dotfiles_tuckr_result))
   notify: "{{ program_handlers[program_name] | default(omit) }}"
   vars:
     program_handlers:

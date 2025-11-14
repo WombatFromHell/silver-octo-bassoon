@@ -9,7 +9,7 @@
         recurse: false
         # conditionally exclude nvidia related configs
         excludes: "{{ ['nvidia-pm.conf', 'veridian-controller.toml'] if not nvidia_exists | default(false) else [] }}"
-      register: etc_files
+      register: base_etc_files
 
     - name: Copy files to /etc with proper permissions
       ansible.builtin.copy:
@@ -18,11 +18,11 @@
         mode: "0644"
         remote_src: false
         backup: true
-      loop: "{{ etc_files.files }}"
+      loop: "{{ base_etc_files.files }}"
       loop_control:
         loop_var: etc_item
         label: "Copying {{ etc_item.path | basename }}"
-      when: etc_files.matched > 0
+      when: base_etc_files.matched > 0
       become: true
 
     - name: Uncomment Nvidia-specific environment variables if graphics card is nvidia
@@ -32,6 +32,6 @@
           ^#\s*(MOZ_DISABLE_RDD_SANDBOX=.*|LIBVA_DRIVER_NAME=.*|
           NVD_BACKEND=.*|GBM_BACKEND=.*|__GLX_VENDOR_LIBRARY_NAME=.*|
           __GLX_VENDOR_LIBRARY_FILENAMES=.*)$
-        replace: '\1'
+        replace: "\\1"
       when: nvidia_exists | default(false)
       become: true

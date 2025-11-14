@@ -16,40 +16,40 @@
     - name: Stat 99-lsfg.conf
       ansible.builtin.stat:
         path: "{{ lsfg_conf_path }}"
-      register: lsfg_conf_stat
+      register: dotfiles_lsfg_conf_stat
 
     - name: Copy 99-lsfg.conf template
       ansible.builtin.template:
         src: "{{ role_path }}/templates/99-lsfg.conf.j2"
         dest: "{{ lsfg_conf_path }}"
         mode: "0644"
-      when: not lsfg_conf_stat.stat.exists
+      when: not dotfiles_lsfg_conf_stat.stat.exists
 
     - name: Verify '99-lsfg.conf' exists
       ansible.builtin.stat:
         path: "{{ lsfg_conf_path }}"
-      register: lsfg_conf_verify
-      failed_when: not lsfg_conf_verify.stat.exists
+      register: dotfiles_lsfg_conf_verify
+      failed_when: not dotfiles_lsfg_conf_verify.stat.exists
 
     - name: Stat '$HOME/.local/share' directory
       ansible.builtin.stat:
         path: "{{ home_realpath }}/.local/share"
-      register: local_share_stat
+      register: dotfiles_local_share_stat
 
     - name: Verify '$HOME/.local/share' exists
       ansible.builtin.assert:
         that:
-          - local_share_stat.stat.exists
-          - local_share_stat.stat.isdir
+          - dotfiles_local_share_stat.stat.exists
+          - dotfiles_local_share_stat.stat.isdir
 
     - name: Stat 'Lossless.dll' source
       ansible.builtin.stat:
         path: "{{ lossless_dll_src }}"
-      register: lossless_source_stat
+      register: dotfiles_lossless_source_stat
 
     - name: Copy Lossless.dll if source exists
       ansible.builtin.copy:
         src: "{{ lossless_dll_src }}"
         dest: "{{ lossless_dll_dest }}"
         mode: "0644"
-      when: lossless_source_stat.stat.exists
+      when: dotfiles_lossless_source_stat.stat.exists

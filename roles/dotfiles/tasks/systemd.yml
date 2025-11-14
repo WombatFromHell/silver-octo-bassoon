@@ -4,15 +4,15 @@
   block:
     - name: Check for systemd configs in dotfiles
       ansible.builtin.set_fact:
-        has_systemd: "{{ lookup('fileglob', dotfiles_root + '/Configs/systemd/.config/systemd/user/*.service', wantlist=true) | length > 0 }}"
-        systemd_user_dir: "{{ home_dir }}/.config/systemd/user"
+        dotfiles_has_systemd: "{{ lookup('fileglob', dotfiles_root + '/Configs/systemd/.config/systemd/user/*.service', wantlist=true) | length > 0 }}"
+        dotfiles_systemd_user_dir: "{{ home_dir }}/.config/systemd/user"
 
     - name: Process systemd unit files
-      when: has_systemd
+      when: dotfiles_has_systemd
       block:
         - name: Ensure systemd user directory exists
           ansible.builtin.file:
-            path: "{{ systemd_user_dir }}"
+            path: "{{ dotfiles_systemd_user_dir }}"
             state: directory
             mode: "0755"
 
@@ -21,15 +21,15 @@
             path: "{{ dotfiles_root }}/Configs/systemd/.config/systemd/user"
             patterns: "*.service"
             recurse: true
-          register: systemd_dotfiles
+          register: dotfiles_systemd_dotfiles
 
         - name: Sync systemd unit files
           ansible.builtin.file:
-            path: "{{ systemd_user_dir }}/{{ item.path | regex_replace('^.*/user/?', '') }}"
+            path: "{{ dotfiles_systemd_user_dir }}/{{ item.path | regex_replace('^.*/user/?', '') }}"
             src: "{{ item.path }}"
             state: link
             force: true
-          loop: "{{ systemd_dotfiles.files }}"
+          loop: "{{ dotfiles_systemd_dotfiles.files }}"
           loop_control:
             label: "{{ item.path | basename }}"
           notify: reload_user_systemd

@@ -23,7 +23,7 @@
       when: enable_cursor | default(false)
       ansible.builtin.command:
         cmd: "distrobox ls | grep -q cursoride"
-      register: cursoride_check
+      register: distrobox_cursoride_check
       failed_when: result.rc != 0
       changed_when: false
       ignore_errors: true
@@ -31,19 +31,18 @@
     - name: Create 'cursoride' container
       when:
         - distrobox_check.rc != 0
-        - cursoride_check.rc != 0
+        - distrobox_cursoride_check.rc != 0
         - enable_cursor | default(false)
       ansible.builtin.command:
         cmd: "distrobox assemble create --file ./distrobox/assemble-cursoride.ini"
-      register: create_cursoride_container
-      changed_when: "'created' in create_cursoride_container.stdout or
-        'already exists' not in create_cursoride_container.stdout"
+      register: distrobox_create_cursoride_container
+      changed_when: "'created' in distrobox_create_cursoride_container.stdout or 'already exists' not in distrobox_create_cursoride_container.stdout"
 
     - name: Check if 'devbox' container exists
       when: enable_devbox | default(false)
       ansible.builtin.command:
         cmd: "distrobox ls | grep -q devbox"
-      register: devbox_check
+      register: distrobox_devbox_check
       failed_when: result.rc != 0
       changed_when: false
       ignore_errors: true
@@ -51,10 +50,9 @@
     - name: Create 'devbox' container
       when:
         - distrobox_check.rc != 0
-        - devbox_check.rc != 0
+        - distrobox_devbox_check.rc != 0
         - enable_devbox | default(false)
       ansible.builtin.command:
         cmd: "distrobox assemble create --file ./distrobox/assemble-devbox.ini"
-      register: create_devbox_container
-      changed_when: "'created' in create_devbox_container.stdout or
-        'already exists' not in create_devbox_container.stdout"
+      register: distrobox_create_devbox_container
+      changed_when: "'created' in create_devbox_container.stdout or 'already exists' not in create_devbox_container.stdout"

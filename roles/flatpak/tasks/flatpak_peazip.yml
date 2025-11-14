@@ -18,66 +18,66 @@
         - name: Get current PeaZip commit
           ansible.builtin.shell: |
             flatpak --user info "{{ peazip_app }}" | grep Commit | awk '{print $2}'
-          register: current_peazip_commit
+          register: flatpak_current_peazip_commit
           changed_when: false
           ignore_errors: true
 
         - name: Check if PeaZip is already masked
           ansible.builtin.shell: |
             flatpak --user mask | grep "{{ peazip_app }}" || true
-          register: peazip_masked
+          register: flatpak_peazip_masked
           ignore_errors: true
           changed_when: false
 
         - name: Upgrade PeaZip to specific commit (if needed)
           when:
-            - current_peazip_commit.stdout != pinned_peazip_ver
-            - not current_peazip_commit.failed
+            - flatpak_current_peazip_commit.stdout != pinned_peazip_ver
+            - not flatpak_current_peazip_commit.failed
           ansible.builtin.command: >
             flatpak --user upgrade --noninteractive "{{ peazip_app }}"
             --commit={{ pinned_peazip_ver }}
-          register: peazip_upgrade
+          register: flatpak_peazip_upgrade
           changed_when:
-            - "'Nothing to do' not in peazip_upgrade.stderr"
-            - "'is already installed' not in peazip_upgrade.stderr"
+            - "'Nothing to do' not in flatpak_peazip_upgrade.stderr"
+            - "'is already installed' not in flatpak_peazip_upgrade.stderr"
 
         - name: Mask PeaZip (if needed)
           when:
-            - not peazip_masked.failed
-            - peazip_masked.stdout | length == 0
-            - peazip_upgrade is changed or current_peazip_commit.stdout == pinned_peazip_ver
+            - not flatpak_peazip_masked.failed
+            - flatpak_peazip_masked.stdout | length == 0
+            - flatpak_peazip_upgrade is changed or flatpak_current_peazip_commit.stdout == pinned_peazip_ver
           ansible.builtin.command: >
             flatpak --user mask {{ peazip_app }}
-          register: mask_result
+          register: flatpak_peazip_mask_result
           changed_when:
-            - "'is already masked' not in mask_result.stderr"
-            - "'Nothing to do' not in mask_result.stderr"
+            - "'is already masked' not in flatpak_peazip_mask_result.stderr"
+            - "'Nothing to do' not in flatpak_peazip_mask_result.stderr"
 
         - name: Check for PeaZip-Dolphin fix script
           ansible.builtin.stat:
             path: "{{ dotfiles_root }}/Configs/scripts/fix-peazip-dolphin-integration.sh"
-          register: peazip_script
+          register: flatpak_peazip_script
 
         - name: Check if fix marker exists
           ansible.builtin.stat:
             path: "{{ home_realpath }}/.local/share/kio/servicemenus/peazipadd.desktop"
-          register: fix_marker
+          register: flatpak_peazip_fix_marker
 
         - name: Apply PeaZip-Dolphin integration fix
           when:
-            - peazip_script.stat.exists
-            - not fix_marker.stat.exists
+            - flatpak_peazip_script.stat.exists
+            - not flatpak_peazip_fix_marker.stat.exists
           ansible.builtin.command: "{{ dotfiles_root }}/Configs/scripts/fix-peazip-dolphin-integration.sh"
-          register: apply_fix
+          register: flatpak_peazip_apply_fix
           changed_when: false
 
         - name: Verify fix application
           when:
             - not ansible_check_mode
-            - not fix_marker.stat.exists
-            - apply_fix.rc is defined
-            - apply_fix.rc == 0
+            - not flatpak_peazip_fix_marker.stat.exists
+            - flatpak_peazip_apply_fix.rc is defined
+            - flatpak_peazip_apply_fix.rc == 0
           ansible.builtin.stat:
             path: "{{ home_realpath }}/.local/share/kio/servicemenus/peazipadd.desktop"
-          register: verify_fix
-          failed_when: not verify_fix.stat.exists
+          register: flatpak_peazip_verify_fix
+          failed_when: not flatpak_peazip_verify_fix.stat.exists

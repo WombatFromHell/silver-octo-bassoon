@@ -6,7 +6,7 @@
       ansible.builtin.stat:
         path: "{{ current_directory_path }}"
         follow: false
-      register: pipewire_dir_check
+      register: dotfiles_pipewire_dir_check
       loop:
         - "{{ pipewire_dir }}"
         - "{{ pipewire_dir }}/pipewire.conf.d"
@@ -18,13 +18,12 @@
         path: "{{ directory_check_result.current_directory_path }}"
         state: directory
         mode: "0755"
-      loop: "{{ pipewire_dir_check.results }}"
+      loop: "{{ dotfiles_pipewire_dir_check.results }}"
       loop_control:
         loop_var: directory_check_result
         label: "{{ directory_check_result.current_directory_path }}"
       when:
-        - not directory_check_result.stat.exists or
-          directory_check_result.stat.islnk
+        - not directory_check_result.stat.exists or directory_check_result.stat.islnk
 
     - name: Copy kemar.sofa file
       ansible.builtin.copy:
