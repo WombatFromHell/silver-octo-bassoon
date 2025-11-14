@@ -64,7 +64,7 @@
         --passphrase-fd 0 --import
         "{{ gnupg_key_dir }}/private-key.asc"
       args:
-        stdin: "{{ dotfiles_secrets.dotfiles_passphrase }}"
+        stdin: "{{ dotfiles_secrets.gpg_passphrase }}"
       when:
         - dotfiles_public_key_fingerprint is defined
         - dotfiles_check_private_key is defined
@@ -93,36 +93,41 @@
         loop_var: ssh_item
         label: "{{ ssh_item.key }}"
 
-    - name: Ensure known_hosts file exists with correct permissions for user
-      ansible.builtin.file:
-        path: "{{ home_dir }}/.ssh/known_hosts"
-        state: touch
-        owner: "{{ ansible_facts.user_id }}"
-        group: "{{ ansible_facts.user_gid }}"
-        mode: "0644"
-      become_user: "{{ ansible_facts.user_id }}"
-      become: true
+    - name: Manage SSH known_hosts file
+      block:
+        - name: Ensure known_hosts file exists with correct permissions
+          ansible.builtin.file:
+            path: "{{ home_dir }}/.ssh/known_hosts"
+            state: touch # 'touch' creates the file if it's missing, or updates its timestamp if it exists.
+            mode: "0600"
+            owner: "{{ ansible_facts.user_id }}"
+            group: "{{ ansible_facts.user_id }}"
+          become_user: "{{ ansible_facts.user_id }}"
+          become: true
 
-    - name: Add various hosts to known_hosts for user
-      ansible.builtin.lineinfile:
-        path: "{{ home_dir }}/.ssh/known_hosts"
-        line: "{{ item.key_line }}"
-        create: true
-        mode: "0600"
-      become_user: "{{ ansible_facts.user_id }}"
-      become: true
-      loop:
-        - key_line: >-
-            {{
-              lookup(
-                'pipe',
-                'ssh-keyscan -t rsa,ed25519 github.com 2>/dev/null || echo "# Manually add github.com key later"'
-              )
-            }}
-        - key_line: >-
-            {{
-              lookup(
-                'pipe',
-                'ssh-keyscan -t rsa,ed25519,ecdsa-sha2-nistp256 -p 2222 192.168.1.153 2>/dev/null || echo "# Manually add NAS key later"'
-              )
-            }}
+        - name: Check if host keys already exist
+          ansible.builtin.command: ssh-keygen -F {{ item.name | quote }}
+          register: dotfiles_host_key_check_results
+          failed_when: false
+          changed_when: false
+          become_user: "{{ ansible_facts.user_id }}"
+          become: true
+          loop:
+            - name: github.com
+              key_scan_command: "ssh-keyscan -t rsa,ed25519 github.com"
+            - name: "[192.168.1.153]:2222"
+              key_scan_command: "ssh-keyscan -t rsa,ed25519,ecdsa-sha2-nistp256 -p 2222 192.168.1.153"
+          run_once: true
+
+        - name: Add missing hosts to known_hosts
+          ansible.builtin.known_hosts:
+            name: "{{ item.item.name }}"
+            key: "{{ lookup('pipe', item.item.key_scan_command) }}"
+            path: "{{ home_dir }}/.ssh/known_hosts"
+            state: present
+            # 'create' and 'mode' have been removed as they are not supported here
+          become_user: "{{ ansible_facts.user_id }}"
+          become: true
+          loop: "{{ dotfiles_host_key_check_results.results }}"
+          when: item.rc != 0
+          run_once: true
