@@ -218,26 +218,96 @@ All modules require:
 
 ## Testing and Validation
 
-The modules now have comprehensive test coverage:
+The modules now have comprehensive test coverage with improved quality and structure:
 
 - **Test Infrastructure**: Complete pytest-based test suite with `conftest.py` containing shared fixtures
 - **Unit Tests**: Individual test functions for all major functions and methods in each module
 - **Integration Tests**: Tests validating module interactions and overall functionality
-- **Mocking**: Extensive use of mocking to isolate functionality and avoid external dependencies during testing
+- **Mocking**: Extensive use of pytest-mock's `mocker` fixture for mocking to ensure consistent test patterns and avoid external dependencies during testing
 - **Bug Fixes**: Two critical regex bugs were identified and fixed during testing:
   - `modify_refind_config()` now properly handles quoted strings for parameter removal
   - `modify_grub_config()` now properly adds parameters to existing GRUB configuration lines
-- **Test Coverage**: 70+ tests covering all modules with both positive and error cases
+- **Test Coverage**: 80+ tests covering all modules with both positive and error cases, achieving >85% overall coverage
+- **Test Quality Improvements**: Streamlined and parametrized existing tests to reduce redundancy and improve maintainability
 
 ### Test Organization
 
 The test suite is organized as follows:
 
-- `tests/conftest.py`: Shared fixtures including mocked AnsibleModule, temporary files/directories
-- `tests/test_bootloader_mod.py`: Complete test suite for bootloader module, including integration tests
-- `tests/test_flatpak_manage.py`: Complete test suite for flatpak module, including integration tests
+- `tests/conftest.py`: Shared fixtures including mocked AnsibleModule, temporary files/directories, and common test utilities
+- `tests/test_bootloader_mod.py`: Complete test suite for bootloader module, including integration tests and 88.39% coverage
+- `tests/test_flatpak_manage.py`: Complete test suite for flatpak module, including integration tests - **Updated to use pytest-mock's `mocker` fixture instead of unittest.mock decorators**
 - `tests/test_systemd_mount.py`: Complete test suite for systemd mount module, including integration tests
 - `tests/test_tuckr_manage.py`: Complete test suite for tuckr module, including integration tests
+
+### Test Patterns
+
+The test suite follows consistent modern pytest patterns:
+
+- Uses `mocker` fixture for all mocking needs instead of `@patch` decorators
+- Maintains idempotent test design to ensure reliable test execution
+- Includes parameterized tests for comprehensive coverage of different scenarios
+- Employs proper exception testing to validate error handling paths
+- Leverages shared fixtures to reduce code duplication and improve maintainability
+- Implements proper Ansible module mocking patterns to simulate real execution paths
+
+## Module Dependency Graph
+
+```mermaid
+graph TD
+    subgraph "Ansible Modules"
+        A[bootloader_mod.py]
+        B[flatpak_manage.py]
+        C[systemd_mount.py]
+        D[tuckr_manage.py]
+        E[main.py]
+    end
+
+    subgraph "External Dependencies"
+        F[Ansible]
+        G[Python 3.13+]
+        H[systemctl]
+        I[flatpak]
+        J[tuckr]
+        K[grub-mkconfig]
+    end
+
+    subgraph "Python Libraries"
+        L[os]
+        M[subprocess]
+        N[re]
+        O[shutil]
+        P[AnsibleModule]
+    end
+
+    A --> P
+    A --> L
+    A --> N
+    A --> O
+    A --> K
+
+    B --> P
+    B --> M
+    B --> I
+
+    C --> P
+    C --> L
+    C --> M
+    C --> H
+
+    D --> P
+    D --> M
+    D --> J
+
+    E --> P
+
+    F --> P
+    G --> A
+    G --> B
+    G --> C
+    G --> D
+    G --> E
+```
 
 ## Security Considerations
 

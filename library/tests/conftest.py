@@ -32,3 +32,16 @@ def temp_dir():
     import shutil
 
     shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture
+def mock_ansible_module(mocker):
+    """Create a standardized mock Ansible module for testing"""
+    mock_module = mocker.Mock()
+    mock_module.params = {}
+    mock_module.check_mode = False
+    mock_module.fail_json = mocker.Mock(side_effect=SystemExit)
+    mock_module.exit_json = mocker.Mock()
+    mock_module.warn = mocker.Mock()
+    mock_module.run_command = mocker.Mock(return_value=(0, "", ""))
+    return mock_module
