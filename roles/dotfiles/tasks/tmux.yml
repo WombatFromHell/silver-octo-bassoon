@@ -41,7 +41,8 @@
           ansible.builtin.git:
             repo: "https://github.com/tmux-plugins/tpm"
             dest: "{{ home_dir }}/.config/tmux/plugins/tpm"
-            version: 99469c4a9b1ccf77fade25842dc7bafbc8ce9946 # pin to 02-27-23
+            version: main
+            update: true
           when: not dotfiles_tpm_repo.stat.exists
 
         - name: Set permissions for TPM executables
