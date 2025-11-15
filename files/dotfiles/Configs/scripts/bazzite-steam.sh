@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 STEAM_SCRIPT="$(which bazzite-steam || which steam)"
 STEAM_ARGS=(
-  -steamos3 # for Steam Input in Wayland
+  # -steamos3 # for Steam Input in Wayland
   +gyro_force_sensor_rate 250
 )
 
