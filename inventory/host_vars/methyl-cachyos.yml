@@ -68,6 +68,7 @@ aur_builder_user: yaybuildr
 aur_helper_pkg: yay-bin
 aur_helper: yay
 aur_packages:
+  - downgrade
   - brave-bin
   - brlaser-git
   - protonplus
