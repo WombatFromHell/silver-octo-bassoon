@@ -7,6 +7,7 @@
       when:
         - ansible_facts['distribution'] == "Archlinux"
         - kernel_args is defined and kernel_args | trim != ""
+        - bootloader is defined and bootloader == "refind"
       block:
         - name: Check if refind_linux.conf exists
           ansible.builtin.stat:
@@ -25,6 +26,7 @@
       when:
         - ansible_facts['distribution'] == "Archlinux"
         - kernel_args is defined and kernel_args | trim != ""
+        - bootloader is defined and bootloader == "grub"
       block:
         - name: Check if /etc/default/grub exists
           ansible.builtin.stat:

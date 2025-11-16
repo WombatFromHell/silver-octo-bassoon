@@ -16,7 +16,7 @@ pipewire_dir: "{{ home_dir }}/.config/pipewire"
 # add host-specific kernel args here
 # kernel_args: "amd_pstate=active acpi_enforce_resources=lax"
 kernel_args: "split_lock_detect=off amdgpu.ppfeaturemask=0xfffd7fff amdgpu.dcdebugmask=0x410"
-bootloader: "grub"
+bootloader: "ostree"
 
 program_checks:
   hyprland: "hypr"
