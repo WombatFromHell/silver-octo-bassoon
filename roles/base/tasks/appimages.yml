@@ -1,6 +1,7 @@
 ---
 - name: AppImages processing
   tags: [extra, appimages]
+  when: enable_appimages | default(false)
   block:
     - name: Ensure required directories exist
       ansible.builtin.file:

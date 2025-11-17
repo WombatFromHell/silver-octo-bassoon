@@ -45,17 +45,16 @@ system_flatpaks:
   - com.github.tchx84.Flatseal
   - it.mijorus.gearlever
   - runtime/org.freedesktop.Platform.VulkanLayer.MangoHud/x86_64/24.08
+  - com.github.Matoking.protontricks
   - org.gtk.Gtk3theme.Adwaita-dark
   - org.kde.filelight
   - org.kde.gwenview
   - org.kde.haruna
   - org.kde.kcalc
   - org.kde.okular
-  - com.github.Matoking.protontricks
+  - org.gnome.Papers
 user_flatpaks:
   - com.github.zocker_160.SyncThingy
-  - com.spotify.Client
-  - net.agalwood.Motrix
   - org.deluge_torrent.deluge
   - com.vysp3r.ProtonPlus
   - com.usebottles.bottles
@@ -67,6 +66,7 @@ install_brave: true
 install_firefox: false
 install_peazip: true
 
+enable_appimages: true
 # prefer terminals provided in image
 enable_ghostty: false
 enable_alacritty: false

@@ -34,11 +34,13 @@ base_packages:
   - fzf
   - git
   - gnupg
+  - kitty
   - lazygit
   - lib32-mangohud
   - lib32-pulseaudio
   - libcurl-gnutls
   - libssh2
+  - lib32-mangohud
   - mangohud
   - nano
   - neovim
@@ -61,7 +63,6 @@ base_packages:
   - yay
   - yazi
   - zoxide
-  - zram-generator
   - zstd
 
 aur_builder_user: yaybuildr
@@ -69,11 +70,7 @@ aur_helper_pkg: yay-bin
 aur_helper: yay
 aur_packages:
   - downgrade
-  - brave-bin
   - brlaser-git
-  - protonplus
-  - spotify
-  - spicetify-cli
 
 program_checks:
   hyprland: "hypr"
@@ -96,24 +93,29 @@ program_handlers:
     - command: "bat cache --build"
       creates: "{{ home_dir }}/.cache/bat"
 
-enable_kitty: true
-enable_ghostty: false
-enable_alacritty: false
+enable_appimages: false
+enable_nix: false
+enable_brew: false
 
 enable_lazyvim: true
-enable_brew: false
-enable_nix: false
+
 enable_flatpak: true
 remove_existing_flatpaks: true
 system_flatpaks:
   - com.github.tchx84.Flatseal
   - it.mijorus.gearlever
+  - runtime/org.freedesktop.Platform.VulkanLayer.MangoHud/x86_64/24.08
+  - com.github.Matoking.protontricks
+  - org.gnome.Papers
 user_flatpaks:
   - com.vysp3r.ProtonPlus
   - com.usebottles.bottles
   - org.deluge_torrent.deluge
 skip_flatpaks:
   - io.github.peazip.PeaZip
+  - com.brave.Browser
+install_brave: true
+install_firefox: false
 install_peazip: true
 
 enable_btrfs_snapper: true
