@@ -1,0 +1,11 @@
+---
+- name: Configure systemd-boot bootloader for snapper support
+  become: true
+  tags: [extra, btrfs, btrfs_systemd_boot]
+  when: is_systemd_boot | default(false)
+  block:
+    - name: Remove rootflags=subvol parameter from systemd-boot entries
+      bootloader_mod:
+        bootloader: "systemd-boot"
+        text_to_remove: "rootflags=subvol"
+      register: btrfs_systemd_boot_result

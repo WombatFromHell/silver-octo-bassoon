@@ -24,6 +24,19 @@
       - snapper-timeline.timer
 
   block:
+    - name: Check if any supported bootloader is detected
+      ansible.builtin.set_fact:
+        btrfs_has_supported_bootloader: >-
+          {{ (is_grub_boot | default(false)) or
+             (is_limine_boot | default(false)) or
+             (is_systemd_boot | default(false)) or
+             (is_refind_boot | default(false)) }}
+
+    - name: Warn if no supported bootloader detected
+      ansible.builtin.debug:
+        msg: "WARNING: No supported bootloader detected (GRUB, systemd-boot, rEFInd, or Limine). Some btrfs snapshot rollback functionality may be limited."
+      when: not (btrfs_has_supported_bootloader | default(false))
+
     - name: Include system detection tasks
       ansible.builtin.include_tasks: detection.yml
       tags: [extra, btrfs, btrfs_detection]
@@ -65,6 +78,14 @@
       ansible.builtin.include_tasks: limine.yml
       tags: [extra, btrfs, btrfs_limine]
 
+    - name: Include systemd-boot configuration tasks for snapper rollback support
+      ansible.builtin.include_tasks: systemd-boot.yml
+      tags: [extra, btrfs, btrfs_systemd_boot]
+
+    - name: Include rEFInd configuration tasks for snapper rollback support
+      ansible.builtin.include_tasks: refind.yml
+      tags: [extra, btrfs, btrfs_refind]
+
     - name: Include fstab configuration tasks for snapper rollback support
       ansible.builtin.include_tasks: fstab.yml
       tags: [extra, btrfs, btrfs_fstab]
@@ -90,9 +111,23 @@
         enabled: true
       loop: "{{ snapper_timers }}"
 
-    - name: Regenerate GRUB configuration if using GRUB
+    - name: Trigger GRUB configuration regeneration when using GRUB
       ansible.builtin.debug:
         msg: "Triggering GRUB configuration regeneration"
-      when: is_grub_boot
+      when: is_grub_boot | default(false)
       changed_when: false
       notify: Regenerate GRUB configuration
+
+    - name: Trigger systemd-boot configuration regeneration when using systemd-boot
+      ansible.builtin.debug:
+        msg: "Triggering systemd-boot configuration regeneration"
+      when: is_systemd_boot | default(false)
+      changed_when: false
+      notify: Regenerate systemd-boot configuration
+
+    - name: Trigger rEFInd configuration update when using rEFInd
+      ansible.builtin.debug:
+        msg: "Triggering rEFInd configuration update"
+      when: is_refind_boot | default(false)
+      changed_when: false
+      notify: Update rEFInd configuration

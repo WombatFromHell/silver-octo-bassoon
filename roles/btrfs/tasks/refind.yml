@@ -1,0 +1,11 @@
+---
+- name: Configure rEFInd bootloader for snapper support
+  become: true
+  tags: [extra, btrfs, btrfs_refind]
+  when: is_refind_boot | default(false)
+  block:
+    - name: Remove rootflags=subvol parameter from rEFInd configuration
+      bootloader_mod:
+        bootloader: "refind"
+        text_to_remove: "rootflags=subvol"
+      register: btrfs_refind_result

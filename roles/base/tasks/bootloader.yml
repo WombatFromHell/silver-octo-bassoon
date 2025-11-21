@@ -14,26 +14,36 @@
             path: "/boot/refind_linux.conf"
           register: base_refind_exists
 
-        - name: Detect kernel args (refind)
+        - name: Check current kernel args in refind config
           when:
             - base_refind_exists.stat.exists
           bootloader_mod:
             bootloader: "refind"
             config_file: "/boot/refind_linux.conf"
             check_args: "{{ kernel_args }}"
+          register: base_check_refind_result
+
+        - name: Add missing kernel args to refind config
+          when:
+            - base_refind_exists.stat.exists
+            - not base_check_refind_result.args_exist | default(false)
+          bootloader_mod:
+            bootloader: "refind"
+            config_file: "/boot/refind_linux.conf"
+            text_to_add: "{{ kernel_args }}"
+          register: base_modify_refind_result
 
     - name: Look for GRUB
       when:
         - ansible_facts['distribution'] == "Archlinux"
         - kernel_args is defined and kernel_args | trim != ""
-        - is_grub_boot | default(false)
       block:
         - name: Check if /etc/default/grub exists
           ansible.builtin.stat:
             path: "/etc/default/grub"
           register: base_grub_exists
 
-        - name: Detect kernel args (grub)
+        - name: Check current kernel args in grub config
           when:
             - base_grub_exists.stat.exists
           bootloader_mod:
@@ -42,18 +52,27 @@
             check_args: "{{ kernel_args }}"
           register: base_check_grub_result
 
+        - name: Add missing kernel args to grub config
+          when:
+            - base_grub_exists.stat.exists
+            - not base_check_grub_result.args_exist | default(false)
+          bootloader_mod:
+            bootloader: "grub"
+            config_file: "/etc/default/grub"
+            text_to_add: "{{ kernel_args }}"
+          register: base_modify_grub_result
+
     - name: Look for Limine
       when:
         - ansible_facts['distribution'] == "Archlinux"
         - kernel_args is defined and kernel_args | trim != ""
-        - is_limine_boot | default(false)
       block:
         - name: Check if /etc/default/limine exists
           ansible.builtin.stat:
             path: "/etc/default/limine"
           register: base_limine_exists
 
-        - name: Detect kernel args (limine)
+        - name: Check current kernel args in limine config
           when:
             - base_limine_exists.stat.exists
           bootloader_mod:
@@ -61,6 +80,16 @@
             config_file: "/etc/default/limine"
             check_args: "{{ kernel_args }}"
           register: base_check_limine_result
+
+        - name: Add missing kernel args to limine config
+          when:
+            - base_limine_exists.stat.exists
+            - not base_check_limine_result.args_exist | default(false)
+          bootloader_mod:
+            bootloader: "limine"
+            config_file: "/etc/default/limine"
+            text_to_add: "{{ kernel_args }}"
+          register: base_modify_limine_result
 
     - name: Change kernel args (ostree)
       when:

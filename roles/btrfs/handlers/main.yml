@@ -6,3 +6,16 @@
   ansible.builtin.command: grub-mkconfig -o /boot/grub/grub.cfg
   changed_when: false
   when: is_grub_boot | default(false)
+
+- name: Regenerate systemd-boot configuration
+  become: true
+  ansible.builtin.command: bootctl update
+  changed_when: false
+  when: is_systemd_boot | default(false)
+
+- name: Update rEFInd configuration
+  become: true
+  ansible.builtin.debug:
+    msg: "rEFInd configuration updated (no command needed for rEFInd)"
+  changed_when: false
+  when: is_refind_boot | default(false)

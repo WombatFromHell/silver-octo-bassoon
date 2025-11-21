@@ -88,6 +88,36 @@
             is_limine_boot: "{{ limine_check.stat.exists | default(false) }}"
           check_mode: false
 
+    - name: Gather systemd-boot bootloader facts
+      tags: [setup, facts]
+      become: true
+      block:
+        - name: Check for systemd-boot bootloader
+          ansible.builtin.stat:
+            path: /boot/efi/EFI/systemd/systemd-bootx64.efi
+          register: systemd_boot_check
+          check_mode: false
+
+        - name: Set systemd-boot bootloader facts
+          ansible.builtin.set_fact:
+            is_systemd_boot: "{{ systemd_boot_check.stat.exists | default(false) }}"
+          check_mode: false
+
+    - name: Gather rEFInd bootloader facts
+      tags: [setup, facts]
+      become: true
+      block:
+        - name: Check for rEFInd bootloader
+          ansible.builtin.stat:
+            path: /boot/efi/EFI/refind/refind_x64.efi
+          register: refind_check
+          check_mode: false
+
+        - name: Set rEFInd bootloader facts
+          ansible.builtin.set_fact:
+            is_refind_boot: "{{ refind_check.stat.exists | default(false) }}"
+          check_mode: false
+
   roles:
     - btrfs
     - base

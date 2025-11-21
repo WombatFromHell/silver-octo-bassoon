@@ -3,7 +3,7 @@
 import os
 import re
 import shutil
-from typing import Dict, Optional, Tuple, Callable
+from typing import Callable, Dict, Optional, Tuple
 
 from ansible.module_utils.basic import AnsibleModule
 
@@ -86,7 +86,9 @@ def update_grub_config(module: AnsibleModule, config_file: str) -> None:
         module.warn("Failed to update grub config: " + err)
 
 
-def _add_or_remove_parameter(content: str, param: str, operation: str) -> Tuple[str, bool]:
+def _add_or_remove_parameter(
+    content: str, param: str, operation: str
+) -> Tuple[str, bool]:
     """
     Helper function to add or remove a parameter from content.
 
@@ -100,17 +102,17 @@ def _add_or_remove_parameter(content: str, param: str, operation: str) -> Tuple[
     """
     if not param:
         return content, False
-        
+
     needs_change = False
     new_content = content
 
-    if operation == 'remove':
-        pattern = r'(^|\s)' + re.escape(param) + r'(\s|$)'
+    if operation == "remove":
+        pattern = r"(^|\s)" + re.escape(param) + r"(\s|$)"
         if re.search(pattern, new_content):
             needs_change = True
-            new_content = re.sub(pattern, r'\1 \2', new_content)
-            new_content = re.sub(r' +', ' ', new_content).strip()
-    elif operation == 'add':
+            new_content = re.sub(pattern, r"\1 \2", new_content)
+            new_content = re.sub(r" +", " ", new_content).strip()
+    elif operation == "add":
         # If the parameter is not already present, add it
         if param not in new_content.split():
             new_content += f" {param}"
@@ -119,7 +121,9 @@ def _add_or_remove_parameter(content: str, param: str, operation: str) -> Tuple[
     return new_content, needs_change
 
 
-def _update_quoted_line_params(line: str, param: str, operation: str) -> Tuple[str, bool]:
+def _update_quoted_line_params(
+    line: str, param: str, operation: str
+) -> Tuple[str, bool]:
     """
     Helper function to add or remove parameters within quoted options in a line.
 
@@ -143,7 +147,7 @@ def _update_quoted_line_params(line: str, param: str, operation: str) -> Tuple[s
     else:
         inner_params = quoted_params
 
-    original_inner_params = inner_params
+    _original_inner_params = inner_params
     new_inner_params, changed = _add_or_remove_parameter(inner_params, param, operation)
 
     if changed:
@@ -179,13 +183,17 @@ def _modify_simple_config(
     new_content = content
 
     if text_to_remove:
-        modified_content, changed = _add_or_remove_parameter(content, text_to_remove, 'remove')
+        modified_content, changed = _add_or_remove_parameter(
+            content, text_to_remove, "remove"
+        )
         if changed:
             new_content = modified_content
             needs_change = True
 
     if text_to_add:
-        modified_content, changed = _add_or_remove_parameter(new_content, text_to_add, 'add')
+        modified_content, changed = _add_or_remove_parameter(
+            new_content, text_to_add, "add"
+        )
         if changed:
             new_content = modified_content
             needs_change = True
@@ -197,7 +205,7 @@ def _modify_line_with_pattern(
     content: str,
     pattern: str,
     text_to_add: Optional[str],
-    text_to_remove: Optional[str]
+    text_to_remove: Optional[str],
 ) -> Tuple[str, bool]:
     """
     Modify a configuration by applying changes to a specific line pattern.
@@ -223,21 +231,20 @@ def _modify_line_with_pattern(
                 # If there are insufficient capturing groups, return the original line
                 return line
 
-            # Determine if we have 2 or 3 groups based on the pattern
-            # For GRUB: Group 1 = prefix, Group 2 = optional middle (_DEFAULT), Group 3 = quoted content
-            # For Limine: Group 1 = prefix, Group 2 = quoted content
-            if match.lastindex >= 3 and match.group(3) is not None:
-                # This is GRUB pattern with 3 groups
+            # Determine the quoted content group based on the pattern structure
+            # For GRUB: pattern r'^(GRUB_CMDLINE_LINUX(_DEFAULT)?=")([^"]*)"' creates 3 groups, quoted content is group 3
+            # For Limine: pattern r'^(KERNEL_CMDLINE\[default\]\+?=")([^"]*)"' creates 2 groups, quoted content is group 2
+            if match.lastindex >= 3 and r'(_DEFAULT)?=")' in pattern:  # GRUB pattern
                 prefix = match.group(1)
-                quoted_content = match.group(3)
-            else:
-                # This is Limine pattern with 2 groups (or a similar case)
+                quoted_content = match.group(3)  # Group 3 is the quoted content
+            else:  # Limine pattern or others
                 prefix = match.group(1)
-                # The quoted content would be in the last group
-                quoted_content = match.group(match.lastindex)
+                quoted_content = match.group(2)  # Group 2 is the quoted content
 
             # Apply the parameter removal to the quoted content
-            new_inner, changed = _add_or_remove_parameter(quoted_content, text_to_remove, 'remove')
+            new_inner, changed = _add_or_remove_parameter(
+                quoted_content, text_to_remove, "remove"
+            )
 
             if changed:
                 needs_change = True
@@ -255,19 +262,18 @@ def _modify_line_with_pattern(
                 # If there are insufficient capturing groups, return the original line
                 return line
 
-            # Determine if we have 2 or 3 groups based on the pattern
-            if match.lastindex >= 3 and match.group(3) is not None:
-                # This is GRUB pattern with 3 groups
+            # Determine the quoted content group based on the pattern structure
+            # For GRUB: pattern r'^(GRUB_CMDLINE_LINUX(_DEFAULT)?=")([^"]*)"' creates 3 groups, quoted content is group 3
+            # For Limine: pattern r'^(KERNEL_CMDLINE\[default\]\+?=")([^"]*)"' creates 2 groups, quoted content is group 2
+            if match.lastindex >= 3 and r'(_DEFAULT)?=")' in pattern:  # GRUB pattern
                 prefix = match.group(1)
-                quoted_content = match.group(3)
-            else:
-                # This is Limine pattern with 2 groups (or a similar case)
+                quoted_content = match.group(3)  # Group 3 is the quoted content
+            else:  # Limine pattern or others
                 prefix = match.group(1)
-                # The quoted content would be in the last group
-                quoted_content = match.group(match.lastindex)
+                quoted_content = match.group(2)  # Group 2 is the quoted content
 
             # Add the parameter if not already present
-            if text_to_add not in quoted_content.split():
+            if quoted_content is not None and text_to_add not in quoted_content.split():
                 new_inner = f"{quoted_content} {text_to_add}".strip()
                 needs_change = True
                 return prefix + new_inner + '"'
@@ -278,11 +284,11 @@ def _modify_line_with_pattern(
         # If no matching line was found, add a new line with the parameter
         if text_to_add and not re.search(pattern, new_content, re.MULTILINE):
             # For GRUB, we need to add GRUB_CMDLINE_LINUX_DEFAULT or GRUB_CMDLINE_LINUX
-            if 'GRUB_CMDLINE_LINUX' in pattern:
+            if "GRUB_CMDLINE_LINUX" in pattern:
                 new_content += f'\nGRUB_CMDLINE_LINUX_DEFAULT="{text_to_add}"\n'
                 needs_change = True
             # For Limine, add KERNEL_CMDLINE
-            elif 'KERNEL_CMDLINE' in pattern:
+            elif "KERNEL_CMDLINE" in pattern:
                 new_content += f'\nKERNEL_CMDLINE[default]+="{text_to_add}"\n'
                 needs_change = True
 
@@ -304,7 +310,9 @@ def modify_systemd_boot_config(
         A tuple of (modified_content, needs_change)
     """
     # Use the generic function for basic add/remove
-    new_content, needs_change = _modify_simple_config(content, text_to_add, text_to_remove)
+    new_content, needs_change = _modify_simple_config(
+        content, text_to_add, text_to_remove
+    )
 
     # Ensure proper options line format if needed
     if text_to_add and not re.search(r"options\s", new_content):
@@ -366,7 +374,9 @@ def modify_refind_config(
                     modified_inner_params,
                 )
                 # Clean up extra spaces
-                modified_inner_params = re.sub(r"\s+", " ", modified_inner_params).strip()
+                modified_inner_params = re.sub(
+                    r"\s+", " ", modified_inner_params
+                ).strip()
 
             # Add text if specified
             if text_to_add and text_to_add not in modified_inner_params.split():
@@ -388,7 +398,7 @@ def modify_refind_config(
         else:
             new_lines.append(line)
 
-    return ''.join(new_lines), needs_change
+    return "".join(new_lines), needs_change
 
 
 def modify_grub_config(
@@ -407,12 +417,12 @@ def modify_grub_config(
     """
     # Define the pattern to match GRUB command line definitions - capturing prefix and quoted content
     pattern = r'^(GRUB_CMDLINE_LINUX(_DEFAULT)?=")([^"]*)"'
-    
+
     # Use the generic function for pattern-based modification
     new_content, needs_change = _modify_line_with_pattern(
         content, pattern, text_to_add, text_to_remove
     )
-    
+
     return new_content, needs_change
 
 
@@ -431,13 +441,14 @@ def modify_limine_config(
         A tuple of (modified_content, needs_change)
     """
     # Define the pattern to match Limine command line definitions - capturing prefix and quoted content
-    pattern = r'^(KERNEL_CMDLINE\[default\]+\+=")([^"]*)"'
-    
+    # Fixed pattern: use multiline matching to find the line anywhere in content
+    pattern = r'^(KERNEL_CMDLINE\[default\]\+?=")([^"]*)"'
+
     # Use the generic function for pattern-based modification
     new_content, needs_change = _modify_line_with_pattern(
         content, pattern, text_to_add, text_to_remove
     )
-    
+
     return new_content, needs_change
 
 
