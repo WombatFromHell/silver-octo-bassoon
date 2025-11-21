@@ -41,3 +41,19 @@
   changed_when: desktop_db_update.rc == 0
   failed_when: desktop_db_update.rc != 0 and not ( 'command not found' in desktop_db_update.stderr or 'No such file or directory' in desktop_db_update.stderr )
   listen: update_desktop_database
+
+- name: Update Limine bootloader
+  when: is_limine_boot is defined
+  ansible.builtin.command:
+    cmd: limine-update
+  become: true
+  changed_when: true
+  listen: reload_limine
+
+- name: Update Grub bootloader
+  when: is_grub_boot is defined
+  ansible.builtin.command:
+    cmd: grub-mkconfig -o /boot/grub/grub.cfg
+  become: true
+  changed_when: true
+  listen: reload_grub

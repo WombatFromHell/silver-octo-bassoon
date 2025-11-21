@@ -61,6 +61,7 @@
             config_file: "/etc/default/grub"
             text_to_add: "{{ kernel_args }}"
           register: base_modify_grub_result
+          notify: reload_grub
 
     - name: Look for Limine
       when:
@@ -90,6 +91,7 @@
             config_file: "/etc/default/limine"
             text_to_add: "{{ kernel_args }}"
           register: base_modify_limine_result
+          notify: reload_limine
 
     - name: Change kernel args (ostree)
       when:

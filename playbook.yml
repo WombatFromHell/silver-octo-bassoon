@@ -60,12 +60,12 @@
 
     - name: Gather GRUB bootloader facts
       tags: [setup, facts]
-      become: true
       block:
         - name: Check for GRUB bootloader
           ansible.builtin.stat:
             path: /boot/efi/EFI/boot/bootx64.efi
           register: grub_check
+          become: true
           check_mode: false
 
         - name: Set GRUB bootloader facts
@@ -75,12 +75,12 @@
 
     - name: Gather Limine bootloader facts
       tags: [setup, facts]
-      become: true
       block:
         - name: Check for Limine bootloader
           ansible.builtin.stat:
             path: /boot/efi/limine/limine_x64.efi
           register: limine_check
+          become: true
           check_mode: false
 
         - name: Set Limine bootloader facts
@@ -90,12 +90,12 @@
 
     - name: Gather systemd-boot bootloader facts
       tags: [setup, facts]
-      become: true
       block:
         - name: Check for systemd-boot bootloader
           ansible.builtin.stat:
             path: /boot/efi/EFI/systemd/systemd-bootx64.efi
           register: systemd_boot_check
+          become: true
           check_mode: false
 
         - name: Set systemd-boot bootloader facts
@@ -105,12 +105,12 @@
 
     - name: Gather rEFInd bootloader facts
       tags: [setup, facts]
-      become: true
       block:
         - name: Check for rEFInd bootloader
           ansible.builtin.stat:
             path: /boot/efi/EFI/refind/refind_x64.efi
           register: refind_check
+          become: true
           check_mode: false
 
         - name: Set rEFInd bootloader facts
