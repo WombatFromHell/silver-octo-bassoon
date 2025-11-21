@@ -11,8 +11,11 @@
     use_aur_helper: true
     aur_helper: "yay"
     aur_flags: "-Sy --needed --noconfirm"
-    compress_algorithm: "zstd"
+    compress_algorithm: "zstd:3"
     commit_interval: 120
+    grub_cfg_path: "/boot/grub/grub.cfg"
+    btrfs_grub_wrapper_path: "/usr/local/sbin/update-grub-no-rootflags"
+    btrfs_snapshot_markers: "snapshot|\\.snapshots|@/\\.snapshots|grub-btrfs"
 
     # Internal variables
     snapper_timers:
@@ -84,6 +87,8 @@
       loop: "{{ snapper_timers }}"
 
     - name: Regenerate GRUB configuration if using GRUB
-      ansible.builtin.command: grub-mkconfig -o /boot/grub/grub.cfg
+      ansible.builtin.debug:
+        msg: "Triggering GRUB configuration regeneration"
       when: is_grub_boot
       changed_when: false
+      notify: Regenerate GRUB configuration

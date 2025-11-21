@@ -42,7 +42,9 @@
     - name: Move root snapshots if they exist
       ansible.builtin.shell: |
         set -o pipefail
-        if [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@/.snapshots" ] || [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/root/.snapshots" ] || [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@root/.snapshots" ]; then
+        if [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@/.snapshots" ] || \
+           [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/root/.snapshots" ] || \
+           [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@root/.snapshots" ]; then
           # Try different possible root subvolume names
           if [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@/.snapshots" ]; then
             mv {{ btrfs_mount | default('/mnt/btrfs') }}/@/.snapshots {{ btrfs_mount | default('/mnt/btrfs') }}/@snapshots/root
@@ -82,7 +84,8 @@
     - name: Move home snapshots if they exist
       ansible.builtin.shell: |
         set -o pipefail
-        if [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@home/.snapshots" ] || [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/home/.snapshots" ]; then
+        if [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@home/.snapshots" ] || \
+           [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/home/.snapshots" ]; then
           # Try different possible home subvolume names
           if [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@home/.snapshots" ]; then
             mv {{ btrfs_mount | default('/mnt/btrfs') }}/@home/.snapshots {{ btrfs_mount | default('/mnt/btrfs') }}/@snapshots/home

@@ -2,6 +2,7 @@
 - name: Configure fstab for snapper rollback support
   become: true
   tags: [extra, btrfs, btrfs_fstab]
+  when: is_grub_boot | default(false)
   block:
     - name: Backup original fstab
       ansible.builtin.copy:
@@ -10,7 +11,7 @@
         remote_src: true
         backup: false
         mode: preserve
-      register: fstab_backup_result
+      register: btrfs_fstab_backup_result
       changed_when: fstab_backup_result is succeeded and fstab_backup_result.dest is defined
     - name: Get current default subvolume ID
       ansible.builtin.shell: |
