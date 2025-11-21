@@ -1,0 +1,52 @@
+---
+- name: Configure fstab for snapper rollback support
+  become: true
+  tags: [extra, btrfs, btrfs_fstab]
+  block:
+    - name: Backup original fstab
+      ansible.builtin.copy:
+        src: /etc/fstab
+        dest: /etc/fstab.btrfs_backup_{{ ansible_date_time.iso8601 | replace(':', '-') | replace('.', '-') }}
+        remote_src: true
+        backup: false
+        mode: preserve
+      register: fstab_backup_result
+      changed_when: fstab_backup_result is succeeded and fstab_backup_result.dest is defined
+    - name: Get current default subvolume ID
+      ansible.builtin.shell: |
+        set -o pipefail
+        btrfs subvolume get-default {{ btrfs_mount | default('/mnt/btrfs') }} | cut -d' ' -f2
+      register: btrfs_current_default_subvolume_id
+      changed_when: false
+
+    - name: Get subvolume path for current default
+      ansible.builtin.shell: |
+        set -o pipefail
+        if [ "{{ btrfs_current_default_subvolume_id.stdout }}" = "5" ]; then
+          # Subvolume ID 5 is the top-level (root) subvolume
+          echo "/"
+        else
+          btrfs subvolume list {{ btrfs_mount | default('/mnt/btrfs') }} | grep -E "ID {{ btrfs_current_default_subvolume_id.stdout }} " | cut -d' ' -f9-
+        fi
+      register: btrfs_default_subvolume_path
+      changed_when: false
+
+    - name: Configure fstab for root mount with proper options (for snapper rollback)
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: >
+          UUID={{ btrfs_root_fs_uuid }} / btrfs defaults,noatime,compress={{ compress_algorithm }},commit={{ commit_interval }} 0 0
+        state: present
+        regexp: "^UUID={{ btrfs_root_fs_uuid }}\\s+/"
+      when:
+        - btrfs_default_subvolume_path.stdout | length > 0
+        - btrfs_default_subvolume_path.stdout in ['@']
+
+    - name: Configure fstab for home mount with subvol=@home
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: >
+          UUID={{ btrfs_root_fs_uuid }} /home btrfs subvol=@home,defaults,noatime,compress={{ compress_algorithm }},commit={{ commit_interval }} 0 0
+        state: present
+        regexp: "^UUID={{ btrfs_root_fs_uuid }}\\s+/home"
+      when: btrfs_home_fs_type == "btrfs"

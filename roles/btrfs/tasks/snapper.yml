@@ -3,10 +3,34 @@
   become: true
   tags: [extra, btrfs, btrfs_snapper]
   block:
+    - name: Get btrfs subvolume list to identify root subvolume
+      ansible.builtin.shell: |
+        set -o pipefail
+        btrfs subvolume list {{ btrfs_mount | default('/mnt/btrfs') }} | grep -E "path @$" | head -n 1 | cut -d' ' -f2
+      register: btrfs_root_subvolume_id
+      changed_when: false
+      failed_when: btrfs_root_subvolume_id.rc != 0 and not btrfs_root_subvolume_id.stderr
+
+    - name: Set root subvolume as default if found
+      ansible.builtin.shell: |
+        set -o pipefail
+        current_default=$(btrfs subvolume get-default {{ btrfs_mount | default('/mnt/btrfs') }})
+        current_default_id=$(echo $current_default | cut -d' ' -f2)
+        target_id="{{ btrfs_root_subvolume_id.stdout }}"
+        if [ "$current_default_id" != "$target_id" ] && [ -n "$target_id" ]; then
+          btrfs subvolume set-default {{ btrfs_root_subvolume_id.stdout }} {{ btrfs_mount | default('/mnt/btrfs') }}
+          echo "Changed default subvolume to {{ btrfs_root_subvolume_id.stdout }}"
+        else
+          echo "Default subvolume is already set correctly or could not be determined"
+        fi
+      register: btrfs_set_default_result
+      changed_when: "'Changed default subvolume' in btrfs_set_default_result.stdout"
+      when: btrfs_root_subvolume_id.stdout | length > 0
+
     - name: Create @snapshots subvolume if it doesn't exist
-      ansible.builtin.command: btrfs subvolume create {{ btrfs_mount }}/@snapshots
+      ansible.builtin.command: btrfs subvolume create {{ btrfs_mount | default('/mnt/btrfs') }}/@snapshots
       args:
-        creates: "{{ btrfs_mount }}/@snapshots"
+        creates: "{{ btrfs_mount | default('/mnt/btrfs') }}/@snapshots"
       changed_when: false
 
     - name: Create snapper root configuration
@@ -15,10 +39,22 @@
         creates: /etc/snapper/configs/root
       register: btrfs_snapper_root_created
 
-    - name: Move root snapshots
-      ansible.builtin.command: mv {{ btrfs_mount }}/@/.snapshots {{ btrfs_mount }}/@snapshots/root
+    - name: Move root snapshots if they exist
+      ansible.builtin.shell: |
+        set -o pipefail
+        if [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@/.snapshots" ] || [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/root/.snapshots" ] || [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@root/.snapshots" ]; then
+          # Try different possible root subvolume names
+          if [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@/.snapshots" ]; then
+            mv {{ btrfs_mount | default('/mnt/btrfs') }}/@/.snapshots {{ btrfs_mount | default('/mnt/btrfs') }}/@snapshots/root
+          elif [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/root/.snapshots" ]; then
+            mv {{ btrfs_mount | default('/mnt/btrfs') }}/root/.snapshots {{ btrfs_mount | default('/mnt/btrfs') }}/@snapshots/root
+          elif [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@root/.snapshots" ]; then
+            mv {{ btrfs_mount | default('/mnt/btrfs') }}/@root/.snapshots {{ btrfs_mount | default('/mnt/btrfs') }}/@snapshots/root
+          fi
+        fi
       args:
-        creates: "{{ btrfs_mount }}/@snapshots/root"
+        creates: "{{ btrfs_mount | default('/mnt/btrfs') }}/@snapshots/root"
+      changed_when: false
 
     - name: Copy root snapper configuration
       ansible.builtin.copy:
@@ -43,10 +79,20 @@
         creates: /etc/snapper/configs/home
       register: btrfs_snapper_home_created
 
-    - name: Move home snapshots
-      ansible.builtin.command: mv {{ btrfs_mount }}/@home/.snapshots {{ btrfs_mount }}/@snapshots/home
+    - name: Move home snapshots if they exist
+      ansible.builtin.shell: |
+        set -o pipefail
+        if [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@home/.snapshots" ] || [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/home/.snapshots" ]; then
+          # Try different possible home subvolume names
+          if [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/@home/.snapshots" ]; then
+            mv {{ btrfs_mount | default('/mnt/btrfs') }}/@home/.snapshots {{ btrfs_mount | default('/mnt/btrfs') }}/@snapshots/home
+          elif [ -d "{{ btrfs_mount | default('/mnt/btrfs') }}/home/.snapshots" ]; then
+            mv {{ btrfs_mount | default('/mnt/btrfs') }}/home/.snapshots {{ btrfs_mount | default('/mnt/btrfs') }}/@snapshots/home
+          fi
+        fi
       args:
-        creates: "{{ btrfs_mount }}/@snapshots/home"
+        creates: "{{ btrfs_mount | default('/mnt/btrfs') }}/@snapshots/home"
+      changed_when: false
 
     - name: Configure fstab for home snapshots
       ansible.builtin.lineinfile:

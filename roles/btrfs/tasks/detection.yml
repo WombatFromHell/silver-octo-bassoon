@@ -57,3 +57,8 @@
       ansible.builtin.set_fact:
         btrfs_home_fs_type: "{{ btrfs_home_fs_type_result.stdout }}"
       check_mode: false
+
+    - name: Check if home is on separate btrfs volume
+      ansible.builtin.set_fact:
+        btrfs_home_on_separate_volume: "{{ btrfs_home_fs_type == 'btrfs' }}"
+      check_mode: false

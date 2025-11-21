@@ -1,0 +1,8 @@
+---
+# Btrfs role handlers
+
+- name: Regenerate GRUB configuration
+  become: true
+  ansible.builtin.command: grub-mkconfig -o /boot/grub/grub.cfg
+  changed_when: false
+  when: is_grub_boot | default(false)

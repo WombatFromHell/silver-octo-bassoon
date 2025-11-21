@@ -54,6 +54,14 @@
       when: ansible_facts['distribution'] == "Archlinux"
       tags: [extra, btrfs, btrfs_install]
 
+    - name: Include bootloader configuration tasks for snapper rollback support
+      ansible.builtin.include_tasks: bootloader.yml
+      tags: [extra, btrfs, btrfs_bootloader]
+
+    - name: Include fstab configuration tasks for snapper rollback support
+      ansible.builtin.include_tasks: fstab.yml
+      tags: [extra, btrfs, btrfs_fstab]
+
     - name: Include snapper configuration tasks
       ansible.builtin.include_tasks: snapper.yml
       tags: [extra, btrfs, btrfs_snapper]
