@@ -55,11 +55,15 @@
     - name: Include snapper installation tasks
       ansible.builtin.include_tasks: packages.yml
       when: ansible_facts['distribution'] == "Archlinux"
-      tags: [extra, btrfs, btrfs_install]
+      tags: [extra, btrfs, btrfs_packages]
 
-    - name: Include bootloader configuration tasks for snapper rollback support
-      ansible.builtin.include_tasks: bootloader.yml
-      tags: [extra, btrfs, btrfs_bootloader]
+    - name: Include GRUB configuration tasks for snapper rollback support
+      ansible.builtin.include_tasks: grub.yml
+      tags: [extra, btrfs, btrfs_grub]
+
+    - name: Include Limine configuration tasks for snapper rollback support
+      ansible.builtin.include_tasks: limine.yml
+      tags: [extra, btrfs, btrfs_limine]
 
     - name: Include fstab configuration tasks for snapper rollback support
       ansible.builtin.include_tasks: fstab.yml

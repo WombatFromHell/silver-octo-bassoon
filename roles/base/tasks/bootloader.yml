@@ -7,7 +7,7 @@
       when:
         - ansible_facts['distribution'] == "Archlinux"
         - kernel_args is defined and kernel_args | trim != ""
-        - bootloader is defined and bootloader == "refind"
+        - "'refind' in ansible_cmdline"
       block:
         - name: Check if refind_linux.conf exists
           ansible.builtin.stat:
@@ -18,7 +18,7 @@
           when:
             - base_refind_exists.stat.exists
           bootloader_mod:
-            bootloader: "{{ bootloader }}"
+            bootloader: "refind"
             config_file: "/boot/refind_linux.conf"
             check_args: "{{ kernel_args }}"
 
@@ -26,7 +26,7 @@
       when:
         - ansible_facts['distribution'] == "Archlinux"
         - kernel_args is defined and kernel_args | trim != ""
-        - bootloader is defined and bootloader == "grub"
+        - is_grub_boot | default(false)
       block:
         - name: Check if /etc/default/grub exists
           ansible.builtin.stat:
@@ -37,10 +37,30 @@
           when:
             - base_grub_exists.stat.exists
           bootloader_mod:
-            bootloader: "{{ bootloader }}"
+            bootloader: "grub"
             config_file: "/etc/default/grub"
             check_args: "{{ kernel_args }}"
           register: base_check_grub_result
+
+    - name: Look for Limine
+      when:
+        - ansible_facts['distribution'] == "Archlinux"
+        - kernel_args is defined and kernel_args | trim != ""
+        - is_limine_boot | default(false)
+      block:
+        - name: Check if /etc/default/limine exists
+          ansible.builtin.stat:
+            path: "/etc/default/limine"
+          register: base_limine_exists
+
+        - name: Detect kernel args (limine)
+          when:
+            - base_limine_exists.stat.exists
+          bootloader_mod:
+            bootloader: "limine"
+            config_file: "/etc/default/limine"
+            check_args: "{{ kernel_args }}"
+          register: base_check_limine_result
 
     - name: Change kernel args (ostree)
       when:

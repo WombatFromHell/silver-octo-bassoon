@@ -1,14 +1,19 @@
 import pytest
+import tempfile
 
 from bootloader_mod import (
+    _add_or_remove_parameter,
+    _update_quoted_line_params,
     check_kernel_args_exist,
     create_backup,
     detect_bootloader,
     get_bootloader_config,
     modify_config,
     modify_grub_config,
+    modify_limine_config,
     modify_refind_config,
     modify_systemd_boot_config,
+    safe_path_exists,
     update_grub_config,
     write_config,
 )
@@ -274,6 +279,63 @@ class TestBootloaderFileOperations:
         mock_module.run_command.assert_called_once_with(
             ["grub-mkconfig", "-o", "/boot/grub/grub.cfg"], check_rc=False
         )
+
+    def test_update_grub_config_failure_with_warning(self, mocker):
+        """Test updating GRUB config failure with warning"""
+        mock_module = mocker.Mock()
+        mock_module.run_command.return_value = (1, "", "Error message")
+        mock_module.warn = mocker.Mock()
+
+        update_grub_config(mock_module, "/boot/grub/grub.cfg")
+        mock_module.run_command.assert_called_once_with(
+            ["grub-mkconfig", "-o", "/boot/grub/grub.cfg"], check_rc=False
+        )
+        mock_module.warn.assert_called_once_with("Failed to update grub config: Error message")
+
+    def test_create_backup_with_exception_handling(self, mocker):
+        """Test create_backup with exception during backup process"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock(side_effect=SystemExit(1))
+
+        # Mock shutil.copy2 to raise an exception
+        mocker.patch("bootloader_mod.shutil.copy2", side_effect=OSError("Permission denied"))
+
+        with pytest.raises(SystemExit):
+            create_backup(mock_module, "/test/config/file")
+
+        mock_module.fail_json.assert_called_once()
+
+    def test_write_config_with_backup_and_ioerror(self, mocker):
+        """Test write_config with backup file provided and IOError occurs"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock(side_effect=SystemExit(1))
+
+        # Mock builtins.open to raise IOError
+        mocker.patch("builtins.open", side_effect=IOError("Permission denied"))
+
+        # Temporarily mock shutil.move to not fail
+        mocker.patch("bootloader_mod.shutil.move", return_value=None)
+
+        with pytest.raises(SystemExit):
+            write_config(mock_module, "/test/config", "content", "/test/config.bak")
+
+        mock_module.fail_json.assert_called_once()
+
+    def test_write_config_with_backup_and_ioerror_and_move_exception(self, mocker):
+        """Test write_config when both write and backup move fail"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock(side_effect=SystemExit(1))
+
+        # Mock builtins.open to raise IOError
+        mocker.patch("builtins.open", side_effect=IOError("Permission denied"))
+
+        # Mock shutil.move to also raise an exception
+        mocker.patch("bootloader_mod.shutil.move", side_effect=OSError("Move error"))
+
+        with pytest.raises(SystemExit):
+            write_config(mock_module, "/test/config", "content", "/test/config.bak")
+
+        mock_module.fail_json.assert_called_once()
 
 
 class TestKernelArgsCheck:
@@ -1115,6 +1177,79 @@ class TestMissingCoverage:
         assert "intel_pstate=enable" in new_content
         assert needs_change is True
 
+    def test_modify_limine_config_add_parameter(self):
+        """Test modify_limine_config adding a parameter"""
+        content = 'TIMEOUT=5\nKERNEL_CMDLINE[default]+="quiet splash"'
+        new_content, needs_change = modify_limine_config(content, "intel_pstate=enable", None)
+        assert "intel_pstate=enable" in new_content
+        assert needs_change is True
+
+    def test_modify_limine_config_remove_parameter(self):
+        """Test modify_limine_config removing a parameter"""
+        content = 'TIMEOUT=5\nKERNEL_CMDLINE[default]+="quiet splash mitigations=auto"'
+        new_content, needs_change = modify_limine_config(content, None, "mitigations=auto")
+        assert "mitigations=auto" not in new_content
+        assert needs_change is True
+
+    def test_modify_limine_config_add_and_remove_parameter(self):
+        """Test modify_limine_config adding and removing parameters"""
+        content = 'TIMEOUT=5\nKERNEL_CMDLINE[default]+="quiet splash"'
+        new_content, needs_change = modify_limine_config(content, "intel_pstate=enable", "quiet")
+        assert "intel_pstate=enable" in new_content
+        assert "quiet" not in new_content
+        assert needs_change is True
+
+    def test_modify_limine_config_no_change_needed(self):
+        """Test modify_limine_config when no changes are needed"""
+        content = 'TIMEOUT=5\nKERNEL_CMDLINE[default]+="quiet splash"'
+        new_content, needs_change = modify_limine_config(content, None, "nonexistent")
+        assert new_content == content
+        assert needs_change is False
+
+    def test_check_kernel_args_exist_with_limine_bootloader(self, mocker):
+        """Test check_kernel_args_exist function with Limine bootloader"""
+        mock_module = mocker.Mock()
+
+        # Mock os.path.exists to return True for limine config file
+        mocker.patch("bootloader_mod.os.path.exists", return_value=True)
+
+        # Create a temporary file with limine config content
+        with open("/tmp/test_limine.conf", "w") as f:
+            f.write('TIMEOUT=5\nKERNEL_CMDLINE[default]+="quiet splash mitigations=auto"\n')
+
+        # Update the mock to handle specific file path
+        def mock_exists(path):
+            return path == "/tmp/test_limine.conf"
+
+        mocker.patch("bootloader_mod.os.path.exists", side_effect=mock_exists)
+
+        # Mock file reading
+        mocker.patch("builtins.open", mocker.mock_open(read_data='TIMEOUT=5\nKERNEL_CMDLINE[default]+="quiet splash mitigations=auto"\n'))
+
+        from bootloader_mod import check_kernel_args_exist
+
+        # Test positive case
+        result = check_kernel_args_exist(mock_module, "limine", "quiet", "/tmp/test_limine.conf")
+        assert result is True
+
+        # Test negative case
+        result = check_kernel_args_exist(mock_module, "limine", "nonexistent_param", "/tmp/test_limine.conf")
+        assert result is False
+
+    def test_safe_path_exists_with_stopiteration(self, mocker):
+        """Test the safe_path_exists function handling StopIteration exception"""
+        # Create a mock os.path.exists that raises StopIteration
+        mock_exists = mocker.Mock()
+        mock_exists.side_effect = StopIteration()
+        mocker.patch("bootloader_mod.os.path", mocker.Mock())
+        mocker.patch("bootloader_mod.os.path.exists", mock_exists)
+
+        from bootloader_mod import safe_path_exists
+
+        # This should not raise an exception and should return False
+        result = safe_path_exists("/some/path")
+        assert result is False
+
 
 class TestCommonOperations:
     """Test common operations using shared fixtures"""
@@ -1325,3 +1460,491 @@ class TestCommonOperations:
         # Should return the same content since no matching lines were found
         assert new_content == content
         assert needs_change is False
+
+    def test_get_bootloader_config_with_none_type(self):
+        """Test get_bootloader_config with None bootloader type"""
+        from bootloader_mod import get_bootloader_config
+        result = get_bootloader_config(None, None)
+        assert result is None
+
+    def test_modify_config_with_backup_file_already_exists(self, mocker, temp_config_file):
+        """Test modify_config when backup file already exists"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock(side_effect=SystemExit)
+
+        # Create actual files
+        with open(temp_config_file, 'w') as f:
+            f.write("test config content")
+
+        # Create backup file
+        with open(temp_config_file + ".bak", 'w') as f:
+            f.write("backup content")
+
+        # Mock os.path.exists to return True for both files
+        def mock_exists(path):
+            return path in [temp_config_file, temp_config_file + ".bak"]
+
+        mocker.patch("bootloader_mod.os.path.exists", side_effect=mock_exists)
+
+        from bootloader_mod import modify_config
+
+        with pytest.raises(SystemExit):
+            modify_config(
+                mock_module, "systemd-boot", text_to_add="test", text_to_remove=None,
+                config_file=temp_config_file
+            )
+
+        mock_module.fail_json.assert_called_once()
+
+    def test_check_kernel_args_exist_with_unsupported_bootloader(self, mocker):
+        """Test check_kernel_args_exist with unsupported bootloader type"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock()
+
+        from bootloader_mod import check_kernel_args_exist
+
+        result = check_kernel_args_exist(mock_module, "unsupported_type", "test_arg", "/fake/path")
+        assert result is False
+        mock_module.fail_json.assert_called_once()
+
+    def test_detect_bootloader_with_stopiteration(self, mocker):
+        """Test detect_bootloader function when mock runs out of values"""
+        # Mock os.path.exists to raise StopIteration on the limine check
+        def side_effect_func(path):
+            if path == "/etc/default/limine":
+                raise StopIteration()
+            return False  # All other paths don't exist
+
+        mocker.patch("bootloader_mod.os.path.exists", side_effect=side_effect_func)
+
+        from bootloader_mod import detect_bootloader
+
+        # This should handle the exception gracefully and return "none"
+        result = detect_bootloader()
+        assert result == "none"
+
+    def test_modify_config_with_write_failure_and_backup_available(self, mocker, temp_config_file):
+        """Test modify_config when write_config fails but backup file is available to restore"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock(side_effect=SystemExit)
+
+        # Create actual config file
+        with open(temp_config_file, 'w') as f:
+            f.write("original config")
+
+        # Set up mocks
+        mocker.patch("bootloader_mod.os.path.exists", return_value=True)  # Config file exists, backup doesn't initially
+        mocker.patch("bootloader_mod.create_backup", return_value=True)
+        mocker.patch("bootloader_mod.write_config", return_value=(False, "Failed to write config file"))
+
+        from bootloader_mod import modify_config
+
+        # Try to modify config - should fail at write step
+        with pytest.raises(SystemExit):
+            modify_config(
+                mock_module, "systemd-boot", text_to_add="test", text_to_remove=None,
+                config_file=temp_config_file
+            )
+
+        mock_module.fail_json.assert_called_once()
+
+    def test_create_backup_exception_handling_in_modify_config(self, mocker, temp_config_file):
+        """Test modify_config when create_backup raises an exception"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock(side_effect=SystemExit)
+
+        # Create actual config file
+        with open(temp_config_file, 'w') as f:
+            f.write("original config")
+
+        # Mock create_backup to raise an exception
+        mocker.patch("bootloader_mod.os.path.exists", return_value=True)  # Config file exists, backup doesn't initially
+        mocker.patch("bootloader_mod.create_backup", side_effect=Exception("Backup failed"))
+
+        from bootloader_mod import modify_config
+
+        # Try to modify config - should fail at backup step
+        with pytest.raises(SystemExit):
+            modify_config(
+                mock_module, "systemd-boot", text_to_add="test", text_to_remove=None,
+                config_file=temp_config_file
+            )
+
+        mock_module.fail_json.assert_called_once()
+
+    def test_modify_grub_config_complex_scenarios(self):
+        """Test modify_grub_config with complex scenarios to hit nested functions"""
+        # Test adding to an empty GRUB_CMDLINE_LINUX
+        content = 'GRUB_DEFAULT=0\nGRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX=""\nGRUB_CMDLINE_LINUX_DEFAULT="quiet splash"'
+        new_content, needs_change = modify_grub_config(content, "intel_pstate=enable", None)
+        assert "intel_pstate=enable" in new_content
+
+        # Test removing from GRUB_CMDLINE_LINUX_DEFAULT
+        content = 'GRUB_DEFAULT=0\nGRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX_DEFAULT="quiet splash mitigations=auto"'
+        new_content, needs_change = modify_grub_config(content, None, "mitigations=auto")
+        assert "mitigations=auto" not in new_content
+        assert needs_change is True
+
+    def test_modify_config_with_missing_config_file(self, mocker):
+        """Test modify_config when config file doesn't exist"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock(side_effect=SystemExit)
+
+        # Mock os.path.exists to return False
+        mocker.patch("bootloader_mod.os.path.exists", return_value=False)
+
+        from bootloader_mod import modify_config
+
+        with pytest.raises(SystemExit):
+            modify_config(
+                mock_module, "grub", text_to_add="test", text_to_remove=None,
+                config_file="/nonexistent/file"
+            )
+
+        mock_module.fail_json.assert_called_once()
+
+    def test_check_kernel_args_exist_limine_specific(self, mocker, temp_config_file):
+        """Test check_kernel_args_exist with Limine bootloader specifically"""
+        mock_module = mocker.Mock()
+
+        # Create a limine config file with some kernel args
+        with open(temp_config_file, 'w') as f:
+            f.write('TIMEOUT=5\nKERNEL_CMDLINE[default]+="quiet splash mitigations=auto"\n')
+
+        # Mock os.path.exists to say the file exists
+        def mock_exists(path):
+            return path == temp_config_file
+
+        mocker.patch("bootloader_mod.os.path.exists", side_effect=mock_exists)
+
+        from bootloader_mod import check_kernel_args_exist
+
+        # Test that it finds existing arg
+        result = check_kernel_args_exist(mock_module, "limine", "quiet", temp_config_file)
+        assert result is True
+
+        # Test that it doesn't find non-existent arg
+        result = check_kernel_args_exist(mock_module, "limine", "nonexistent_arg", temp_config_file)
+        assert result is False
+
+
+class TestAdditionalCoverage:
+    """Additional tests to cover previously uncovered lines"""
+
+    def test_safe_path_exists_stopiteration(self, mocker):
+        """Test safe_path_exists handling StopIteration - covers line 30"""
+        # Mock os.path.exists to raise StopIteration
+        mock_exists = mocker.Mock()
+        mock_exists.side_effect = StopIteration()
+        mocker.patch("bootloader_mod.os.path.exists", mock_exists)
+
+        from bootloader_mod import safe_path_exists
+
+        result = safe_path_exists("/some/path")
+        assert result is False
+
+    def test_detect_bootloader_all_paths_missing(self, mocker):
+        """Test detect_bootloader when no paths exist - covers line 58"""
+        mocker.patch("bootloader_mod.safe_path_exists", return_value=False)
+
+        from bootloader_mod import detect_bootloader
+
+        result = detect_bootloader()
+        assert result == "none"
+
+    def test_get_bootloader_config_none_type(self):
+        """Test get_bootloader_config with None type - covers line 78"""
+        from bootloader_mod import get_bootloader_config
+
+        result = get_bootloader_config(None, None)
+        assert result is None
+
+    def test_create_backup_exception_path(self, mocker):
+        """Test create_backup exception handling path - covers lines 131-151"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock(side_effect=SystemExit)
+
+        # Mock shutil.copy2 to raise an exception
+        mocker.patch("bootloader_mod.shutil.copy2", side_effect=Exception("Permission denied"))
+
+        from bootloader_mod import create_backup
+
+        with pytest.raises(SystemExit):
+            create_backup(mock_module, "/nonexistent/path")
+
+        mock_module.fail_json.assert_called_once()
+
+    def test_write_config_with_backup_exception(self, mocker):
+        """Test write_config where IOError occurs and backup restoration fails - covers line 227"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock(side_effect=SystemExit)
+
+        # Mock builtins.open to raise IOError
+        mocker.patch("builtins.open", side_effect=IOError("Permission denied"))
+
+        # Mock shutil.move to also raise an exception when restoring backup
+        mocker.patch("bootloader_mod.shutil.move", side_effect=Exception("Move failed"))
+
+        from bootloader_mod import write_config
+
+        with pytest.raises(SystemExit):
+            write_config(mock_module, "/test/config", "content", "/test/config.bak")
+
+        mock_module.fail_json.assert_called_once()
+
+    def test_update_grub_config_failure_warning_path(self, mocker):
+        """Test update_grub_config failure path where warning is issued - covers lines 260-261"""
+        mock_module = mocker.Mock()
+        mock_module.run_command.return_value = (1, "", "Error message")
+        mock_module.warn = mocker.Mock()
+
+        from bootloader_mod import update_grub_config
+
+        update_grub_config(mock_module, "/boot/grub/grub.cfg")
+        mock_module.run_command.assert_called_once_with(
+            ["grub-mkconfig", "-o", "/boot/grub/grub.cfg"], check_rc=False
+        )
+        mock_module.warn.assert_called_once_with("Failed to update grub config: Error message")
+
+    def test_add_or_remove_parameter_edge_cases(self):
+        """Test _add_or_remove_parameter edge cases - covers lines 289-299"""
+        from bootloader_mod import _add_or_remove_parameter
+
+        # Test with empty param
+        content, changed = _add_or_remove_parameter("test content", "", "add")
+        assert content == "test content"  # No change when param is empty
+        assert not changed
+
+        # Test remove with empty param
+        content, changed = _add_or_remove_parameter("test content", "", "remove")
+        assert content == "test content"  # No change when param is empty
+        assert not changed
+
+        # Test removing a parameter that doesn't exist
+        content, changed = _add_or_remove_parameter("test content", "nonexistent", "remove")
+        assert content == "test content"
+        assert not changed
+
+        # Test removing with word boundaries to avoid partial matches
+        content, changed = _add_or_remove_parameter("test_content test another_test", "test", "remove")
+        # The regex should match "test" as a whole word, so it will be removed
+        # resulting in "test_content  another_test" (with extra spaces that get normalized)
+        assert "test_content" in content  # Should not remove partial matches
+        assert "another_test" in content  # Should not remove partial matches
+        assert changed is True  # "test" was removed, so change happened
+
+    def test_modify_systemd_boot_config_add_new_options_line(self):
+        """Test modify_systemd_boot_config adding new options line - covers line 324"""
+        from bootloader_mod import modify_systemd_boot_config
+
+        content = "title Arch Linux\nlinux /vmlinuz-linux\nefi /EFI/Linux/arch-stable.efi"
+        new_content, needs_change = modify_systemd_boot_config(content, "quiet", None)
+        assert "options quiet" in new_content
+        assert needs_change is True
+
+    def test_modify_refind_config_first_match_logic(self):
+        """Test modify_refind_config first match processing logic - covers line 347"""
+        from bootloader_mod import modify_refind_config
+
+        content = '"Boot 1" "param1 param2"\n"Boot 2" "param3 param4"'
+        new_content, needs_change = modify_refind_config(content, "newparam", "param1")
+
+        # The function processes first matching line and doesn't add to subsequent lines
+        # Check that the change happened
+        assert needs_change is True
+        # Check that param1 was removed and newparam was added
+        assert "param1" not in new_content or new_content.count("param1") < content.count("param1")
+        assert "newparam" in new_content
+
+    def test_modify_grub_config_add_new_cmdline(self):
+        """Test modify_grub_config adding new command line - covers lines 399-401"""
+        from bootloader_mod import modify_grub_config
+
+        content = "GRUB_DEFAULT=0\nGRUB_TIMEOUT=5"  # No existing GRUB_CMDLINE
+        new_content, needs_change = modify_grub_config(content, "newparam", None)
+        assert "newparam" in new_content
+        assert needs_change is True
+
+    def test_modify_limine_config_complex_operations(self):
+        """Test modify_limine_config complex operations - covers lines 442-457"""
+        from bootloader_mod import modify_limine_config
+
+        # Test adding to existing line
+        content = 'TIMEOUT=5\nKERNEL_CMDLINE[default]+="quiet splash"'
+        new_content, needs_change = modify_limine_config(content, "intel_pstate=enable", None)
+        assert "intel_pstate=enable" in new_content
+        assert needs_change is True
+
+        # Test removing from existing line
+        content = 'TIMEOUT=5\nKERNEL_CMDLINE[default]+="quiet splash mitigations=auto"'
+        new_content, needs_change = modify_limine_config(content, None, "mitigations=auto")
+        assert "mitigations=auto" not in new_content
+        assert needs_change is True
+
+        # Test adding to line that doesn't exist initially
+        content = "TIMEOUT=5"
+        new_content, needs_change = modify_limine_config(content, "newparam", None)
+        assert "newparam" in new_content
+        assert needs_change is True
+
+    def test_modify_config_backup_exists_error(self, mocker):
+        """Test modify_config when backup file already exists - covers line 485"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock(side_effect=SystemExit)
+
+        from bootloader_mod import modify_config
+
+        mocker.patch("bootloader_mod.os.path.exists", side_effect=lambda x: x.endswith('.bak'))
+        with pytest.raises(SystemExit):
+            modify_config(mock_module, "systemd-boot", "test", None, "/test/config")
+        mock_module.fail_json.assert_called_once()
+
+    def test_modify_config_file_read_error(self, mocker):
+        """Test modify_config when config file can't be read - covers lines 510-511"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock()
+
+        from bootloader_mod import modify_config
+
+        def exists_side_effect(path):
+            return not path.endswith('.bak')
+        mocker.patch("bootloader_mod.os.path.exists", side_effect=exists_side_effect)
+        mocker.patch("builtins.open", side_effect=IOError("Permission denied"))
+
+        changed, message = modify_config(mock_module, "systemd-boot", "test", None)
+        assert changed is False
+        assert "Failed to read config file" in message
+
+    def test_modify_config_unsupported_bootloader_type(self, mocker):
+        """Test modify_config with unsupported bootloader - covers line 518"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock()
+
+        from bootloader_mod import modify_config
+
+        # Mock get_bootloader_config to return a path, so we get past the first check
+        mocker.patch("bootloader_mod.get_bootloader_config", return_value="/fake/path")
+        # Mock os.path.exists to return True for config, False for backup
+        def exists_side_effect(path):
+            return not path.endswith('.bak')
+        mocker.patch("bootloader_mod.os.path.exists", side_effect=exists_side_effect)
+        # Mock open to work
+        mocker.patch("builtins.open", mocker.mock_open(read_data="fake content"))
+
+        changed, message = modify_config(mock_module, "unsupported", "test", None)
+        assert changed is False
+        assert "Unsupported bootloader type" in message
+
+    def test_modify_config_check_mode_handling(self, mocker):
+        """Test modify_config check_mode handling - covers lines 524, 527"""
+        mock_module = mocker.Mock()
+        mock_module.check_mode = True
+
+        from bootloader_mod import modify_config
+
+        # Mock os.path.exists to return True for main file but False for backup
+        def exists_side_effect(path):
+            # Simulate a temp path that does not exist as backup
+            return not path.endswith('.bak')
+
+        mocker.patch("bootloader_mod.os.path.exists", side_effect=exists_side_effect)
+        mocker.patch("bootloader_mod.create_backup", return_value=True)
+        mocker.patch("builtins.open", mocker.mock_open(read_data="title Arch Linux\nlinux /vmlinuz-linux"))
+
+        changed, message = modify_config(mock_module, "systemd-boot", "quiet", None, "/fake/path")
+        assert changed is True  # Would change in non-check mode
+        assert "Would update" in message
+
+    def test_modify_config_grub_update_path(self, mocker):
+        """Test modify_config GRUB update path - covers lines 543-544"""
+        mock_module = mocker.Mock()
+        mock_module.run_command.return_value = (0, "", "")  # Mock the run_command for create_backup/write_config
+        mock_module.check_mode = False  # Ensure not in check mode
+
+        from bootloader_mod import modify_config
+
+        # Mock os.path.exists to return True for main file but False for backup
+        def exists_side_effect(path):
+            return not path.endswith('.bak')
+
+        mocker.patch("bootloader_mod.os.path.exists", side_effect=exists_side_effect)
+        mocker.patch("bootloader_mod.create_backup", return_value=True)
+        mocker.patch("bootloader_mod.write_config", return_value=True)
+        # Use content that doesn't already have the parameter to ensure a change is needed
+        mock_file = mocker.mock_open(read_data='GRUB_DEFAULT=0\nGRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX_DEFAULT="splash"')
+        mocker.patch("builtins.open", mock_file)
+        mock_update = mocker.patch("bootloader_mod.update_grub_config")
+
+        # Need to provide both GRUB bootloader type and a config file to trigger the update_grub_config call
+        # Adding a parameter that doesn't exist yet to ensure changes are made
+        changed, message = modify_config(
+            mock_module, "grub", "quiet", None, "/boot/grub/grub.cfg"
+        )
+        mock_update.assert_called_once()
+
+    def test_check_kernel_args_exist_file_error(self, mocker):
+        """Test check_kernel_args_exist with file read error - covers lines 553-555"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock()
+
+        from bootloader_mod import check_kernel_args_exist
+
+        mocker.patch("bootloader_mod.os.path.exists", return_value=True)
+        mocker.patch("builtins.open", side_effect=IOError("Permission denied"))
+
+        result = check_kernel_args_exist(mock_module, "systemd-boot", "test", "/test/path")
+        assert result is False
+        mock_module.fail_json.assert_called_once()
+
+    def test_check_kernel_args_exist_unsupported_bootloader_error(self, mocker):
+        """Test check_kernel_args_exist with unsupported bootloader - covers lines 586-587"""
+        mock_module = mocker.Mock()
+        mock_module.fail_json = mocker.Mock()
+
+        from bootloader_mod import check_kernel_args_exist
+
+        result = check_kernel_args_exist(mock_module, "unsupported", "test", "/test/path")
+        assert result is False
+        mock_module.fail_json.assert_called_once()
+
+    def test_main_function_no_bootloader_detected(self, mocker):
+        """Test main function when no bootloader is detected - covers line 659"""
+        mock_module = mocker.Mock()
+        mock_module.params = {
+            'text_to_add': 'test',
+            'text_to_remove': None,
+            'detect_only': False,
+            'check_args': None,
+            'bootloader': 'auto',  # This will trigger detect_bootloader
+            'config_file': None,
+        }
+        mock_module.fail_json = mocker.Mock(side_effect=SystemExit)
+
+        from bootloader_mod import main
+
+        mocker.patch("bootloader_mod.AnsibleModule", return_value=mock_module)
+        mocker.patch("bootloader_mod.detect_bootloader", return_value="none")
+        with pytest.raises(SystemExit):
+            main()
+        mock_module.fail_json.assert_called_once_with(
+            msg="No supported bootloader detected (systemd-boot, refind, or grub)"
+        )
+
+    def test_update_quoted_line_params_function(self):
+        """Test _update_quoted_line_params helper function"""
+        from bootloader_mod import _update_quoted_line_params
+
+        # Test adding a parameter to quoted content
+        line, changed = _update_quoted_line_params('  "Description" "param1 param2"', "param3", "add")
+        assert 'param3' in line
+        assert changed is True
+
+        # Test removing a parameter from quoted content
+        line, changed = _update_quoted_line_params('  "Description" "param1 param2"', "param1", "remove")
+        assert 'param1' not in line
+        assert changed is True
+
+        # Test with line that doesn't match pattern
+        line, changed = _update_quoted_line_params('plain line without quotes', "param", "add")
+        assert line == 'plain line without quotes'
+        assert changed is False

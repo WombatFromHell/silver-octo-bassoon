@@ -1,0 +1,24 @@
+---
+- name: Configure Limine bootloader for snapper support
+  become: true
+  tags: [extra, btrfs, btrfs_limine]
+  when: is_limine_boot | default(false)
+  vars:
+    btrfs_limine_config_vars:
+      - { name: "ROOT_SUBVOLUME_PATH", value: '"/@"' }
+      - { name: "ROOT_SNAPSHOTS_PATH", value: '"/@snapshots/root"' }
+      - { name: "TIMEOUT", value: "2" }
+  block:
+    - name: Check if limine config file exists
+      ansible.builtin.stat:
+        path: /etc/default/limine
+      register: btrfs_limine_config_file
+
+    - name: Ensure limine configuration variables are set
+      ansible.builtin.lineinfile:
+        path: /etc/default/limine
+        regexp: "^{{ item.name }}="
+        line: "{{ item.name }}={{ item.value }}"
+        mode: "0644"
+      loop: "{{ btrfs_limine_config_vars }}"
+      when: btrfs_limine_config_file.stat.exists

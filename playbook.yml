@@ -68,9 +68,24 @@
           register: grub_check
           check_mode: false
 
-        - name: Set bootloader facts
+        - name: Set GRUB bootloader facts
           ansible.builtin.set_fact:
             is_grub_boot: "{{ grub_check.stat.exists | default(false) }}"
+          check_mode: false
+
+    - name: Gather Limine bootloader facts
+      tags: [setup, facts]
+      become: true
+      block:
+        - name: Check for Limine bootloader
+          ansible.builtin.stat:
+            path: /boot/efi/limine/limine_x64.efi
+          register: limine_check
+          check_mode: false
+
+        - name: Set Limine bootloader facts
+          ansible.builtin.set_fact:
+            is_limine_boot: "{{ limine_check.stat.exists | default(false) }}"
           check_mode: false
 
   roles:

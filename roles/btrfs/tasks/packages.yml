@@ -1,6 +1,7 @@
 ---
 - name: Configure fstab based on detected bootloader
-  tags: [extra, btrfs, btrfs_install]
+  tags: [extra, btrfs, btrfs_packages]
+  when: is_grub_boot | default(false)
   block:
     - name: Install core packages
       ansible.builtin.package:

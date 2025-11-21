@@ -1,9 +1,8 @@
 ---
-- name: Configure bootloader for snapper rollback support
+- name: Configure GRUB bootloader for snapper support
   become: true
-  tags: [extra, btrfs, btrfs_bootloader]
-  when:
-    - is_grub_boot | default(false)
+  tags: [extra, btrfs, btrfs_grub]
+  when: is_grub_boot | default(false)
   block:
     - name: Remove rootflags=subvol parameter from GRUB_CMDLINE_LINUX
       ansible.builtin.replace:
