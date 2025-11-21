@@ -10,7 +10,6 @@ from bootloader_mod import (
     modify_limine_config,
     modify_refind_config,
     modify_systemd_boot_config,
-    update_grub_config,
     write_config,
 )
 
@@ -286,33 +285,6 @@ class TestBootloaderFileOperations:
             assert result is True
             mock_file.assert_called_once_with(config_file, "w")
             mock_file().write.assert_called_once_with(content)
-
-    def test_update_grub_config(self, mocker):
-        """Test updating GRUB config"""
-        mock_module = mocker.Mock()
-        mock_module.run_command.return_value = (0, "", "")
-
-        # Mock AnsibleModule class to return our mock module
-        mocker.patch("bootloader_mod.AnsibleModule", return_value=mock_module)
-
-        update_grub_config(mock_module, "/boot/grub/grub.cfg")
-        mock_module.run_command.assert_called_once_with(
-            ["grub-mkconfig", "-o", "/boot/grub/grub.cfg"], check_rc=False
-        )
-
-    def test_update_grub_config_failure_with_warning(self, mocker):
-        """Test updating GRUB config failure with warning"""
-        mock_module = mocker.Mock()
-        mock_module.run_command.return_value = (1, "", "Error message")
-        mock_module.warn = mocker.Mock()
-
-        update_grub_config(mock_module, "/boot/grub/grub.cfg")
-        mock_module.run_command.assert_called_once_with(
-            ["grub-mkconfig", "-o", "/boot/grub/grub.cfg"], check_rc=False
-        )
-        mock_module.warn.assert_called_once_with(
-            "Failed to update grub config: Error message"
-        )
 
     def test_create_backup_with_exception_handling(self, mocker):
         """Test create_backup with exception during backup process"""
@@ -986,8 +958,8 @@ class TestMissingCoverage:
         assert changed is True  # Would make a change in check mode
         assert "Would update" in message
 
-    def test_modify_config_grub_with_config_file_and_update(self, mocker):
-        """Test modify_config with GRUB and config file that triggers update_grub_config"""
+    def test_modify_config_grub_with_config_file(self, mocker):
+        """Test modify_config with GRUB and config file"""
         mock_module = mocker.Mock()
         mock_module.check_mode = False
 
@@ -1002,14 +974,13 @@ class TestMissingCoverage:
 
         # Mock open to work properly
         mock_file = mocker.mock_open(
-            read_data="title Arch Linux\noptions root=PARTUUID=12345 ro"
+            read_data='GRUB_DEFAULT=0\nGRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX_DEFAULT="splash"'
         )
         mocker.patch("builtins.open", mock_file)
 
         # Mock backup and write functions
         _mock_backup = mocker.patch("bootloader_mod.create_backup", return_value=True)
         _mock_write = mocker.patch("bootloader_mod.write_config", return_value=True)
-        mock_update = mocker.patch("bootloader_mod.update_grub_config")
 
         changed, message = modify_config(
             mock_module,
@@ -1019,7 +990,6 @@ class TestMissingCoverage:
             config_file="/boot/grub/grub.cfg",
         )
         assert changed is True
-        mock_update.assert_called_once()
 
     def test_modify_systemd_boot_config_remove_only(self):
         """Test removing parameter from systemd-boot config without adding"""
@@ -1109,22 +1079,6 @@ class TestMissingCoverage:
 
         # Verify that shutil.move was called to restore the backup
         mock_move.assert_called()
-
-    def test_update_grub_config_failure_with_warning(self, mocker):
-        """Test update_grub_config when grub-mkconfig command fails"""
-        mock_module = mocker.Mock()
-        mock_module.run_command.return_value = (1, "", "Error: Failed to update config")
-
-        # Mock AnsibleModule class to return our mock module
-        mocker.patch("bootloader_mod.AnsibleModule", return_value=mock_module)
-
-        from bootloader_mod import update_grub_config
-
-        update_grub_config(mock_module, "/boot/grub/grub.cfg")
-        mock_module.run_command.assert_called_once_with(
-            ["grub-mkconfig", "-o", "/boot/grub/grub.cfg"], check_rc=False
-        )
-        mock_module.warn.assert_called_once()
 
     def test_check_kernel_args_exist_unsupported_bootloader(self, mocker):
         """Test check_kernel_args_exist with unsupported bootloader"""
@@ -1791,22 +1745,6 @@ class TestAdditionalCoverage:
 
         mock_module.fail_json.assert_called_once()
 
-    def test_update_grub_config_failure_warning_path(self, mocker):
-        """Test update_grub_config failure path where warning is issued - covers lines 260-261"""
-        mock_module = mocker.Mock()
-        mock_module.run_command.return_value = (1, "", "Error message")
-        mock_module.warn = mocker.Mock()
-
-        from bootloader_mod import update_grub_config
-
-        update_grub_config(mock_module, "/boot/grub/grub.cfg")
-        mock_module.run_command.assert_called_once_with(
-            ["grub-mkconfig", "-o", "/boot/grub/grub.cfg"], check_rc=False
-        )
-        mock_module.warn.assert_called_once_with(
-            "Failed to update grub config: Error message"
-        )
-
     def test_add_or_remove_parameter_edge_cases(self):
         """Test _add_or_remove_parameter edge cases - covers lines 289-299"""
         from bootloader_mod import _add_or_remove_parameter
@@ -1979,7 +1917,7 @@ class TestAdditionalCoverage:
         assert "Would update" in message
 
     def test_modify_config_grub_update_path(self, mocker):
-        """Test modify_config GRUB update path - covers lines 543-544"""
+        """Test modify_config GRUB functionality"""
         mock_module = mocker.Mock()
         mock_module.run_command.return_value = (
             0,
@@ -2002,14 +1940,12 @@ class TestAdditionalCoverage:
             read_data='GRUB_DEFAULT=0\nGRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX_DEFAULT="splash"'
         )
         mocker.patch("builtins.open", mock_file)
-        mock_update = mocker.patch("bootloader_mod.update_grub_config")
 
-        # Need to provide both GRUB bootloader type and a config file to trigger the update_grub_config call
-        # Adding a parameter that doesn't exist yet to ensure changes are made
+        # Test modifying GRUB config with new parameter
         changed, message = modify_config(
             mock_module, "grub", "quiet", None, "/boot/grub/grub.cfg"
         )
-        mock_update.assert_called_once()
+        assert changed is True
 
     def test_check_kernel_args_exist_file_error(self, mocker):
         """Test check_kernel_args_exist with file read error - covers lines 553-555"""

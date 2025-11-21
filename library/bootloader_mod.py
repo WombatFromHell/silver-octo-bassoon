@@ -78,14 +78,6 @@ def write_config(
         return False
 
 
-def update_grub_config(module: AnsibleModule, config_file: str) -> None:
-    rc, _, err = module.run_command(
-        ["grub-mkconfig", "-o", config_file], check_rc=False
-    )
-    if rc != 0:
-        module.warn("Failed to update grub config: " + err)
-
-
 def _add_or_remove_parameter(
     content: str, param: str, operation: str
 ) -> Tuple[str, bool]:
@@ -513,9 +505,6 @@ def modify_config(
 
     if not write_config(module, config_path, new_content, config_path + ".bak"):
         return False, "Failed to write config file"
-
-    if config_file is not None and bootloader_type == "grub":
-        update_grub_config(module, config_file)
 
     return True, f"Updated {bootloader_type} configuration at {config_path}"
 
