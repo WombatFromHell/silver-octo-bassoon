@@ -1,44 +1,93 @@
 #!/usr/bin/env bash
 
+# -----------------------------------------------------------------------------
 # Script: open-term-here.sh
-# Opens terminal with tmux and creates a new tab in the specified directory
+# Purpose: Opens specific terminals (Kitty/Ghostty/Alacritty) in a target dir,
+#          managing Tmux sessions and windows intelligently.
+# -----------------------------------------------------------------------------
 
-TARGET_DIR="$2"
 TERMINAL="$1"
+TARGET_DIR="$2"
+SESSION_NAME="main"
 
-# Validate that a directory was provided
-if [ -z "$TARGET_DIR" ] || [ ! -d "$TARGET_DIR" ]; then
-  notify-send "Error" "No valid directory provided"
-  exit 1
-fi
+# -----------------------------------------------------------------------------
+# Helper Functions
+# -----------------------------------------------------------------------------
 
-# Function to create a new tmux window in the specified directory
-create_tmux_window() {
-  local dir
-  dir="$1"
-  # Send command to create new window and change to directory
-  tmux new-window -c "$dir" 2>/dev/null || {
-    # If tmux isn't running, this will fail - that's okay
-    # We'll handle starting tmux in the target directory below
-    return 1
-  }
+validate_input() {
+  if [[ -z "$TARGET_DIR" ]] || [[ ! -d "$TARGET_DIR" ]]; then
+    notify-send "Error" "Invalid directory: $TARGET_DIR"
+    exit 1
+  fi
+  if [[ -z "$TERMINAL" ]]; then
+    notify-send "Error" "Terminal not specified"
+    exit 1
+  fi
 }
 
-# Check if tmux is already running
-if tmux list-sessions >/dev/null 2>&1; then
-  # Tmux is running, create new window in the specified directory
-  create_tmux_window "$TARGET_DIR"
+# Check if the specific terminal binary is currently running
+# We use -x (exact match) to avoid matching this script's own arguments
+is_terminal_process_running() {
+  pgrep -x "$(basename "$TERMINAL")" > /dev/null 2>&1
+}
+
+# Check if our specific tmux session exists
+is_tmux_session_running() {
+  tmux has-session -t "$SESSION_NAME" > /dev/null 2>&1
+}
+
+# Create a new tmux window (tab) inside the existing session
+create_tmux_window() {
+  # Create window in background
+  tmux new-window -t "$SESSION_NAME" -c "$TARGET_DIR"
+}
+
+# Launch the terminal emulator
+launch_terminal() {
+  cd "$TARGET_DIR" || exit 1
+
+  local term_name
+  term_name=$(basename "$TERMINAL")
+
+  # We launch the terminal and tell it to attach to the session.
+  # Since we just created the window in 'create_tmux_window' (if running),
+  # or are about to create the session (if not), this brings it to view.
+  case "$term_name" in
+    kitty)
+      # Kitty: No flags. Pass args distinctively.
+      nohup "$TERMINAL" tmux new-session -A -s "$SESSION_NAME" >/dev/null 2>&1 &
+      ;;
+    ghostty|alacritty)
+      # Ghostty/Alacritty: Use -e.
+      nohup "$TERMINAL" -e tmux new-session -A -s "$SESSION_NAME" >/dev/null 2>&1 &
+      ;;
+    *)
+      # Fallback
+      nohup "$TERMINAL" -e tmux new-session -A -s "$SESSION_NAME" >/dev/null 2>&1 &
+      ;;
+  esac
+}
+
+# -----------------------------------------------------------------------------
+# Main Logic
+# -----------------------------------------------------------------------------
+
+validate_input
+
+if is_tmux_session_running; then
+  # 1. Tmux IS running.
+  # Create the new window (tab) in the existing session first.
+  create_tmux_window
+
+  # 2. Check if the GUI is actually open.
+  # If not (e.g., you closed the window but left tmux server running), open it.
+  if ! is_terminal_process_running; then
+    launch_terminal
+  fi
+
 else
-  # No tmux session running, start the terminal which should start tmux
-  # in the target directory. The terminal will be started with a command
-  # to change to the target directory first
-  (
-    cd "$TARGET_DIR" || exit 1
-    # Start the terminal, which should automatically start tmux in this directory
-    "$TERMINAL" &
-    # Give the terminal time to initialize
-    sleep 1
-    # Now create a new session in the target directory to ensure it's there
-    tmux new-session -A -s 'main' -c "$TARGET_DIR" 2>/dev/null || true
-  )
+  # 3. Tmux IS NOT running.
+  # Launching the terminal with 'new-session -A' will create the session
+  # and default to the directory we cd'd into.
+  launch_terminal
 fi
