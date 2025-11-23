@@ -107,9 +107,11 @@ function tarc
     # Create directory for output file if it doesn't exist
     mkdir -p (dirname -- $outfile)
 
-    # Run: tar -> pv -> compressor -> file
-    # Note: We split comp_cmd_str so fish sees command and flags separately
-    tar $opts -cf - $paths | _use_pv $paths | string split " " -- $comp_cmd_str >$outfile
+    # 1. Split the command string into a list variable FIRST
+    set -l cmd_parts (string split " " -- $comp_cmd_str)
+
+    # 2. Run: tar -> pv -> compressor (using the list variable) -> file
+    tar $opts -cf - $paths | _use_pv $paths | $cmd_parts >$outfile
 end
 
 # ---------------------------------------------------------
