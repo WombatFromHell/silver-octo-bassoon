@@ -1,0 +1,11 @@
+[Unit]
+Description=Optional "data" Disk Mount
+
+[Mount]
+What=/dev/disk/by-uuid/25dc01da-4cc4-4d5b-bca7-d11f74732d0c
+Where=/mnt/data
+Type=btrfs
+Options=noatime,compress=zstd:3,subvol=@,nofail,x-gvfs-show,x-systemd.mount-timeout=5
+
+[Install]
+WantedBy=multi-user.target
