@@ -1,6 +1,5 @@
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -8,7 +7,7 @@ import pytest
 # Add the parent directory to sys.path so we can import the module
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tuckr_manage import TuckrManager, main
+from tuckr_manage import TuckrManager
 
 
 class TestTuckrManager:
@@ -119,7 +118,7 @@ class TestTuckrManager:
 
     def test_backup_files_no_conflicts(self, mocker):
         """Test backup with no conflicts"""
-        mock_exists = mocker.patch("tuckr_manage.os.path.exists", return_value=False)
+        _mock_exists = mocker.patch("tuckr_manage.os.path.exists", return_value=False)
 
         mock_module = mocker.Mock()
         manager = TuckrManager(mock_module)
@@ -187,7 +186,7 @@ class TestTuckrManager:
 
         mock_module = mocker.Mock()
         manager = TuckrManager(mock_module)
-        result = manager.execute("test-package", "present", False, True)
+        _result = manager.execute("test-package", "present", False, True)
 
         # Check that handle_add was called with the right parameters
         mock_handle_add.assert_called_once_with("test-package", False, True)
@@ -202,7 +201,7 @@ class TestTuckrManager:
 
         mock_module = mocker.Mock()
         manager = TuckrManager(mock_module)
-        result = manager.execute("test-package", "absent", False, True)
+        _result = manager.execute("test-package", "absent", False, True)
 
         # The changed status depends on the handle_rm result
         mock_handle_rm.assert_called_once_with("test-package")
@@ -321,7 +320,7 @@ file3.txt -> /home/user/.config/file3.txt"""
         mock_move.side_effect = Exception("Permission denied")
 
         # Mock os.makedirs
-        mock_makedirs = mocker.patch("tuckr_manage.os.makedirs")
+        _mock_makedirs = mocker.patch("tuckr_manage.os.makedirs")
 
         result = manager.backup_files(conflicts)
         assert result is False  # Should return False on exception
@@ -447,7 +446,7 @@ file3.txt -> /home/user/.config/file3.txt"""
         mock_handle_add = mocker.patch("tuckr_manage.TuckrManager.handle_add")
         mock_handle_add.return_value = True
 
-        result = manager.execute("test-package", "present", force=True, backup=True)
+        _result = manager.execute("test-package", "present", force=True, backup=True)
 
         # Verify handle_add was called with correct parameters
         mock_handle_add.assert_called_once_with("test-package", True, True)
@@ -649,7 +648,7 @@ file3.txt -> /home/user/.config/file3.txt"""
         mock_handle_rm = mocker.patch("tuckr_manage.TuckrManager.handle_rm")
         mock_handle_rm.return_value = True
 
-        result = manager.execute("test-package", "absent", force=False, backup=True)
+        _result = manager.execute("test-package", "absent", force=False, backup=True)
 
         # Verify handle_rm was called (not handle_add)
         mock_handle_rm.assert_called_once_with("test-package")
@@ -680,7 +679,7 @@ file3.ini -> /home/user/.config/file3.ini (already exists)"""
         # Mock os.makedirs and shutil.move
         mock_makedirs = mocker.patch("tuckr_manage.os.makedirs")
         mock_move = mocker.patch("tuckr_manage.shutil.move")
-        mock_exists = mocker.patch("tuckr_manage.os.path.exists", return_value=False)
+        _mock_exists = mocker.patch("tuckr_manage.os.path.exists", return_value=False)
 
         # Test with a list of nonexistent files
         conflicts = ["/nonexistent/file1.txt", "/nonexistent/file2.conf"]

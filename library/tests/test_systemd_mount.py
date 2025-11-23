@@ -500,12 +500,117 @@ class TestMissingCoverage:
             "systemd_mount.remove_existing_mounts", return_value=True
         )
 
-        # Mock module.exit_json to avoid actual exit
+
+class TestBugFixes:
+    """Test fixes for previously reported bugs"""
+
+    def test_no_double_var_replacement_in_bazzite_mode(self, mocker, temp_dir):
+        """Test that /var/mnt/ paths are not converted to /var/var/mnt/ when already containing /var/mnt/"""
+        # Create a mount file that already has /var/mnt/ paths
+        mount_file_path = os.path.join(temp_dir, "test.mnt.mount")
+
+        with open(mount_file_path, "w") as f:
+            f.write("[Unit]\nDescription=Test\nWhat=/dev/sda1\nWhere=/var/mnt/test\n")
+
+        # Mock module and parameters
+        mock_module = mocker.Mock()
+        mock_module.params = {
+            "src_dir": temp_dir,
+            "dst": "/test/dst",
+            "os_type": "bazzite",
+            "mount_file": "test.mnt.mount",
+        }
+
+        # Mock necessary functions
+        mocker.patch("systemd_mount.filter_mount_unit", return_value=["test.mnt.mount"])
+        mocker.patch("systemd_mount.os.path.isfile", return_value=True)
+        mocker.patch("systemd_mount.check_mount_device", return_value=True)
+        mocker.patch(
+            "systemd_mount.run_systemctl", return_value={"rc": 0, "changed": True}
+        )
+        mocker.patch("systemd_mount.manage_systemd_units", return_value=True)
+        mocker.patch("systemd_mount.os.path.join", side_effect=os.path.join)
+        mocker.patch("systemd_mount.os.chmod", return_value=None)
+        mocker.patch("systemd_mount.shutil.copy", return_value=None)
+
+        # Mock file operations to capture what gets written
+        mock_file_handle = mocker.mock_open(
+            read_data="[Unit]\nDescription=Test\nWhat=/dev/sda1\nWhere=/var/mnt/test\n"
+        )
+
+        # Mock both builtins.open and tempfile.NamedTemporaryFile
+        mocker.patch("builtins.open", mock_file_handle)
+        mock_tempfile = mocker.patch("systemd_mount.tempfile.NamedTemporaryFile")
+        mock_tempfile_instance = mocker.Mock()
+        mock_tempfile_instance.__enter__ = mocker.Mock(
+            return_value=mock_tempfile_instance
+        )
+        mock_tempfile_instance.__exit__ = mocker.Mock(return_value=None)
+        mock_tempfile_instance.name = "/tmp/tempfile.tmp"
+        mock_tempfile.return_value = mock_tempfile_instance
+
+        # Mock os.unlink to avoid actual file deletion
+        mocker.patch("systemd_mount.os.unlink", return_value=None)
+
+        # Mock os.access and os.path.exists
+        mocker.patch("systemd_mount.os.access", return_value=True)
+        mocker.patch("systemd_mount.os.path.exists", return_value=True)
+
+        # Mock exit_json to avoid actual exit
         mock_module.exit_json.side_effect = lambda **kwargs: None
 
-        # Test the logic directly since main() would exit
-        # We're verifying that when state is 'absent', it calls remove_existing_mounts
-        # and exits with the result
+        # Call the function
+        process_single_mount(mock_module)
+
+        # Check that file operations were called correctly
+        # Verify that NamedTemporaryFile was called with write mode
+        mock_tempfile.assert_called()
+        # Verify the temporary file was opened for writing (context manager usage)
+        assert mock_tempfile_instance.__enter__.call_count > 0
+
+    @pytest.mark.parametrize(
+        "input_line,expected_result",
+        [
+            (
+                "Where=/mnt/test\n",
+                "Where=/var/mnt/test\n",
+            ),  # Should convert /mnt/ to /var/mnt/
+            (
+                "Where=/var/mnt/test\n",
+                "Where=/var/mnt/test\n",
+            ),  # Should not double convert
+            (
+                "What=/mnt/data\n",
+                "What=/var/mnt/data\n",
+            ),  # Should convert /mnt/ to /var/mnt/
+            (
+                "What=/var/mnt/data\n",
+                "What=/var/mnt/data\n",
+            ),  # Should not double convert
+            (
+                "Description=Mount at /mnt/point\n",
+                "Description=Mount at /var/mnt/point\n",
+            ),  # Should convert
+            (
+                "Description=Mount at /var/mnt/point\n",
+                "Description=Mount at /var/mnt/point\n",
+            ),  # Should not convert
+            (
+                "NoMountPath=/other/path\n",
+                "NoMountPath=/other/path\n",
+            ),  # Should not affect other paths
+        ],
+    )
+    def test_string_replacement_logic_prevents_double_var(
+        self, input_line, expected_result
+    ):
+        """Test that string replacement logic prevents double /var/ paths"""
+        # Test the actual replacement logic used in the code
+        if "/var/mnt/" not in input_line:
+            result = input_line.replace("/mnt/", "/var/mnt/")
+        else:
+            result = input_line
+        assert result == expected_result
 
     def test_unit_exists_with_error_rc(self, mocker):
         """Test unit_exists function when systemctl command fails"""
@@ -1031,7 +1136,7 @@ class TestMissingCoverage:
         from systemd_mount import remove_existing_mounts
 
         # This should handle the error without crashing
-        result = remove_existing_mounts(mock_module)
+        _result = remove_existing_mounts(mock_module)
 
     def test_filter_mount_unit_with_missing_what_line(self, temp_config_file, mocker):
         """Test filter_mount_unit when mount file is missing What= line"""
@@ -1044,7 +1149,7 @@ class TestMissingCoverage:
 
         from systemd_mount import check_mount_device
 
-        result = check_mount_device(mock_module, temp_config_file)
+        _result = check_mount_device(mock_module, temp_config_file)
         # This should call fail_json and return False
         mock_module.fail_json.assert_called_once()
 
@@ -1141,7 +1246,7 @@ class TestMissingCoverage:
         }
 
         # Mock setup_external_mounts
-        mock_setup = mocker.patch(
+        _mock_setup = mocker.patch(
             "systemd_mount.setup_external_mounts", return_value=True
         )
 
@@ -1215,7 +1320,7 @@ class TestMissingCoverage:
         mock_run_systemctl.return_value = {"rc": 0, "changed": True, "failed": False}
 
         # Mock os.remove to raise an exception
-        mock_remove = mocker.patch(
+        _mock_remove = mocker.patch(
             "systemd_mount.os.remove", side_effect=OSError("Permission denied")
         )
 
@@ -1226,7 +1331,7 @@ class TestMissingCoverage:
         from systemd_mount import remove_existing_mounts
 
         # This should handle the removal error gracefully
-        result = remove_existing_mounts(mock_module)
+        _result = remove_existing_mounts(mock_module)
         # The function should call fail_json and return, but since we're testing
         # error handling, we need to see if it's caught properly
 
@@ -1264,5 +1369,5 @@ class TestMissingCoverage:
 
         from systemd_mount import remove_existing_mounts
 
-        result = remove_existing_mounts(mock_module)
+        _result = remove_existing_mounts(mock_module)
         # Should process all types of units

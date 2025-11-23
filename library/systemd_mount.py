@@ -187,7 +187,11 @@ def setup_external_mounts(module):
                             tempfile.NamedTemporaryFile("w", delete=False) as f_out,
                         ):
                             for line in f_in:
-                                f_out.write(line.replace("/mnt/", "/var/mnt/"))
+                                # Only replace /mnt/ with /var/mnt/ if the path doesn't already start with /var/mnt/
+                                if "/var/mnt/" not in line:
+                                    f_out.write(line.replace("/mnt/", "/var/mnt/"))
+                                else:
+                                    f_out.write(line)
                         dest_path = os.path.join(dst, new_basename)
                         shutil.copy(f_out.name, dest_path)
                         os.chmod(dest_path, 0o644)
@@ -244,7 +248,11 @@ def process_single_mount(module):
                     tempfile.NamedTemporaryFile("w", delete=False) as f_out,
                 ):
                     for line in f_in:
-                        f_out.write(line.replace("/mnt/", "/var/mnt/"))
+                        # Only replace /mnt/ with /var/mnt/ if the path doesn't already start with /var/mnt/
+                        if "/var/mnt/" not in line:
+                            f_out.write(line.replace("/mnt/", "/var/mnt/"))
+                        else:
+                            f_out.write(line)
                 dest_path = os.path.join(dst, new_basename)
                 shutil.copy(f_out.name, dest_path)
                 os.chmod(dest_path, 0o644)
@@ -301,7 +309,11 @@ def process_single_swap(module):
                 tempfile.NamedTemporaryFile("w", delete=False) as f_out,
             ):
                 for line in f_in:
-                    f_out.write(line.replace("/mnt/", "/var/mnt/"))
+                    # Only replace /mnt/ with /var/mnt/ if the path doesn't already start with /var/mnt/
+                    if "/var/mnt/" not in line:
+                        f_out.write(line.replace("/mnt/", "/var/mnt/"))
+                    else:
+                        f_out.write(line)
             dest_path = os.path.join(dst, new_basename)
             shutil.copy(f_out.name, dest_path)
             os.chmod(dest_path, 0o644)
