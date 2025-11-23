@@ -2,11 +2,10 @@
 Description=Optional "linuxdata" Disk Mount
 
 [Mount]
-What=/dev/disk/by-uuid/4f1b5e69-a1a5-4a8b-b8c4-dfe7bd9f574d
+What=/dev/disk/by-uuid/be63764a-f6bd-4687-aa07-9c7ddea97cc4
 Where=/mnt/linuxdata
-Type=ext4
-Options=noatime,x-systemd.mount-timeout=5,x-gvfs-show
-DirectoryMode=0755
+Type=btrfs
+Options=noatime,compress=zstd:3,subvol=@,nofail,x-gvfs-show,x-systemd.mount-timeout=5
 
 [Install]
 WantedBy=multi-user.target
