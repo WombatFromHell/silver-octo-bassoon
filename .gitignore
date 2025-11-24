@@ -10,3 +10,4 @@ __pycache__
 !**/.config/OpenRGB/lightsout*.orp
 **/.config/pipewire
 **/.config/fish/fish_variables
+**/.config/environment.d/*
