@@ -3,38 +3,42 @@
   when: install_arpc_fix | default(false)
   tags: [extra, arpc]
   block:
-    - name: Check if the service is enabled and active
-      ansible.builtin.systemd:
-        name: discord-flatpak-rpc-bridge.service
-        scope: user
-      register: arpcbridge_service_status
-      ignore_errors: true
-
-    - name: Check for the existence of the service installer
+    - name: Ensure installer script exists
       ansible.builtin.stat:
         path: "{{ role_path }}/files/discord-flatpak-rpc-bridge/install.sh"
-      register: arpcbridge_installer_exists
+      register: arpcbridge_installer
+      failed_when: not arpcbridge_installer.stat.exists
 
-    - name: Run the service installer
-      when:
-        - arpcbridge_installer_exists.stat.exists
-        - arpcbridge_service_status is failed or arpcbridge_service_status.status.ActiveState != "active"
-      ansible.builtin.shell: |
-        set -o pipefail
-        cd "{{ role_path }}/files/discord-flatpak-rpc-bridge" && \
-        ./install.sh -i
+    - name: Check if system-wide unit files exist
+      ansible.builtin.stat:
+        path: "/etc/systemd/user/discord-flatpak-rpc-bridge.{{ item }}"
+      loop:
+        - service
+        - socket
+      register: arpcbridge_system_units
+
+    - name: Run system-wide install (if unit files missing)
+      ansible.builtin.command: ./install.sh -i
       args:
-        executable: /bin/bash
-      changed_when: false
-      register: arpcbridge_installer_result
+        chdir: "{{ role_path }}/files/discord-flatpak-rpc-bridge"
+      when: arpcbridge_system_units.results | selectattr('stat.exists', 'equalto', false) | list | length > 0
+      become: true
+      changed_when: true
 
-    - name: Ensure the service is started and enabled
-      when:
-        - arpcbridge_installer_exists.stat.exists
-        - arpcbridge_installer_result.skipped is defined and not arpcbridge_installer_result.skipped
-        - arpcbridge_installer_result.rc is defined and arpcbridge_installer_result.rc == 0
+    - name: Get current socket status
       ansible.builtin.systemd:
-        name: discord-flatpak-rpc-bridge.service
+        name: discord-flatpak-rpc-bridge.socket
         scope: user
-        state: started
-        enabled: true
+      register: arpcbridge_socket_status
+      failed_when: false
+      changed_when: false
+
+    - name: Run user-specific enable (if socket not enabled/active)
+      ansible.builtin.command: ./install.sh -e
+      args:
+        chdir: "{{ role_path }}/files/discord-flatpak-rpc-bridge"
+      when: >-
+        arpcbridge_socket_status.status is not defined or
+        arpcbridge_socket_status.status.UnitFileState | default('') != 'enabled' or
+        arpcbridge_socket_status.status.ActiveState | default('') not in ['active', 'activating']
+      changed_when: true
