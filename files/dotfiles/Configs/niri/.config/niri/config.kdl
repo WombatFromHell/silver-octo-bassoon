@@ -69,6 +69,12 @@ input {
     // focus-follows-mouse max-scroll-amount="0%"
 }
 
+workspace "scratchpad"
+workspace "main"
+workspace "editing"
+workspace "terminals"
+spawn-at-startup "niri" "msg" "action" "focus-workspace" "2"
+
 // You can configure outputs by their name, which you can find
 // by running `niri msg outputs` while inside a niri instance.
 // The built-in laptop monitor is usually called "eDP-1".
@@ -270,6 +276,11 @@ layout {
 // This line starts waybar, a commonly used bar for Wayland compositors.
 // spawn-at-startup "waybar"
 
+// attempt to unlock kwallet automatically on login
+// spawn-sh-at-startup "qdbus org.kde.kwalletd6 /modules/kwalletd6 org.kde.KWallet.open kdewallet 0 login"
+spawn-sh-at-startup "/usr/libexec/pam_kwallet_init"
+spawn-sh-at-startup "/usr/libexec/kf6/polkit-kde-authentication-agent-1"
+
 // To run a shell command (with variables, pipes, etc.), use spawn-sh-at-startup:
 // spawn-sh-at-startup "qs -c ~/source/qs/MyAwesomeShell"
 
@@ -318,6 +329,17 @@ window-rule {
     default-column-width {}
 }
 
+window-rule {
+    match app-id="steam"
+    open-on-workspace "scratchpad"
+}
+
+window-rule {
+    match app-id="steam" title=r#"^notificationtoasts_\d+_desktop$"#
+    default-floating-position x=10 y=10 relative-to="bottom-right"
+    open-maximized false
+}
+
 // Open the Firefox picture-in-picture player as floating by default.
 window-rule {
     // This app-id regular expression will work for both:
@@ -325,6 +347,14 @@ window-rule {
     // - Flatpak Firefox (app-id is "org.mozilla.firefox")
     match app-id=r#"firefox$"# title="^Picture-in-Picture$"
     open-floating true
+}
+
+// Make the wallpaper stationary, rather than moving with workspaces.
+layer-rule {
+    // This is for swaybg; change for other wallpaper tools.
+    // Find the right namespace by running niri msg layers.
+    match namespace="^wallpaper$"
+    place-within-backdrop true
 }
 
 // Example: block out two password managers from screen capture.

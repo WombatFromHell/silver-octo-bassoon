@@ -1,0 +1,9 @@
+profile {
+    output DP-1 enable mode 2560x1440@144.000 position 0,0
+}
+
+profile {
+    output DP-1 disable
+    output HDMI-A-1 enable scale 2.0 mode 3840x2160@120.000 position 0,0
+}
+
