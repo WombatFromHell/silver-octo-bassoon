@@ -66,3 +66,7 @@
     - name: Include nvim task
       ansible.builtin.include_tasks: lazyvim.yml
       tags: [extra, dotfiles, dotfiles_lazyvim]
+
+    - name: Include user units
+      ansible.builtin.include_tasks: units.yml
+      tags: [extra, dotfiles, dotfiles_units]

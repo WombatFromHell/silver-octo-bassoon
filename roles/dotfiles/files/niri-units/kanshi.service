@@ -1,0 +1,15 @@
+[Unit]
+Description=Kanshi Service
+PartOf=graphical-session.target
+Requisite=graphical-session.target
+After=graphical-session.target
+Requires=niri.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kanshi
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
