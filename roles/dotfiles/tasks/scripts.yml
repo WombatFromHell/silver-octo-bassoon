@@ -31,3 +31,135 @@
         - script_links is defined
         - script_links | length > 0
       become: true
+
+- name: Some Steam-specific Wayland enhancements
+  tags: [extra, dotfiles, dotfiles_scripts]
+  block:
+    # Define the list of required scripts and their permissions
+    - name: Define required scripts configuration
+      ansible.builtin.set_fact:
+        dotfiles_required_scripts:
+          - path: "{{ scripts_dir }}/bazzite-steam.sh"
+            name: "bazzite-steam.sh"
+            required_for: ["steam"]
+          - path: "{{ scripts_dir }}/bazzite-steam-bpm.sh"
+            name: "bazzite-steam-bpm.sh"
+            required_for: ["gamescope"]
+          - path: "{{ scripts_dir }}/steamos-session-select"
+            name: "steamos-session-select"
+            required_for: ["gamescope"]
+
+    # Define the list of Steam desktop files to process
+    - name: Define Steam desktop files configuration
+      ansible.builtin.set_fact:
+        dotfiles_steam_desktop_files:
+          - script_path: "{{ scripts_dir }}/bazzite-steam.sh"
+            template: "steam.desktop.j2"
+            dest: "{{ home_realpath }}/.local/share/applications/steam.desktop"
+            script_name: "bazzite-steam.sh"
+            requires_scripts:
+              - name: "bazzite-steam.sh"
+                mode: "0755"
+          - script_path: "{{ scripts_dir }}/bazzite-steam-bpm.sh"
+            template: "steam-gamescope.desktop.j2"
+            dest: "{{ home_realpath }}/.local/share/applications/steam-gamescope.desktop"
+            script_name: "bazzite-steam-bpm.sh"
+            requires_scripts:
+              - name: "bazzite-steam-bpm.sh"
+                mode: "0755"
+              - name: "steamos-session-select"
+                mode: "0755"
+
+    # --- Phase 1: Gather Facts ---
+
+    - name: Check for presence of required scripts
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+      register: dotfiles_script_stat_result
+      loop: "{{ dotfiles_required_scripts }}"
+      loop_control:
+        loop_var: item
+        label: "{{ item.name }}"
+
+    - name: Check if Steam desktop files already exist
+      ansible.builtin.stat:
+        path: "{{ item.dest }}"
+      register: dotfiles_desktop_file_stat_result
+      loop: "{{ dotfiles_steam_desktop_files }}"
+      loop_control:
+        label: "{{ item.dest }}"
+
+    # --- Phase 2: Consolidate Facts into Structured Dictionaries ---
+
+    - name: Aggregate script statuses into a single dictionary
+      ansible.builtin.set_fact:
+        # Creates: {'bazzite-steam.sh': { 'exists': true, 'mode': '0755', ... }, ...}
+        dotfiles_script_status: >-
+          {{
+            dotfiles_script_status | default({}) |
+            combine({item.item.name: item.stat})
+          }}
+      loop: "{{ dotfiles_script_stat_result.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Aggregate desktop file existence into a single dictionary
+      ansible.builtin.set_fact:
+        # Creates: {'/path/to/steam.desktop': true, '/path/to/steam-gamescope.desktop': false}
+        dotfiles_desktop_files_exist: >-
+          {{
+            dotfiles_desktop_files_exist | default({}) |
+            combine({item.item.dest: item.stat.exists})
+          }}
+      loop: "{{ dotfiles_desktop_file_stat_result.results }}"
+      loop_control:
+        label: "{{ item.item.dest }}"
+
+    # --- Phase 3: Take Action Based on Facts ---
+
+    - name: Ensure required scripts have correct permissions
+      ansible.builtin.file:
+        path: "{{ item.key }}"
+        mode: "0755"
+      loop: "{{ dotfiles_script_status | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      when: item.value.exists and item.value.mode != '0755'
+
+    - name: Install Steam desktop files if prerequisites are met
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/{{ item.template }}"
+        dest: "{{ item.dest }}"
+        mode: "0644"
+      loop: "{{ dotfiles_steam_desktop_files }}"
+      loop_control:
+        label: "{{ item.dest }}"
+      vars:
+        required_scripts_exist: >-
+          {{
+            item.requires_scripts
+            | map(attribute='name')
+            | map('extract', dotfiles_script_status or {})
+            | select
+            | selectattr('exists', 'defined')
+            | selectattr('exists', 'true')
+            | list
+            | length == item.requires_scripts | length
+          }}
+        required_scripts_correct_mode: >-
+          {{
+            item.requires_scripts
+            | map(attribute='name')
+            | map('extract', dotfiles_script_status or {})
+            | select
+            | selectattr('mode', 'defined')
+            | selectattr('mode', 'equalto', '0755')
+            | list
+            | length == item.requires_scripts | length
+          }}
+      when:
+        - not dotfiles_desktop_files_exist.get(item.dest, false)  # Desktop file doesn't exist yet
+        - required_scripts_exist  # All required scripts exist
+        - required_scripts_correct_mode  # All required scripts have correct mode
+      notify: update desktop database
+      check_mode: false

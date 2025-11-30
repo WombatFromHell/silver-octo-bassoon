@@ -32,3 +32,9 @@
     cmd: fish -l -c 'update_fisher'
     creates: "{{ home_realpath }}/.config/fish/functions/fisher.fish"
   listen: refresh_fish_plugins
+
+- name: Update desktop database
+  ansible.builtin.command:
+    cmd: update-desktop-database ~/.local/share/applications
+  listen: update desktop database
+  changed_when: false
