@@ -277,9 +277,9 @@ layout {
 // spawn-at-startup "waybar"
 
 // attempt to unlock kwallet automatically on login
-// spawn-sh-at-startup "/usr/libexec/pam_kwallet_init"
-// spawn-sh-at-startup "/usr/libexec/kf6/polkit-kde-authentication-agent-1"
-// unsure if this next one is necessary or not
+spawn-sh-at-startup "/usr/libexec/pam_kwallet_init"
+spawn-sh-at-startup "/usr/libexec/kf6/polkit-kde-authentication-agent-1"
+// only uncomment below if using 'kdewallet' with blank password
 // spawn-sh-at-startup "qdbus org.kde.kwalletd6 /modules/kwalletd6 org.kde.KWallet.open kdewallet 0 login"
 
 // To run a shell command (with variables, pipes, etc.), use spawn-sh-at-startup:

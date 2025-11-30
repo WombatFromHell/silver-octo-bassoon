@@ -1,11 +1,12 @@
 [Unit]
 Description=Noctalia Shell Service
-PartOf=graphical-session.target
-Requisite=graphical-session.target
 After=graphical-session.target
-Requires=niri.service
+PartOf=niri.service
+After=niri.service
+ConditionEnvironment=!DESKTOP_SESSION=plasma
 
 [Service]
+Type=simple
 ExecStart=/usr/bin/qs -c noctalia-shell
 Restart=on-failure
 RestartSec=2

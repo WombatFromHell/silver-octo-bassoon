@@ -55,9 +55,9 @@
       ansible.builtin.include_tasks: tmux.yml
       tags: [extra, dotfiles, dotfiles_tmux]
 
-    - name: Include niri task
-      ansible.builtin.include_tasks: niri.yml
-      tags: [extra, dotfiles, dotfiles_niri]
+    # - name: Include niri task
+    #   ansible.builtin.include_tasks: niri.yml
+    #   tags: [extra, dotfiles, dotfiles_niri]
 
     # - name: Include pipewire task
     #   ansible.builtin.include_tasks: pipewire.yml
