@@ -33,13 +33,17 @@
   listen: reload_udev
 
 - name: Generate mimeinfo.cache (user)
-  when: desktop_db_check.rc is defined and desktop_db_check.rc == 0
+  when: base_desktop_db_check.rc is defined and desktop_db_check.rc == 0
   ansible.builtin.command: update-desktop-database "{{ home_realpath }}/.local/share/applications"
   args:
     creates: "{{ home_realpath }}/.local/share/applications/mimeinfo.cache"
-  register: desktop_db_update
-  changed_when: desktop_db_update.rc == 0
-  failed_when: desktop_db_update.rc != 0 and not ( 'command not found' in desktop_db_update.stderr or 'No such file or directory' in desktop_db_update.stderr )
+  register: base_desktop_db_update
+  changed_when: base_desktop_db_update.rc == 0
+  failed_when: >
+    base_desktop_db_update.rc != 0 and not (
+      'command not found' in base_desktop_db_update.stderr or
+      'No such file or directory' in base_desktop_db_update.stderr
+    )
   listen: update_desktop_database
 
 - name: Update Limine bootloader

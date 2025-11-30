@@ -22,9 +22,9 @@
     state: directory
     mode: "0755"
     owner: "{{ ansible_facts.user_id }}"
-  register: fix_yazi_result
+  register: dotfiles_fix_yazi_result
   ignore_errors: true
-  changed_when: fix_yazi_result.rc is defined and fix_yazi_result.rc == 0
+  changed_when: dotfiles_fix_yazi_result.rc is defined and dotfiles_fix_yazi_result.rc == 0
   listen: fix_yazi_tasks
 
 - name: Refresh fish plugins
@@ -36,5 +36,5 @@
 - name: Update desktop database
   ansible.builtin.command:
     cmd: update-desktop-database ~/.local/share/applications
-  listen: update desktop database
+  listen: update_desktop_database
   changed_when: false

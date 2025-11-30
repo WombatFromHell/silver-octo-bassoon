@@ -158,8 +158,8 @@
             | length == item.requires_scripts | length
           }}
       when:
-        - not dotfiles_desktop_files_exist.get(item.dest, false)  # Desktop file doesn't exist yet
-        - required_scripts_exist  # All required scripts exist
-        - required_scripts_correct_mode  # All required scripts have correct mode
-      notify: update desktop database
+        - not dotfiles_desktop_files_exist.get(item.dest, false) # Desktop file doesn't exist yet
+        - required_scripts_exist # All required scripts exist
+        - required_scripts_correct_mode # All required scripts have correct mode
+      notify: update_desktop_database
       check_mode: false
