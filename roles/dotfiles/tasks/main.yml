@@ -20,7 +20,7 @@
             path: "{{ dotfiles_root }}/Configs"
             file_type: directory
             recurse: false
-            excludes: "home,scripts,pipewire,systemd,tmux"
+            excludes: "home,scripts,pipewire,systemd,tmux,niri"
           register: dotfiles_dirs
           no_log: true
 
@@ -55,6 +55,10 @@
       ansible.builtin.include_tasks: tmux.yml
       tags: [extra, dotfiles, dotfiles_tmux]
 
+    - name: Include niri task
+      ansible.builtin.include_tasks: niri.yml
+      tags: [extra, dotfiles, dotfiles_niri]
+
     # - name: Include pipewire task
     #   ansible.builtin.include_tasks: pipewire.yml
     #   tags: [extra, dotfiles, dotfiles_pipewire]
@@ -66,7 +70,3 @@
     - name: Include nvim task
       ansible.builtin.include_tasks: lazyvim.yml
       tags: [extra, dotfiles, dotfiles_lazyvim]
-
-    - name: Include user units
-      ansible.builtin.include_tasks: units.yml
-      tags: [extra, dotfiles, dotfiles_units]

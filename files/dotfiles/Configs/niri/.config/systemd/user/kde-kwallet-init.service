@@ -1,0 +1,7 @@
+[Unit]
+Description=Initialize KDE Wallet via PAM
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/pam_kwallet_init
+RemainAfterExit=yes

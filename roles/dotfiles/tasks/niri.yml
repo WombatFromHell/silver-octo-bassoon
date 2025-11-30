@@ -1,0 +1,41 @@
+---
+- name: Niri dotfiles processing
+  tags: [extra, dotfiles, dotfiles_niri]
+  vars:
+    force_tuckr_overwrite: true
+  block:
+    - name: Verify tuckr is installed
+      ansible.builtin.command: tuckr --version
+      register: dotfiles_tuckr_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Fail if tuckr not available
+      ansible.builtin.fail:
+        msg: "tuckr is required but not found in PATH"
+      when: dotfiles_tuckr_check.rc != 0
+
+    - name: Get list of files in Configs/niri directory
+      ansible.builtin.find:
+        path: "{{ dotfiles_root }}/Configs/niri"
+        recurse: true
+        file_type: any
+      register: dotfiles_niri_config_files
+
+    - name: Process niri directory with tuckr (forced mode)
+      tuckr_manage:
+        name: "niri"
+        state: present
+        force: "{{ force_tuckr_overwrite | default(false) }}"
+      when: dotfiles_niri_config_files.files | length > 0
+      register: dotfiles_tuckr_result
+      retries: 2
+      delay: 1
+      until: dotfiles_tuckr_result is not failed
+
+    - name: Display tuckr conflicts if any
+      ansible.builtin.debug:
+        var: dotfiles_tuckr_result
+      when:
+        - debug_mode | default(false) | bool
+        - dotfiles_tuckr_result is defined
