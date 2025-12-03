@@ -4,10 +4,9 @@ SCRIPTS="$HOME/.local/bin/scripts"
 #
 # STEAM=$(which steam)
 STEAM="$SCRIPTS/bazzite-steam.sh"
-# STEAM_ARGS=()
 STEAM_ARGS=(
   -steamos3
-  -steamdeck
+  -tenfoot
 )
 GAMESCOPE_WRAPPER="$SCRIPTS/nscb.py"
 GAMESCOPE_ARGS=(
@@ -16,10 +15,17 @@ GAMESCOPE_ARGS=(
   -e
   --
 )
+ENV_VARS=(
+  env
+  PROTON_ENABLE_WAYLAND=1
+  DXVK_FRAME_RATE=72
+  VKD3D_FRAME_RATE=72
+)
 #
 CMD=(
+  "${ENV_VARS[@]}"
   "${GAMESCOPE_WRAPPER}" "${GAMESCOPE_ARGS[@]}"
   "${STEAM}" "${STEAM_ARGS[@]}"
 )
 
-"${CMD[@]}" "${@}" steam://open/bigpicture
+"${CMD[@]}" "${@}"
