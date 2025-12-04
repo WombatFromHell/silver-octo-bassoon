@@ -644,6 +644,20 @@ def extract_context_from_url(url: str) -> Optional[str]:
     return None
 
 
+def ensure_ostree_prefix(url: str) -> str:
+    """Ensure the URL has the ostree-image-signed:docker:// prefix if not already present."""
+    if url.startswith("ostree-image-signed:docker://") or url.startswith(
+        "ostree-image-unsigned:docker://"
+    ):
+        return url
+    elif url.startswith("docker://"):
+        # If it already has docker:// prefix, just add the ostree-image-signed part
+        return f"ostree-image-signed:{url}"
+    else:
+        # Add the complete prefix
+        return f"ostree-image-signed:docker://{url}"
+
+
 # ============================================================================
 # DEPLOYMENT MANAGEMENT
 # ============================================================================
@@ -2000,7 +2014,9 @@ class CommandRegistry:
         else:
             url = args[0]
 
-        cmd = ["sudo", "rpm-ostree", "rebase", url]
+        # Ensure the URL has the proper ostree prefix for rpm-ostree
+        prefixed_url = ensure_ostree_prefix(url)
+        cmd = ["sudo", "rpm-ostree", "rebase", prefixed_url]
         sys.exit(run_command(cmd))
 
     def _handle_remote_ls(self, args: List[str]) -> None:
@@ -2078,8 +2094,8 @@ class CommandRegistry:
 
         if not args:
             try:
-                # Show only unpinned deployments in ascending order
-                unpinned_deployments = [d for d in deployments if not d.is_pinned][::-1]
+                # Check if there are any unpinned deployments first
+                unpinned_deployments = [d for d in deployments if not d.is_pinned]
 
                 if not unpinned_deployments:
                     print(
@@ -2087,13 +2103,19 @@ class CommandRegistry:
                     )  # Keep this user-facing message
                     return
 
+                # Show ALL deployments in ascending order (newest first)
+                # This allows users to see which deployments are already pinned
+                all_deployments = deployments[
+                    ::-1
+                ]  # Reverse order to show newest first
+
                 items = [
                     ListItem(
                         "",
-                        f"{d.repository} ({d.version})",
+                        f"{d.repository} ({d.version}) ({d.deployment_index}{'*' if d.is_pinned else ''})",
                         d.deployment_index,
                     )
-                    for d in unpinned_deployments
+                    for d in all_deployments
                 ]
 
                 # Get current deployment info for persistent header
@@ -2108,6 +2130,14 @@ class CommandRegistry:
                 )
 
                 if selected is None:
+                    return
+
+                # Validate that the selected deployment is not already pinned
+                selected_deployment = next(
+                    (d for d in all_deployments if d.deployment_index == selected), None
+                )
+                if selected_deployment and selected_deployment.is_pinned:
+                    print(f"Deployment {selected} is already pinned.")
                     return
 
                 deployment_num = selected
@@ -2149,7 +2179,7 @@ class CommandRegistry:
                 items = [
                     ListItem(
                         "",
-                        f"{d.repository} ({d.version})",
+                        f"{d.repository} ({d.version}) ({d.deployment_index}*)",
                         d.deployment_index,
                     )
                     for d in pinned_deployments
@@ -2201,7 +2231,7 @@ class CommandRegistry:
                 items = [
                     ListItem(
                         "",
-                        f"{d.repository} ({d.version}){'*' if d.is_pinned else ''}",
+                        f"{d.repository} ({d.version}) ({d.deployment_index}{'*' if d.is_pinned else ''})",
                         d.deployment_index,
                     )
                     for d in deployments
