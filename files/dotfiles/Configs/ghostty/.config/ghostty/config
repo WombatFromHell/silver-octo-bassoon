@@ -4,14 +4,14 @@ gtk-tabs-location = hidden
 font-family = "JetBrainsMono Nerd Font Mono"
 # font-family = "CaskaydiaCove Nerd Font Mono"
 # font-family = "MesloLGM Nerd Font"
-font-size = 11
+font-size = 10.5
 theme = catppuccin-mocha.conf
 shell-integration = fish
 #
 # disable nerd font ligatures
-# font-feature = -calt
-# font-feature = -liga
-# font-feature = -dlig
+font-feature = -calt
+font-feature = -liga
+font-feature = -dlig
 #
 command = ~/.local/bin/scripts/fish.sh
 gtk-single-instance = true
@@ -20,3 +20,6 @@ background-opacity = 0.95
 background-blur-radius = 20
 window-save-state = always
 quit-after-last-window-closed = true
+#
+window-height = 60
+window-width = 120
