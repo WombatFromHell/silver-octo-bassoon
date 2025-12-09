@@ -61,3 +61,12 @@
   become: true
   changed_when: true
   listen: reload_grub
+
+- name: Enable scx_loader service
+  become: true
+  ansible.builtin.systemd:
+    name: scx_loader.service
+    enabled: true
+    daemon_reload: true
+  when: base_scx_service_stat.stat.exists
+  listen: enable_scx_loader

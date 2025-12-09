@@ -43,3 +43,51 @@
     #     loop_var: unit_file
     #     label: "Enabling {{ unit_file.path | basename }}"
     #   check_mode: false
+
+    - name: Check if scx_loader.service exists
+      become: true
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: base_scx_service_stat
+      changed_when: false
+      loop:
+        - /etc/systemd/system/scx_loader.service
+        - /usr/lib/systemd/system/scx_loader.service
+        - /lib/systemd/system/scx_loader.service
+
+    - name: Set fact if service exists
+      ansible.builtin.set_fact:
+        base_scx_service_exists: "{{ base_scx_service_stat.results | selectattr('stat.exists') | list | length > 0 }}"
+      when: base_scx_service_stat.results is defined
+
+    - name: Configure scx_loader if service exists
+      when: base_scx_service_exists | default(false)
+      block:
+        - name: Check if scx_loader.toml already exists
+          ansible.builtin.stat:
+            path: /etc/scx_loader.toml
+          register: base_existing_scx_toml
+          changed_when: false
+
+        - name: Backup existing scx_loader.toml if it exists
+          become: true
+          ansible.builtin.copy:
+            src: /etc/scx_loader.toml
+            dest: /etc/scx_loader.toml.bak
+            remote_src: true
+            mode: "0644"
+            owner: root
+            group: root
+            force: true
+          when:
+            - base_existing_scx_toml.stat.exists
+
+        - name: Copy scx_loader.toml configuration
+          become: true
+          ansible.builtin.copy:
+            src: "{{ role_path }}/files/etc/scx_loader.toml"
+            dest: /etc/scx_loader.toml
+            mode: "0644"
+            owner: root
+            group: root
+          notify: enable_scx_loader
