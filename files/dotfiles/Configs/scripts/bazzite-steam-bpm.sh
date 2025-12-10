@@ -8,7 +8,7 @@ STEAM_ARGS=(
   -steamos3
   -tenfoot
 )
-GAMESCOPE_WRAPPER="$SCRIPTS/nscb.py"
+GAMESCOPE_WRAPPER="$SCRIPTS/nscb.pyz"
 GAMESCOPE_ARGS=(
   -p std
   -p hdr
