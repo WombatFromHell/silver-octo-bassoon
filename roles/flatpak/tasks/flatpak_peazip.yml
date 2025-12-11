@@ -12,47 +12,8 @@
         state: present
         method: user
 
-    - name: Pin PeaZip to specific version on Bazzite
-      when: os_release_id == "bazzite"
+    - name: Apply PeaZip Dolphin integrations
       block:
-        - name: Get current PeaZip commit
-          ansible.builtin.shell: |
-            flatpak --user info "{{ peazip_app }}" | grep Commit | awk '{print $2}'
-          register: flatpak_current_peazip_commit
-          changed_when: false
-          ignore_errors: true
-
-        - name: Check if PeaZip is already masked
-          ansible.builtin.shell: |
-            flatpak --user mask | grep "{{ peazip_app }}" || true
-          register: flatpak_peazip_masked
-          ignore_errors: true
-          changed_when: false
-
-        - name: Upgrade PeaZip to specific commit (if needed)
-          when:
-            - flatpak_current_peazip_commit.stdout != pinned_peazip_ver
-            - not flatpak_current_peazip_commit.failed
-          ansible.builtin.command: >
-            flatpak --user upgrade --noninteractive "{{ peazip_app }}"
-            --commit={{ pinned_peazip_ver }}
-          register: flatpak_peazip_upgrade
-          changed_when:
-            - "'Nothing to do' not in flatpak_peazip_upgrade.stderr"
-            - "'is already installed' not in flatpak_peazip_upgrade.stderr"
-
-        - name: Mask PeaZip (if needed)
-          when:
-            - not flatpak_peazip_masked.failed
-            - flatpak_peazip_masked.stdout | length == 0
-            - flatpak_peazip_upgrade is changed or flatpak_current_peazip_commit.stdout == pinned_peazip_ver
-          ansible.builtin.command: >
-            flatpak --user mask {{ peazip_app }}
-          register: flatpak_peazip_mask_result
-          changed_when:
-            - "'is already masked' not in flatpak_peazip_mask_result.stderr"
-            - "'Nothing to do' not in flatpak_peazip_mask_result.stderr"
-
         - name: Check for PeaZip-Dolphin fix script
           ansible.builtin.stat:
             path: "{{ dotfiles_root }}/Configs/scripts/fix-peazip-dolphin-integration.sh"
@@ -63,7 +24,7 @@
             path: "{{ home_realpath }}/.local/share/kio/servicemenus/peazipadd.desktop"
           register: flatpak_peazip_fix_marker
 
-        - name: Apply PeaZip-Dolphin integration fix
+        - name: Apply PeaZip Dolphin integration fix
           when:
             - flatpak_peazip_script.stat.exists
             - not flatpak_peazip_fix_marker.stat.exists
