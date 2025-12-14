@@ -30,7 +30,7 @@ dep_check() {
 dep_check # do dependency check early for safety
 
 scx_wrapper() {
-  local scx="${2:-scx_p2dq}" # use scx_lavd as a generic alternative
+  local scx="${2:-scx_lavd}"
   SCXS="$(check_cmd "$scx")"
   if [ -z "$SCXS" ]; then
     echo "Error: '$scx' required for scx_wrapper(), skipping..."
@@ -38,9 +38,9 @@ scx_wrapper() {
   fi
 
   if [ "$1" = "load" ]; then
-    "$DBUS_SEND" --system --print-reply --dest=org.scx.Loader /org/scx/Loader org.scx.Loader.StartScheduler string:"$scx" uint32:0
+    "$DBUS_SEND" --system --print-reply --dest=org.scx.Loader /org/scx/Loader org.scx.Loader.SwitchScheduler string:"$scx" uint32:1
   elif [ "$1" = "unload" ]; then
-    "$DBUS_SEND" --system --print-reply --dest=org.scx.Loader /org/scx/Loader org.scx.Loader.StopScheduler
+    "$DBUS_SEND" --system --print-reply --dest=org.scx.Loader /org/scx/Loader org.scx.Loader.RestoreDefault
   fi
 }
 

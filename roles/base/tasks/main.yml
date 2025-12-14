@@ -30,6 +30,10 @@
   ansible.builtin.include_tasks: sudoers.yml
   tags: [extra, sudoers]
 
+- name: Include polkit rules task
+  ansible.builtin.include_tasks: polkit.yml
+  tags: [extra, polkit]
+
 - name: Include limitsd configs task
   ansible.builtin.include_tasks: limits.yml
   tags: [extra, limitsd]

@@ -1,0 +1,25 @@
+---
+- name: Copy polkit rules to /etc/polkit-1/rules.d/
+  tags: [extra, polkit]
+  block:
+    - name: Find all files in role's files/polkit-1/rules.d/ directory
+      ansible.builtin.find:
+        paths: "{{ role_path }}/files/polkit-1/rules.d/"
+        file_type: file
+        recurse: false
+      register: base_polkit_files
+
+    - name: Copy files to /etc/polkit-1/rules.d/ with proper permissions
+      ansible.builtin.copy:
+        src: "{{ polkit_item.path }}"
+        dest: "/etc/polkit-1/rules.d/{{ polkit_item.path | basename }}"
+        mode: "0644"
+        remote_src: false
+        backup: true
+      loop: "{{ base_polkit_files.files }}"
+      loop_control:
+        loop_var: polkit_item
+        label: "Copying {{ polkit_item.path | basename }}"
+      when: base_polkit_files.matched > 0
+      become: true
+      notify: restart_polkit

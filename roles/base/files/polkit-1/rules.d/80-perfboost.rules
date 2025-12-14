@@ -1,0 +1,11 @@
+polkit.addRule(function(action, subject) {
+    var allowedActions = [
+        "com.redhat.tuned.control",
+        "org.scx.loader.manage-schedulers",
+        "org.freedesktop.login1.inhibit"
+    ];
+    if (subject.isInGroup("wheel") && allowedActions.indexOf(action.id) !== -1) {
+        return polkit.Result.YES;
+    }
+});
+

@@ -70,3 +70,12 @@
     daemon_reload: true
   when: base_scx_service_stat.stat.exists
   listen: enable_scx_loader
+
+- name: Restart polkit service
+  become: true
+  ansible.builtin.systemd:
+    name: polkit.service
+    enabled: true
+    daemon_reload: true
+  changed_when: true
+  listen: restart_polkit

@@ -21,9 +21,11 @@ ENV_VARS=(
   DXVK_FRAME_RATE=72
   VKD3D_FRAME_RATE=72
 )
+PRE_WRAPPER="$SCRIPTS/perfboost.sh"
 #
 CMD=(
   "${ENV_VARS[@]}"
+  "${PRE_WRAPPER}"
   "${GAMESCOPE_WRAPPER}" "${GAMESCOPE_ARGS[@]}"
   "${STEAM}" "${STEAM_ARGS[@]}"
 )
