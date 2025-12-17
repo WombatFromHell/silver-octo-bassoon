@@ -38,3 +38,9 @@
     cmd: update-desktop-database ~/.local/share/applications
   listen: update_desktop_database
   changed_when: false
+
+- name: Rebuild KDE servicemenu cache
+  ansible.builtin.command:
+    cmd: kbuildsycoca5 --noincremental
+  listen: rebuild_kde_servicemenu_cache
+  changed_when: false

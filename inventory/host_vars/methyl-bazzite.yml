@@ -27,10 +27,14 @@ program_checks:
 script_links:
   - src: "fish.sh"
     dest: "/usr/local/bin/fish.sh"
-  - src: "nscb.py"
+  - src: "nscb.pyz"
     dest: "/usr/local/bin/nscb"
-  - src: "protonfetcher.py"
+  - src: "protonfetcher.pyz"
     dest: "/usr/local/bin/protonfetcher"
+  - src: "urh.pyz"
+    dest: "/usr/local/bin/urh"
+  - src: "squish.pyz"
+    dest: "/usr/local/bin/squish"
 
 # To be run after dotfiles are processed
 program_handlers:

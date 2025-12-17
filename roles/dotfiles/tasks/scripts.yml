@@ -163,3 +163,26 @@
         - required_scripts_correct_mode # All required scripts have correct mode
       notify: update_desktop_database
       check_mode: false
+
+- name: Install squashfs actions desktop file
+  tags: [extra, dotfiles, dotfiles_scripts]
+  block:
+    - name: Ensure kio servicemenus directory exists
+      ansible.builtin.file:
+        path: "{{ home_realpath }}/.local/share/kio/servicemenus/"
+        state: directory
+        mode: "0755"
+        recurse: true
+
+    - name: Check if squashfs-actions.desktop already exists
+      ansible.builtin.stat:
+        path: "{{ home_realpath }}/.local/share/kio/servicemenus/squashfs-actions.desktop"
+      register: dotfiles_squashfs_desktop_stat
+
+    - name: Copy squashfs-actions.desktop file
+      ansible.builtin.copy:
+        src: "{{ role_path }}/files/squashfs-actions.desktop"
+        dest: "{{ home_realpath }}/.local/share/kio/servicemenus/squashfs-actions.desktop"
+        mode: "0644"
+      notify: rebuild_kde_servicemenu_cache
+      when: not dotfiles_squashfs_desktop_stat.stat.exists

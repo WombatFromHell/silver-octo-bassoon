@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Service
+ServiceTypes=KonqPopupMenu/Plugin
+MimeType=application/x-squashfs;application/x-squashfs-image;application/vnd.squashfs
+Actions=mount-squashfs;unmount-squashfs;
+X-KDE-Priority=TopLevel
+X-KDE-Submenu=SquashFS
+Icon=archive
+
+[Desktop Action mount-squashfs]
+Name=Mount
+Icon=media-optical-mount
+Exec=squish mount %f
+
+[Desktop Action unmount-squashfs]
+Name=Unmount
+Icon=tools-media-optical-erase
+Exec=squish unmount %f

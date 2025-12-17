@@ -204,36 +204,5 @@ complete -c tarzv -k -a "(__fish_complete_suffix .tar.gz .tgz)"
 complete -c tarzc -F
 complete -c tarzsc -F
 
-# Simple SquashFS archive support
-function squish --description "Create a squashfs archive with zstd compression"
-    command -q mksquashfs; or begin
-        echo "'mksquashfs' not found. Install squashfs-tools first." >&2
-        return 1
-    end
-    command -q sha256sum; or begin
-        echo "'sha256sum' not found. Install coreutils first." >&2
-        return 1
-    end
-    test (count $argv) -eq 2; or begin
-        echo "Usage: squish <source> <output>" >&2
-        return 1
-    end
-
-    if command mksquashfs $argv[1] $argv[2] -comp zstd -b 1M -processors (nproc)
-        echo "Creating checksum file..."
-        if sha256sum $argv[2] >$argv[2].sha256
-            echo "Archive created: $argv[2]"
-            echo "Checksum saved: $argv[2].sha256"
-        else
-            echo "Failed to create checksum file" >&2
-            return 1
-        end
-    else
-        echo "Failed to create squashfs archive" >&2
-        return 1
-    end
-end
-alias squishls="unsquashfs -ll"
-
 # Simple 7z support
 alias 7zac='7z a -m0=lzma2 -mx3'
