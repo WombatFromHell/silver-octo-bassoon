@@ -95,4 +95,4 @@ brew_packages:
 # distrobox containers
 # enable_devbox: false
 
-install_arpc_fix: true
+install_arpc_fix: false

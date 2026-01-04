@@ -1,19 +1,26 @@
-gtk-tabs-location = hidden
-# font-family = "CommitMono Nerd Font Mono"
-# font-family = "Fira Code Nerd Font Mono"
-font-family = "JetBrainsMono Nerd Font Mono"
-# font-family = "CaskaydiaCove Nerd Font Mono"
-# font-family = "MesloLGM Nerd Font"
-font-size = 10.5
+# font-family = "Iosevka Nerd Font"
+# font-family = "JetBrains Mono Nerd Font"
+# font-family = "FiraCode Nerd Font"
+#
+# font-family = "CaskaydiaCove Nerd Font"
+# font-size = 10.5
+#
+font-family = "FantasqueSansM Nerd Font"
+font-size = 12
+#
 theme = catppuccin-mocha.conf
 shell-integration = fish
+cursor-style = bar
+cursor-style-blink = true
+shell-integration-features = no-cursor
 #
 # disable nerd font ligatures
-font-feature = -calt
-font-feature = -liga
-font-feature = -dlig
+# font-feature = -calt
+# font-feature = -liga
+# font-feature = -dlig
 #
 command = ~/.local/bin/scripts/fish.sh
+gtk-tabs-location = hidden
 gtk-single-instance = true
 confirm-close-surface = false
 background-opacity = 0.95
