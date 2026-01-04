@@ -30,7 +30,7 @@ dep_check() {
 dep_check # do dependency check early for safety
 
 scx_wrapper() {
-  local scx="${2:-scx_lavd}"
+  local scx="${2:-scx_bpfland}"
   SCXS="$(check_cmd "$scx")"
   if [ -z "$SCXS" ]; then
     echo "Error: '$scx' required for scx_wrapper(), skipping..."
