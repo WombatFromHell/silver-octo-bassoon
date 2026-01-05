@@ -1,0 +1,2 @@
+HOMEANSIBLEDRY=--dry-run -i ~/.ansible-root/ homenas:/share/homes/nxxel/Projects/silver-octo-bassoon/
+HOMEANSIBLE=~/.ansible-root/ homenas:/share/homes/nxxel/Projects/silver-octo-bassoon/
