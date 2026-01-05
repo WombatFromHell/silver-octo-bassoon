@@ -89,6 +89,7 @@
       loop:
         - { key: "id_rsa", mode: "0600" }
         - { key: "id_rsa.pub", mode: "0644" }
+        - { key: "config", mode: "0600" }
       loop_control:
         loop_var: ssh_item
         label: "{{ ssh_item.key }}"
