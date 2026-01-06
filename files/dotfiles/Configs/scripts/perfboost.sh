@@ -1,5 +1,36 @@
 #!/usr/bin/env bash
 
+# Configuration Section - Customize these variables to control script behavior
+# Set to "true" to enable a feature, "false" to disable it
+ENABLE_SCX_SCHEDULER="true"
+ENABLE_PERFORMANCE_MODE="false"
+ENABLE_SCREEN_KEEP_AWAKE="true"
+ENABLE_AUDIO_PRIORITY_BOOST="false"
+
+# SCX Scheduler Configuration
+SCX_SCHEDULER_NAME="scx_bpfland" # Default SCX scheduler to use
+
+# Performance Mode Configuration (for tuned-adm)
+GAME_PROFILE="throughput-performance-bazzite"
+DESKTOP_PROFILE="balanced-bazzite"
+
+# Audio Priority Boost Configuration
+PULSE_LATENCY_MSEC=60 # PulseAudio latency setting for audio priority
+
+# Global State (minimal - only what's truly needed across functions)
+# Most variables are now localized to their functions
+
+# Logging function for better debugging
+log() {
+  echo "[perfboost.sh] $1"
+}
+
+# Error handling function
+error_exit() {
+  echo "[perfboost.sh] ERROR: $1" >&2
+  exit 1
+}
+
 check_cmd() {
   if cmd_path=$(command -v "$1"); then
     echo "$cmd_path"
@@ -8,75 +39,171 @@ check_cmd() {
   fi
 }
 
-dep_check() {
-  TUNED="$(check_cmd "tuned-adm")"
-  if [ -z "$TUNED" ]; then
-    echo "Error: 'tuned-adm' is required, exiting!"
-    exit 1
-  fi
+# Get command paths and validate dependencies
+get_command_paths() {
+  local tuned_path
+  tuned_path="$(check_cmd "tuned-adm")"
+  local inhibit_path
+  inhibit_path="$(check_cmd "systemd-inhibit")"
+  local dbus_send_path
+  dbus_send_path="$(check_cmd "dbus-send")"
 
-  INHIBIT="$(check_cmd "systemd-inhibit")"
-  if [ -z "$INHIBIT" ]; then
-    echo "Error: 'systemd-inhibit' is required, exiting!"
-    exit 1
-  fi
+  # Validate dependencies based on configuration
+  [[ "$ENABLE_PERFORMANCE_MODE" = "true" && -z "$tuned_path" ]] &&
+    error_exit "Performance mode requires 'tuned-adm', but it's not installed or not in PATH"
 
-  DBUS_SEND="$(check_cmd "dbus-send")"
-  if [ -z "$DBUS_SEND" ]; then
-    echo "Error: 'dbus-send' is required, exiting!"
-    exit 1
-  fi
+  [[ "$ENABLE_SCREEN_KEEP_AWAKE" = "true" && -z "$inhibit_path" ]] &&
+    error_exit "Screen keep-awake requires 'systemd-inhibit', but it's not installed or not in PATH"
+
+  # Always validate dbus-send since we use it for SCX scheduler management
+  [[ -z "$dbus_send_path" ]] &&
+    error_exit "SCX scheduler management requires 'dbus-send', but it's not installed or not in PATH"
+
+  # Output paths: tuned_path, inhibit_path, dbus_send_path
+  printf "%s\n" "$tuned_path" "$inhibit_path" "$dbus_send_path"
 }
-dep_check # do dependency check early for safety
 
-scx_wrapper() {
-  local scx="${2:-scx_bpfland}"
-  SCXS="$(check_cmd "$scx")"
-  if [ -z "$SCXS" ]; then
-    echo "Error: '$scx' required for scx_wrapper(), skipping..."
+# SCX Scheduler Functions
+scx_load() {
+  local dbus_send_path="$1"
+
+  [[ "$ENABLE_SCX_SCHEDULER" != "true" ]] && {
+    log "SCX scheduler disabled by configuration"
     return
-  fi
+  }
 
-  if [ "$1" = "load" ]; then
-    "$DBUS_SEND" --system --print-reply --dest=org.scx.Loader /org/scx/Loader org.scx.Loader.SwitchScheduler string:"$scx" uint32:1
-  elif [ "$1" = "unload" ]; then
-    "$DBUS_SEND" --system --print-reply --dest=org.scx.Loader /org/scx/Loader org.scx.Loader.RestoreDefault
-  fi
+  local scx="${SCX_SCHEDULER_NAME}"
+  local SCXS
+  SCXS="$(check_cmd "$scx")"
+
+  [[ -z "$SCXS" ]] && {
+    log "Error: '$scx' not found, skipping SCX scheduler..."
+    return
+  }
+
+  log "Loading SCX scheduler: $scx"
+  "$dbus_send_path" --system --print-reply --dest=org.scx.Loader /org/scx/Loader org.scx.Loader.SwitchScheduler string:"$scx" uint32:1
 }
 
+scx_unload() {
+  local dbus_send_path="$1"
+
+  [[ -z "$dbus_send_path" ]] && return
+
+  log "Unloading SCX scheduler"
+  "$dbus_send_path" --system --print-reply --dest=org.scx.Loader /org/scx/Loader org.scx.Loader.StopScheduler
+}
+
+# Performance Mode Functions
+performance_mode_enable() {
+  local tuned_path="$1"
+
+  [[ "$ENABLE_PERFORMANCE_MODE" != "true" ]] && {
+    log "Performance mode disabled by configuration"
+    return
+  }
+
+  [[ -z "$tuned_path" ]] && {
+    log "tuned-adm not available, skipping performance mode"
+    return
+  }
+
+  log "Enabling performance mode: $GAME_PROFILE"
+  "$tuned_path" profile "$GAME_PROFILE"
+}
+
+performance_mode_disable() {
+  local tuned_path="$1"
+
+  [[ "$ENABLE_PERFORMANCE_MODE" != "true" ]] && return
+  [[ -z "$tuned_path" ]] && return
+
+  log "Disabling performance mode: $DESKTOP_PROFILE"
+  "$tuned_path" profile "$DESKTOP_PROFILE"
+}
+
+# Audio Priority Boost Function
+audio_priority_boost_enable() {
+  [[ "$ENABLE_AUDIO_PRIORITY_BOOST" != "true" ]] && {
+    log "Audio priority boost disabled by configuration"
+    return 1
+  }
+
+  log "Enabling audio priority boost with PULSE_LATENCY_MSEC=$PULSE_LATENCY_MSEC"
+  export PULSE_LATENCY_MSEC
+  return 0
+}
+
+# Screen Keep-Awake Functions
+screen_keep_awake_enable() {
+  local inhibit_path="$1"
+  shift # Remove the first argument to get the original command arguments
+
+  [[ "$ENABLE_SCREEN_KEEP_AWAKE" != "true" ]] && {
+    log "Screen keep-awake disabled by configuration"
+    return
+  }
+
+  [[ -z "$inhibit_path" ]] && {
+    log "systemd-inhibit not available, skipping screen keep-awake"
+    return
+  }
+
+  local kde_inhibit
+  kde_inhibit="$(check_cmd "kde-inhibit")"
+
+  [[ -z "$kde_inhibit" ]] &&
+    log "kde-inhibit not available, skipping KDE color correction"
+
+  log "Enabling screen keep-awake and disabling KDE color correction"
+  # Audio priority boost is handled via exported environment variable
+  "$inhibit_path" --why "perfboost.sh is running" -- \
+    "$kde_inhibit" --colorCorrect "$@"
+}
+
+# Cleanup function
 cleanup() {
-  if [ -n "$TUNED" ]; then
-    "$TUNED" profile "$DESK_PROF"
-  fi
-  scx_wrapper unload
+  local tuned_path="$1"
+  local dbus_send_path="$2"
+
+  log "Running cleanup..."
+  performance_mode_disable "$tuned_path"
+  scx_unload "$dbus_send_path"
 }
 
-handle_tool() {
-  local ENV_PREFIX=(env PULSE_LATENCY_MSEC=60)
-  local KDE_INHIBIT
-  KDE_INHIBIT=$(command -v kde-inhibit)
+# Main function
+main() {
+  # Get command paths and validate dependencies
+  local command_paths
+  readarray -t command_paths < <(get_command_paths)
+  local tuned_path="${command_paths[0]}"
+  local inhibit_path="${command_paths[1]}"
+  local dbus_send_path="${command_paths[2]}"
 
-  # pre-commands
-  scx_wrapper load
+  # Store paths in global variables for trap handler
+  PERFBOOST_TUNED_PATH="$tuned_path"
+  PERFBOOST_DBUS_SEND_PATH="$dbus_send_path"
 
-  GAME_PROF="throughput-performance-bazzite"
-  DESK_PROF="balanced-bazzite"
+  # Set trap for cleanup on exit
+  trap 'cleanup "$PERFBOOST_TUNED_PATH" "$PERFBOOST_DBUS_SEND_PATH"' EXIT
 
-  if "$TUNED" list 2>&1 | grep -q "$GAME_PROF"; then
-    # we're in "game" mode
-    "$TUNED" profile "$GAME_PROF"
-    "${ENV_PREFIX[@]}" "$INHIBIT" --why "perfboost.sh is running" -- \
-      "$KDE_INHIBIT" --colorCorrect "$@"
-    "$TUNED" profile "$DESK_PROF"
+  # Enable performance mode if configured
+  performance_mode_enable "$tuned_path"
+
+  # Enable SCX scheduler if configured
+  scx_load "$dbus_send_path"
+
+  # Enable audio priority boost if configured
+  [[ "$ENABLE_AUDIO_PRIORITY_BOOST" = "true" ]] && audio_priority_boost_enable
+
+  # Run the tool with screen keep-awake if configured
+  if [[ "$ENABLE_SCREEN_KEEP_AWAKE" = "true" ]]; then
+    screen_keep_awake_enable "$inhibit_path" "$@"
   else
-    # just disable Night Mode in KDE
-    "${ENV_PREFIX[@]}" \
-      "$KDE_INHIBIT" --colorCorrect "$@"
+    # No screen keep-awake, just run the command with any enabled environment
+    exec "$@"
   fi
-
-  # post-commands
-  scx_wrapper unload
 }
 
-trap "cleanup" EXIT
-handle_tool "$@"
+# Run main function with all arguments
+main "$@"
