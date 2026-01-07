@@ -3,12 +3,30 @@
 #     fenv "source $PROFILE_CONF"
 # end
 
-function update_fisher
-    curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher update
+function is_online
+    ping -c -W 1 8.8.8.8 >/dev/null 2>&1
+    return $status
 end
-
-if status is-interactive && ! functions -q fisher
-    update_fisher
+function load_fisher
+    if test -s "$argv[1]"
+        source "$argv[1]"
+        if functions -q fisher
+            fisher update
+            return
+        end
+    end
+end
+function update_fisher
+    set -l fisher_cache $HOME/.config/fish/conf.d/fisher.fish
+    load_fisher "$fisher_cache"
+    if is_online && ! functions -q fisher
+        curl -sL --max-time 5 https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish >"$fisher_cache"
+        load_fisher "$fisher_cache"
+    end
+end
+function ensure_fisher
+    functions -q fisher && return
+    update_fisher &>/dev/null &
 end
 
 # include our home-grown tmux helper
@@ -38,6 +56,8 @@ if status is-interactive
         # Combine them to form the desired title
         echo "$user_host:$current_dir"
     end
+
+    ensure_fisher # make sure fisher is installed
 
     if command -q zoxide
         zoxide init fish | source
