@@ -6,6 +6,7 @@ ENABLE_SCX_SCHEDULER="true"
 ENABLE_PERFORMANCE_MODE="false"
 ENABLE_SCREEN_KEEP_AWAKE="true"
 ENABLE_AUDIO_PRIORITY_BOOST="false"
+ENABLE_STEAM_ENV="true"
 
 # SCX Scheduler Configuration
 SCX_SCHEDULER_NAME="scx_bpfland" # Default SCX scheduler to use
@@ -134,6 +135,18 @@ audio_priority_boost_enable() {
   return 0
 }
 
+# Steam Environment Function
+get_steam_env_wrapper() {
+  local steam_env_script="$HOME/.local/bin/scripts/steam-env-base.sh"
+  if [[ -f "$steam_env_script" && "$ENABLE_STEAM_ENV" == "true" ]]; then
+    echo "$steam_env_script"
+    return 0
+  else
+    echo ""
+    return 1
+  fi
+}
+
 # Screen Keep-Awake Functions
 screen_keep_awake_enable() {
   local inhibit_path="$1"
@@ -196,12 +209,24 @@ main() {
   # Enable audio priority boost if configured
   [[ "$ENABLE_AUDIO_PRIORITY_BOOST" = "true" ]] && audio_priority_boost_enable
 
+  # Get Steam environment wrapper if configured
+  local steam_wrapper=""
+  steam_wrapper=$(get_steam_env_wrapper)
+
   # Run the tool with screen keep-awake if configured
   if [[ "$ENABLE_SCREEN_KEEP_AWAKE" = "true" ]]; then
-    screen_keep_awake_enable "$inhibit_path" "$@"
+    if [[ -n "$steam_wrapper" ]]; then
+      screen_keep_awake_enable "$inhibit_path" "$steam_wrapper" "$@"
+    else
+      screen_keep_awake_enable "$inhibit_path" "$@"
+    fi
   else
-    # No screen keep-awake, just run the command with any enabled environment
-    exec "$@"
+    # No screen keep-awake, run with Steam wrapper if configured
+    if [[ -n "$steam_wrapper" ]]; then
+      exec "$steam_wrapper" "$@"
+    else
+      exec "$@"
+    fi
   fi
 }
 

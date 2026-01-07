@@ -9,7 +9,7 @@ add_if_exists() {
 }
 
 SCRIPTS="$HOME/.local/bin/scripts"
-#
+
 # STEAM=$(which steam)
 STEAM="$SCRIPTS/bazzite-steam.sh"
 STEAM_ARGS=(
@@ -24,13 +24,18 @@ GAMESCOPE_ARGS=(
   -e
   --
 )
-ENV_VARS=(
-  env
-  PROTON_USE_NTSYNC=1
-  PROTON_ENABLE_WAYLAND=1
-  DXVK_FRAME_RATE=72
-  VKD3D_FRAME_RATE=72
-  MESA_VK_WSI_PRESENT_MODE="mailbox"
+
+# Local Steam-specific variables (kept as requested) as array
+LOCAL_STEAM_ENV_VARS=(
+  "PROTON_ENABLE_WAYLAND=1"
+  "DXVK_FRAME_RATE=72"
+  "VKD3D_FRAME_RATE=72"
+  "MESA_VK_WSI_PRESENT_MODE=mailbox"
+)
+
+# Add local Steam-specific variables using env
+CMD+=(
+  env "${LOCAL_STEAM_ENV_VARS[@]}"
 )
 
 # include some optional wrappers conditionally
@@ -38,12 +43,13 @@ OTHER_WRAPPERS=()
 add_if_exists "OTHER_WRAPPERS" "$HOME/mesa/mesa-run.sh"
 add_if_exists "OTHER_WRAPPERS" "$SCRIPTS/perfboost.sh"
 
-#
-CMD=(
-  "${ENV_VARS[@]}"
+# Add the rest of the command chain
+CMD+=(
   "${OTHER_WRAPPERS[@]}"
   "${GAMESCOPE_WRAPPER}" "${GAMESCOPE_ARGS[@]}"
   "${STEAM}" "${STEAM_ARGS[@]}"
 )
 
+# Execute the full command chain
 "${CMD[@]}" "${@}"
+
