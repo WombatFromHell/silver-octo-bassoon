@@ -7,8 +7,9 @@
 [alias]
 	aa = add -A .
 	aacm = !git add -A . && git commit -m
+  aacms = !git add -A . && git commit -S -m
 	amendm = commit --amend -m
-  asign = !git commit -S --amend
+  ams = !git commit -S --amend
 	br = branch
 	brd = branch -d
 	brD = branch -D
