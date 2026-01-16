@@ -19,7 +19,6 @@ STEAM_ARGS=(
 GAMESCOPE_WRAPPER="$SCRIPTS/nscb.pyz"
 GAMESCOPE_ARGS=(
   -p std
-  -p hdr
   --mangoapp
   -e
   --
@@ -28,9 +27,6 @@ GAMESCOPE_ARGS=(
 # Local Steam-specific variables (kept as requested) as array
 LOCAL_STEAM_ENV_VARS=(
   "PROTON_ENABLE_WAYLAND=1"
-  "DXVK_FRAME_RATE=72"
-  "VKD3D_FRAME_RATE=72"
-  "MESA_VK_WSI_PRESENT_MODE=mailbox"
 )
 
 # Add local Steam-specific variables using env
@@ -52,4 +48,3 @@ CMD+=(
 
 # Execute the full command chain
 "${CMD[@]}" "${@}"
-
