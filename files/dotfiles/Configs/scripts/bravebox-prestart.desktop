@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Bravebox Prestart
+Exec=~/.local/bin/scripts/distrobox-prestart.sh bravebox
+Comment=Start bravebox distrobox container on login
+Terminal=false
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+Categories=System;
