@@ -19,6 +19,7 @@ STEAM_ARGS=(
 GAMESCOPE_WRAPPER="$SCRIPTS/nscb.pyz"
 GAMESCOPE_ARGS=(
   -p std
+  -p vsr4k
   --mangoapp
   -e
   --
