@@ -30,7 +30,7 @@ function ensure_fisher
 end
 
 # include our home-grown tmux helper
-set TMUX_HELPER $HOME/.config/fish/tmux2.fish
+set TMUX_HELPER $HOME/.config/fish/tmux.fish
 if test -f $TMUX_HELPER
     source $TMUX_HELPER
 end
