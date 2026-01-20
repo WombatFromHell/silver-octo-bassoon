@@ -1,4 +1,5 @@
 export PATH="$HOME/.local/bin:$HOME/.local/bin/scripts:$HOME/.local/share/bob/nvim-bin:$HOME/.nix-profile/bin:$HOME/.local/share/nvim/mason/bin:$HOME/.local/share/nvm/v23.6.1/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$PATH"
+export PATH="$HOME/.cargo/bin":$PATH
 
 function yy() {
   tmp=$(mktemp -t "yazi-cwd.XXXXXX")
@@ -58,11 +59,6 @@ if [[ $- == *i* ]]; then
   alias nixopt='nix-store --gc && nix-store --optimize'
   #
   alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
-fi
-
-CARGO_SRC="$HOME/.cargo/env"
-if [ -r "$CARGO_SRC" ]; then
-  source "$CARGO_SRC"
 fi
 
 if which direnv >/dev/null 2>&1; then

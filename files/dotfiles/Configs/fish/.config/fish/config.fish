@@ -10,18 +10,22 @@ end
 function load_fisher
     if test -s "$argv[1]"
         source "$argv[1]"
-        if functions -q fisher
-            fisher update
-            return
-        end
+        functions -q fisher; and fisher update
+        return 0
     end
+    return 1
 end
 function update_fisher
     set -l fisher_cache $HOME/.config/fish/conf.d/fisher.fish
-    load_fisher "$fisher_cache"
-    if is_online && ! functions -q fisher
-        curl -sL --max-time 5 https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish >"$fisher_cache"
-        load_fisher "$fisher_cache"
+
+    load_fisher "$fisher_cache"; and return
+
+    if is_online
+        curl -sL --max-time 5 \
+            https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish >"$fisher_cache"
+
+        source "$fisher_cache"
+        functions -q fisher; and fisher update
     end
 end
 function ensure_fisher
@@ -68,10 +72,6 @@ if status is-interactive
         direnv hook fish | source
     end
 
-    set -l cargo_fish_path "$HOME/.cargo/env.fish"
-    if test -f "$cargo_fish_path"
-        source "$cargo_fish_path"
-    end
     set -gx SHELL $(command -v fish.sh || command -v fish)
 end
 
@@ -255,9 +255,10 @@ alias hms='home-manager switch $_hmsuf'
 alias hmls='home-manager generations'
 alias hmrm='home-manager remove-generations'
 #
-alias drbu='darwin-rebuild switch --flake $NIX_FLAKE_OS_ROOT#$_host'
-alias drbb='darwin-rebuild build --dry-run --flake $NIX_FLAKE_OS_ROOT#$_host'
-alias drbls='darwin-rebuild --list-generations'
+alias drbu='sudo darwin-rebuild switch --flake $NIX_FLAKE_OS_ROOT#$_host'
+alias drbb='sudo darwin-rebuild build --dry-run --flake $NIX_FLAKE_OS_ROOT#$_host'
+alias drbls='sudo darwin-rebuild --list-generations'
+alias drbrm='sudo nix-env -p /nix/var/nix/profiles/system --delete-generations'
 #
 alias nix_hist='sudo nix profile history --profile /nix/var/nix/profiles/system'
 alias nix_rb='sudo nix profile rollback --profile /nix/var/nix/profile/system'
