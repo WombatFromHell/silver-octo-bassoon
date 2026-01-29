@@ -4,8 +4,13 @@
   block:
     - name: Check for systemd configs in dotfiles
       ansible.builtin.set_fact:
-        dotfiles_has_systemd: "{{ lookup('fileglob', dotfiles_root + '/Configs/systemd/.config/systemd/user/*.service', wantlist=true) | length > 0 }}"
         dotfiles_systemd_user_dir: "{{ home_dir }}/.config/systemd/user"
+        dotfiles_systemd_service_files: "{{ lookup('fileglob', dotfiles_root + '/Configs/systemd/.config/systemd/user/*.service', wantlist=true) }}"
+        dotfiles_systemd_timer_files: "{{ lookup('fileglob', dotfiles_root + '/Configs/systemd/.config/systemd/user/*.timer', wantlist=true) }}"
+
+    - name: Determine if systemd configs exist
+      ansible.builtin.set_fact:
+        dotfiles_has_systemd: "{{ (dotfiles_systemd_service_files | length > 0) or (dotfiles_systemd_timer_files | length > 0) }}"
 
     - name: Process systemd unit files
       when: dotfiles_has_systemd
@@ -16,10 +21,10 @@
             state: directory
             mode: "0755"
 
-        - name: Find all .service files in dotfiles
+        - name: Find all systemd unit files in dotfiles
           ansible.builtin.find:
             path: "{{ dotfiles_root }}/Configs/systemd/.config/systemd/user"
-            patterns: "*.service"
+            patterns: "*.service,*.timer"
             recurse: true
           register: dotfiles_systemd_dotfiles
 

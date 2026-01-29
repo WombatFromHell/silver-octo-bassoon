@@ -1,0 +1,15 @@
+[Unit]
+Description=Run topgrade periodically
+
+[Timer]
+# Wait 5 minutes after login before first run
+OnStartupSec=5min
+
+# Run every 6 hours after that
+OnUnitActiveSec=6h
+
+# Run immediately if a scheduled run was missed (e.g., system was off)
+Persistent=true
+
+[Install]
+WantedBy=timers.target

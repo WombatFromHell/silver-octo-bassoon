@@ -3,9 +3,8 @@ paths = ["/etc/ublue-os/topgrade.toml"]
 
 [misc]
 no_self_update = true
-only = ["flatpak", "distrobox", "brew_cask", "brew_formula", "custom_commands"]
+only = ["distrobox", "brew_cask", "brew_formula", "custom_commands"]
 ignore_failures = [
-  "flatpak",
   "distrobox",
   "brew_cask",
   "brew_formula",
@@ -13,8 +12,8 @@ ignore_failures = [
 ]
 assume_yes = true
 no_retry = false
+skip_notify = true
 
 [commands]
 "fisher" = "/usr/bin/fish -c 'fisher update'"
 "tmux" = "~/.config/tmux/plugins/tpm/bin/update_plugins all"
-"ostree" = "/usr/bin/rpm-ostree upgrade"

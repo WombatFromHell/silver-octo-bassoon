@@ -1,0 +1,10 @@
+[Unit]
+Description=Run topgrade periodically
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/scripts/topgrade-wrapper.sh
+
+[Install]
+WantedBy=default.target
