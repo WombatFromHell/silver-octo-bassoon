@@ -8,8 +8,6 @@ SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 readonly SCRIPT_NAME
 readonly LOG_DIR="${HOME}/.local/share/logs"
 readonly LOG_FILE="${LOG_DIR}/topgrade.log"
-readonly MAX_LOG_SIZE=$((1024 * 1024)) # 1MB
-readonly MAX_ROTATED_LOGS=5
 
 # Print error message to stderr
 error() {
@@ -71,101 +69,19 @@ setup_logging() {
   return 0
 }
 
-# Get file size in bytes (cross-platform)
-get_file_size() {
-  local file
-  file="${1}"
+# Move existing log to .last.log before new run
+move_existing_log() {
+  local log_file="${1}"
+  local last_log="${log_file%.*}.last.log"
 
-  if [[ ! -f "${file}" ]]; then
-    echo 0
-    return 0
-  fi
-
-  # Try GNU stat first, then BSD stat
-  if stat -c%s "${file}" 2>/dev/null; then
-    return 0
-  elif stat -f%z "${file}" 2>/dev/null; then
-    return 0
-  else
-    echo 0
-    return 0
-  fi
-}
-
-# Rotate logs if needed
-rotate_logs() {
-  local log_file
-  local max_size
-  local max_rotations
-  local current_size
-  local old_log
-  local new_log
-
-  log_file="${1}"
-  max_size="${2}"
-  max_rotations="${3}"
-
-  # Check if log file exists and exceeds max size
-  if [[ ! -f "${log_file}" ]]; then
-    return 0
-  fi
-
-  current_size=$(get_file_size "${log_file}")
-
-  if ((current_size < max_size)); then
-    return 0
-  fi
-
-  # Rotate existing logs (from oldest to newest)
-  for ((i = max_rotations - 1; i >= 1; i--)); do
-    old_log="${log_file}.${i}"
-    new_log="${log_file}.$((i + 1))}"
-
-    if [[ -f "${old_log}" ]]; then
-      if ! mv "${old_log}" "${new_log}"; then
-        warn "Failed to rotate ${old_log} to ${new_log}"
-      fi
+  if [[ -f "${log_file}" ]]; then
+    if ! mv "${log_file}" "${last_log}"; then
+      warn "Failed to move existing log ${log_file} to ${last_log}"
+      return 1
     fi
-  done
-
-  # Move current log to .1
-  if ! mv "${log_file}" "${log_file}.1"; then
-    warn "Failed to rotate current log file"
-    return 1
   fi
-
-  # Compress old rotated logs in background
-  compress_old_logs "${log_file}" "${max_rotations}" &
 
   return 0
-}
-
-# Compress rotated logs (runs in background)
-compress_old_logs() {
-  local log_file
-  local max_rotations
-  local rotated_log
-
-  log_file="${1}"
-  max_rotations="${2}"
-
-  # Compress uncompressed rotated logs
-  for ((i = 2; i <= max_rotations; i++)); do
-    rotated_log="${log_file}.${i}"
-
-    if [[ -f "${rotated_log}" && ! -f "${rotated_log}.gz" ]]; then
-      if gzip -f "${rotated_log}" 2>/dev/null; then
-        : # Success
-      else
-        warn "Failed to compress ${rotated_log}"
-      fi
-    fi
-  done
-
-  # Remove logs beyond max rotation
-  for ((i = max_rotations + 1; i <= max_rotations + 10; i++)); do
-    rm -f "${log_file}.${i}" "${log_file}.${i}.gz" 2>/dev/null || true
-  done
 }
 
 # Format log entry with timestamp and separator
@@ -277,8 +193,8 @@ main() {
   config_file="${HOME}/.config/topgrade.toml"
   check_config "${config_file}" || true
 
-  # Rotate logs if needed
-  rotate_logs "${LOG_FILE}" "${MAX_LOG_SIZE}" "${MAX_ROTATED_LOGS}" || true
+  # Move existing log to .last.log before new run
+  move_existing_log "${LOG_FILE}" || true
 
   # Capture start time
   start_time=$(date +%s)
