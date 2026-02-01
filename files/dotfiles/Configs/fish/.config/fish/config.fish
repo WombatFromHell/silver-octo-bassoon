@@ -71,8 +71,6 @@ if status is-interactive
         set -x DIRENV_LOG_FORMAT ""
         direnv hook fish | source
     end
-
-    set -gx SHELL $(command -v fish.sh || command -v fish)
 end
 
 function yy

@@ -11,11 +11,11 @@ function yy() {
 }
 
 if [[ $- == *i* ]]; then
-  if which fish &>/dev/null &&
-    [[ $(ps -o comm= -p "$PPID") != "fish" ]] &&
-    [[ -z "$__FISH_ENTERED" ]]; then
-    export __FISH_ENTERED=1
-    exec fish -l
+  if command -v fish &>/dev/null; then
+    # Check if the parent process is NOT fish
+    if [[ "$(ps -o comm= -p "$PPID")" != "fish" ]]; then
+      exec fish -l
+    fi
   fi
 
   if which eza >/dev/null 2>&1; then
