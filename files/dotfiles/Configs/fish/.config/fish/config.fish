@@ -163,6 +163,21 @@ function nh_clean
     eval $cmd
 end
 
+function lactd_reset
+    flatpak run io.github.ilya_zlobintsev.LACT cli profile set Default
+end
+function lactd_uv
+    flatpak run io.github.ilya_zlobintsev.LACT cli profile set UV
+end
+function start-llm
+    lactd_reset
+    /var/mnt/data/vllm/llm.sh
+end
+function stop-llm
+    /var/mnt/data/vllm/llm.sh stop
+    lactd_uv
+end
+
 setup_podman_sock
 set -x nvm_default_version v24.1.0
 set -x GPG_TTY (tty)
@@ -201,6 +216,7 @@ end
 alias vi='$EDITOR'
 alias vim='$EDITOR'
 alias lg='lazygit'
+alias lpod='lazydocker'
 alias yz='yazi'
 alias cat='bat'
 alias edit='$EDITOR'
