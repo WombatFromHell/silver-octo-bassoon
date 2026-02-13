@@ -11,6 +11,9 @@ font-size = 12
 theme = catppuccin-mocha.conf
 shell-integration = fish
 #
+cursor-style = "block"
+cursor-style-blink = true
+#
 gtk-tabs-location = hidden
 gtk-single-instance = true
 confirm-close-surface = false
