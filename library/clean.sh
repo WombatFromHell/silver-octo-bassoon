@@ -6,4 +6,4 @@ if [[ "$(pwd -P)" != "$script_dir" ]]; then
   exit 1
 fi
 
-rm -rf ./.venv/ ./.ansible/ ./.pytest_cache/ ./.ruff_cache/ ./__pycache__/ ./tests/__pycache__/ ./.coverage
+rm -rf ./.venv/ ./.ansible/ ./.pytest_cache/ ./.ruff_cache/ ./__pycache__/ ./tests/__pycache__/ ./.coverage ./htmlcov
