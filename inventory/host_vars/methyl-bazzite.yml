@@ -58,9 +58,9 @@ system_flatpaks:
   - org.gnome.Papers
 user_flatpaks:
   - com.github.zocker_160.SyncThingy
-  - org.deluge_torrent.deluge
   - com.vysp3r.ProtonPlus
   - com.usebottles.bottles
+  - dev.vencord.Vesktop
 skip_flatpaks:
   - io.github.peazip.PeaZip
   - com.brave.Browser
