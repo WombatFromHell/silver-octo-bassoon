@@ -1,62 +1,161 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-# Default to 'nightly' if no argument is provided
-VERSION="${1:-nightly}"
+# =============================================================================
+# Neovim AppImage Installer
+# =============================================================================
+# Downloads and manages Neovim AppImage installations (nightly or tagged versions).
+# Usage: ./install-neovim.sh [VERSION]
+#   VERSION: 'nightly' (default) or a specific tag (e.g., v0.11.6, stable)
+# =============================================================================
 
-# Define variables using the version tag
-INSTALL_DIR="$HOME/AppImages"
-FILE_NAME="nvim-${VERSION}.appimage"
-FILE_PATH="$INSTALL_DIR/$FILE_NAME"
-URL="https://github.com/neovim/neovim/releases/download/${VERSION}/nvim-linux-x86_64.appimage"
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+readonly INSTALL_DIR="$HOME/AppImages"
+readonly SYMLINK_PATH="/usr/local/bin/nvim"
+readonly NIGHTLY_URL="https://github.com/neovim/neovim/releases/download/nightly/nvim-linux-x86_64.appimage"
 
-# Ensure the installation directory exists
-mkdir -p "$INSTALL_DIR"
+# -----------------------------------------------------------------------------
+# Helper Functions
+# -----------------------------------------------------------------------------
 
-# Logic differs for 'nightly' (rolling) vs specific tags (static)
-if [[ "$VERSION" == "nightly" ]]; then
-  echo "Checking for Neovim Nightly updates..."
+log_info() {
+  echo "[INFO] $*"
+}
 
-  # -R: Preserve remote timestamp (sets file time to build time, not download time)
-  # -z: Time-conditioned download (only download if newer than local file)
-  # -f: Fail silently on server errors
-  # -L: Follow redirects
-  if curl -fLR -z "$FILE_PATH" "$URL" -o "$FILE_PATH"; then
-    # Ensure executable
-    chmod 0755 "$FILE_PATH"
+log_error() {
+  echo "[ERROR] $*" >&2
+}
+
+die() {
+  log_error "$*"
+  exit 1
+}
+
+# -----------------------------------------------------------------------------
+# Core Functions
+# -----------------------------------------------------------------------------
+
+get_file_path() {
+  local version="$1"
+  echo "${INSTALL_DIR}/nvim-${version}.appimage"
+}
+
+get_download_url() {
+  local version="$1"
+  if [[ "$version" == "nightly" ]]; then
+    echo "$NIGHTLY_URL"
   else
-    echo "Error: Failed to check/download Nightly."
-    exit 1
+    echo "https://github.com/neovim/neovim/releases/download/${version}/nvim-linux-x86_64.appimage"
   fi
-else
-  # For specific tags: Check if we already have this version
-  if [ -f "$FILE_PATH" ]; then
-    echo "Version '$VERSION' is already downloaded."
-    echo "Skipping download..."
-  else
-    echo "Downloading Neovim version: $VERSION..."
-    # -R preserves the timestamp for tagged versions as well
-    if curl -fLR "$URL" -o "$FILE_PATH"; then
-      chmod 0755 "$FILE_PATH"
-      echo "Download complete."
+}
+
+ensure_install_dir() {
+  mkdir -p "$INSTALL_DIR"
+}
+
+download_nightly() {
+  local file_path="$1"
+  local url="$2"
+
+  if [[ -f "$file_path" ]]; then
+    # Get local file mtime in RFC 2822 format for curl's --time-cond
+    local local_mtime
+    local_mtime="$(date -r "$file_path" -R)"
+
+    # Use -w to capture HTTP response code; 304 means Not Modified
+    local http_code
+    http_code="$(curl --silent --fail --location --time-cond "$local_mtime" --remote-time -w '%{http_code}' "$url" -o "$file_path")"
+
+    if [[ "$http_code" == "304" ]]; then
+      return 1 # No update needed
+    elif [[ "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+      chmod 0755 "$file_path"
+      return 0 # Update was performed
     else
-      echo "Error: Failed to download version '$VERSION'."
-      echo "Please check if the tag is correct (e.g., v0.11.6, stable)."
-      rm -f "$FILE_PATH"
-      exit 1
+      die "Failed to check/download Nightly build (HTTP $http_code)."
+    fi
+  else
+    if ! curl --fail --location --remote-time "$url" -o "$file_path"; then
+      die "Failed to download Nightly build."
+    fi
+    chmod 0755 "$file_path"
+    return 0 # Update was performed
+  fi
+}
+
+download_tagged_version() {
+  local version="$1"
+  local file_path="$2"
+  local url="$3"
+
+  if [[ -f "$file_path" ]]; then
+    log_info "Version '$version' is already downloaded. Skipping download..."
+    return 1 # No update needed
+  fi
+
+  log_info "Downloading Neovim version: $version..."
+
+  if ! curl -fLR "$url" -o "$file_path"; then
+    rm -f "$file_path"
+    die "Failed to download version '$version'. Please verify the tag exists (e.g., v0.11.6, stable)."
+  fi
+
+  chmod 0755 "$file_path"
+  log_info "Download complete."
+  return 0 # Update was performed
+}
+
+update_symlink() {
+  local version="$1"
+  local file_path="$2"
+
+  log_info "Updating symlink to '$file_path'..."
+
+  if ! sudo mkdir -p "$(dirname "$SYMLINK_PATH")"; then
+    die "Failed to create directory for symlink."
+  fi
+
+  # Remove existing symlink or file
+  if [[ -L "$SYMLINK_PATH" ]] || [[ -e "$SYMLINK_PATH" ]]; then
+    sudo rm "$SYMLINK_PATH"
+  fi
+
+  if ! sudo ln -s "$file_path" "$SYMLINK_PATH"; then
+    die "Failed to create symlink at $SYMLINK_PATH."
+  fi
+}
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
+
+main() {
+  local version="${1:-nightly}"
+  local file_path
+  local url
+
+  file_path="$(get_file_path "$version")"
+  url="$(get_download_url "$version")"
+
+  ensure_install_dir
+
+  if [[ "$version" == "nightly" ]]; then
+    if download_nightly "$file_path" "$url"; then
+      update_symlink "$version" "$file_path"
+      log_info "Neovim '$version' updated successfully."
+    else
+      log_info "Neovim '$version' is already up-to-date."
+    fi
+  else
+    if download_tagged_version "$version" "$file_path" "$url"; then
+      update_symlink "$version" "$file_path"
+      log_info "Neovim '$version' installed successfully."
+    else
+      log_info "Neovim '$version' is already installed."
     fi
   fi
-fi
+}
 
-# Update the symlink to point to the requested version
-echo "Switching active Neovim to version '$VERSION'..."
-sudo mkdir -p /usr/local/bin/
-
-# Remove existing symlink or file to ensure a clean swap
-if [ -L "/usr/local/bin/nvim" ] || [ -e "/usr/local/bin/nvim" ]; then
-  sudo rm /usr/local/bin/nvim
-fi
-
-# Create the new symlink
-sudo ln -s "$FILE_PATH" /usr/local/bin/nvim
-
-echo "Success! Active Neovim version is now '$VERSION'."
+main "$@"
