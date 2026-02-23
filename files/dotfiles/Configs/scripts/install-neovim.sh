@@ -111,11 +111,21 @@ update_symlink() {
   local version="$1"
   local file_path="$2"
 
-  log_info "Updating symlink to '$file_path'..."
-
   if ! sudo mkdir -p "$(dirname "$SYMLINK_PATH")"; then
     die "Failed to create directory for symlink."
   fi
+
+  # Check if symlink already points to the correct target
+  if [[ -L "$SYMLINK_PATH" ]]; then
+    local current_target
+    current_target="$(readlink "$SYMLINK_PATH")"
+    if [[ "$current_target" == "$file_path" ]]; then
+      log_info "Symlink already points to '$file_path'. No update needed."
+      return 1 # No update performed
+    fi
+  fi
+
+  log_info "Updating symlink to '$file_path'..."
 
   # Remove existing symlink or file
   if [[ -L "$SYMLINK_PATH" ]] || [[ -e "$SYMLINK_PATH" ]]; then
@@ -125,6 +135,8 @@ update_symlink() {
   if ! sudo ln -s "$file_path" "$SYMLINK_PATH"; then
     die "Failed to create symlink at $SYMLINK_PATH."
   fi
+
+  return 0 # Update performed
 }
 
 # -----------------------------------------------------------------------------
@@ -143,18 +155,21 @@ main() {
 
   if [[ "$version" == "nightly" ]]; then
     if download_nightly "$file_path" "$url"; then
-      update_symlink "$version" "$file_path"
       log_info "Neovim '$version' updated successfully."
     else
       log_info "Neovim '$version' is already up-to-date."
     fi
   else
     if download_tagged_version "$version" "$file_path" "$url"; then
-      update_symlink "$version" "$file_path"
       log_info "Neovim '$version' installed successfully."
     else
       log_info "Neovim '$version' is already installed."
     fi
+  fi
+
+  # Always ensure symlink points to the correct target
+  if update_symlink "$version" "$file_path"; then
+    log_info "Symlink updated to point to '$version'."
   fi
 }
 
