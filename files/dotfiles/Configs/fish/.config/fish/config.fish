@@ -187,9 +187,12 @@ set -x XDG_CONFIG_HOME $HOME/.config
 set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
 set -x CARGO_HOME $HOME/.cargo
 set -x MASON_BIN $HOME/.local/share/nvim/mason/bin
+set -x PNPM_GLOBAL_BIN $HOME/.local/share/pnpm
+
+set -x LLAMA_API_KEY llama-cpp
 
 set --erase fish_user_paths
-fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/bob/nvim-bin ~/.rd/bin ~/.spicetify /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MASON_BIN
+fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/bob/nvim-bin ~/.rd/bin ~/.spicetify /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MASON_BIN $PNPM_GLOBAL_BIN
 
 set pure_shorten_prompt_current_directory_length 1
 set pure_truncate_prompt_current_directory_keeps 0
@@ -209,8 +212,8 @@ if command -q eza
     alias ls="eza $EZA_STANDARD_OPTIONS"
     alias lt="eza $EZA_STANDARD_OPTIONS --tree"
     alias llt="eza $EZA_STANDARD_OPTIONS --long --tree"
-    alias treed="eza $EZA_STANDARD_OPTIONS -DTA -L 1"
-    alias tree="eza $EZA_STANDARD_OPTIONS -TA -L 1"
+    alias treed="eza $EZA_STANDARD_OPTIONS -DTA"
+    alias tree="eza $EZA_STANDARD_OPTIONS -TA"
 end
 #
 alias vi='$EDITOR'
