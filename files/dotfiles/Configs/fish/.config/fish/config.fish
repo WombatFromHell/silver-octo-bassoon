@@ -179,8 +179,8 @@ function stop-llm
 end
 
 setup_podman_sock
-set -x NVM_VERSION v25.7.0
-set -x nvm_default_version $NVM_VERSION
+
+set -Ux nvm_default_version v25.7.0
 set -x GPG_TTY (tty)
 set -x XDG_DATA_HOME $HOME/.local/share
 set -x XDG_CONFIG_HOME $HOME/.config
