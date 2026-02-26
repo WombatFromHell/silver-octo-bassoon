@@ -1,9 +1,6 @@
-# font-family = "FiraCode Nerd Font"
 # font-family = "CaskaydiaCove Nerd Font"
-# font-size = 10.5
-#
-font-family = "Pragmasevka Nerd Font"
-font-size = 12
+font-family = "Iosevka Nerd Font"
+font-size = 10.5
 #
 theme = catppuccin-mocha.conf
 shell-integration = fish

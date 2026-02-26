@@ -179,7 +179,8 @@ function stop-llm
 end
 
 setup_podman_sock
-set -x nvm_default_version v24.1.0
+set -x NVM_VERSION v25.7.0
+set -x nvm_default_version $NVM_VERSION
 set -x GPG_TTY (tty)
 set -x XDG_DATA_HOME $HOME/.local/share
 set -x XDG_CONFIG_HOME $HOME/.config
@@ -187,12 +188,11 @@ set -x XDG_CONFIG_HOME $HOME/.config
 set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
 set -x CARGO_HOME $HOME/.cargo
 set -x MASON_BIN $HOME/.local/share/nvim/mason/bin
-set -x PNPM_GLOBAL_BIN $HOME/.local/share/pnpm
 
 set -x LLAMA_API_KEY llama-cpp
 
 set --erase fish_user_paths
-fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.local/share/bob/nvim-bin ~/.rd/bin ~/.spicetify /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MASON_BIN $PNPM_GLOBAL_BIN
+fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.rd/bin ~/.spicetify /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MASON_BIN
 
 set pure_shorten_prompt_current_directory_length 1
 set pure_truncate_prompt_current_directory_keeps 0
@@ -307,10 +307,3 @@ if command -q atuin
 end
 
 set_editor
-
-# pnpm
-set -gx PNPM_HOME "$HOME/.local/share/pnpm"
-if not string match -q -- $PNPM_HOME $PATH
-    set -gx PATH "$PNPM_HOME" $PATH
-end
-# pnpm end
