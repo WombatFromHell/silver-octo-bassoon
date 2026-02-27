@@ -59,6 +59,16 @@ end
 
 function tma -d "Attach to session (create if missing)"
     set -l target $argv[1]
+
+    # Handle '.' to use directory name with spaces as hyphens (lowercase)
+    if test "$target" = .
+        set -l dir_name (basename $PWD)
+        # Skip if in $HOME or root
+        if test "$PWD" != "$HOME"; and test "$PWD" != /
+            set target (echo $dir_name | string replace -a ' ' '-' | string lower)
+        end
+    end
+
     # Default to configured main session if no argument
     test -z "$target"; and set target $TMUX_DEFAULT_SESSION
 
