@@ -225,6 +225,7 @@ alias cat='bat'
 alias edit='$EDITOR'
 alias sedit='sudo -E $EDITOR'
 alias mkdir='mkdir -pv'
+alias sudoe='sudo -E env PATH=(string join ':' $PATH)'
 # zellij shortcuts
 alias zls='zellij ls'
 alias zac='zellij attach -c'
