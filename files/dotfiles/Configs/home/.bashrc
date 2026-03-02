@@ -72,5 +72,5 @@ if which zoxide >/dev/null 2>&1; then
   alias cd='z'
 fi
 if which atuin >/dev/null 2>&1; then
-  eval "$(atuin init bash)"
+  eval "$(atuin init bash --disable-up-arrow)"
 fi
