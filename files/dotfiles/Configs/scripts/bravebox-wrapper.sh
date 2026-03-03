@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+readonly CONTAINER_NAME="bravebox"
 readonly BROWSER_BINARYS=("brave-browser-beta" "brave-browser")
 readonly LAUNCHER_SCRIPT="${HOME}/.local/bin/scripts/chrome_with_flags.py"
 readonly NOTIFICATION_APP_NAME="bravebox-wrapper"
+
+in_container() {
+  [[ -n "${CONTAINER_ID:-}" ]] && return 0
+  [[ -f /run/.containerenv ]] && return 0
+  [[ -f /.dockerenv ]] && return 0
+  grep -q container /proc/1/cgroup 2>/dev/null && return 0
+  return 1
+}
 
 detect_browser() {
   local binary
@@ -49,30 +58,30 @@ upgrade_package() {
   local output
   output="$(sudo dnf upgrade -y "${package}" 2>&1)"
   local exit_code=$?
-  
+
   # Check if any packages were actually upgraded
   if echo "${output}" | grep -qE "^(Upgrading|Installing|Removing): "; then
     echo "${output}"
-    return 0  # Packages were upgraded
+    return 0 # Packages were upgraded
   elif echo "${output}" | grep -qE "^Nothing to do\.$|No packages marked for update"; then
     echo "${output}"
-    return 2  # No upgrades needed
+    return 2 # No upgrades needed
   else
     echo "${output}"
-    return ${exit_code}  # Other result (possibly error)
+    return ${exit_code} # Other result (possibly error)
   fi
 }
 
-launch_browser() {
-  local package="$1"
-  shift
-  exec "${LAUNCHER_SCRIPT}" "${package}" "$@"
-}
-
 main() {
+  # If not in container, enter once and run everything inside
+  if ! in_container; then
+    exec distrobox-enter -n "${CONTAINER_NAME}" -- "$0" "$@"
+  fi
+
+  # Inside container: detect browser and proceed
   local pkgname
   pkgname="$(detect_browser)" || {
-    echo "Error: 'brave-browser-beta' and 'brave-browser' not found in PATH!" >&2
+    echo "Error: 'brave-browser-beta' or 'brave-browser' not found in PATH!" >&2
     exit 1
   }
 
@@ -86,20 +95,20 @@ main() {
   upgrade_package "${pkgname}" || upgrade_result=$?
 
   case ${upgrade_result} in
-    0)
-      send_notification "Upgrade Complete" "${pkgname} has been successfully upgraded."
-      launch_browser "${pkgname}" "$@"
-      ;;
-    2)
-      # No upgrades needed, just launch
-      launch_browser "${pkgname}" "$@"
-      ;;
-    *)
-      send_notification "Upgrade Failed" "Failed to upgrade ${pkgname}."
-      echo "Error: something went wrong when upgrading '${pkgname}'!" >&2
-      exit 1
-      ;;
+  0)
+    send_notification "Upgrade Complete" "${pkgname} has been successfully upgraded."
+    ;;
+  2)
+    # No upgrades needed
+    ;;
+  *)
+    send_notification "Upgrade Failed" "Failed to upgrade ${pkgname}."
+    echo "Error: something went wrong when upgrading '${pkgname}'!" >&2
+    exit 1
+    ;;
   esac
+
+  exec "${LAUNCHER_SCRIPT}" "${pkgname}" "$@"
 }
 
 main "$@"
