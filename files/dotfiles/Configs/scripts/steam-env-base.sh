@@ -9,6 +9,7 @@ STEAM_BASE_ENV_VARS=(
   "WINEALSA_SPATIAL=1"
   "WINEDLLOVERRIDES=winepulse.drv=d"
   "PROTON_USE_NTSYNC=1"
+  "ENABLE_LAYER_MESA_ANTI_LAG=1"
 )
 
 # Execute the provided command with Steam environment
@@ -24,4 +25,3 @@ else
   done
   exit 1
 fi
-

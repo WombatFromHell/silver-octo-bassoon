@@ -9,7 +9,8 @@ ENABLE_AUDIO_PRIORITY_BOOST="false"
 ENABLE_STEAM_ENV="true"
 
 # SCX Scheduler Configuration
-SCX_SCHEDULER_NAME="scx_bpfland" # Default SCX scheduler to use
+# SCX_SCHEDULER_NAME="scx_bpfland" # Default SCX scheduler to use
+SCX_SCHEDULER_NAME="scx_lavd"
 
 # Performance Mode Configuration (for tuned-adm)
 GAME_PROFILE="throughput-performance-bazzite"
