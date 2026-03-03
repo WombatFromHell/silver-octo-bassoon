@@ -131,8 +131,8 @@ function set_editor
         set -gx EDITOR nano
         set -gx VISUAL nano
     else
-        set --erase EDITOR ^/dev/null
-        set --erase VISUAL ^/dev/null
+        set --erase EDITOR >/dev/null
+        set --erase VISUAL >/dev/null
     end
 end
 
