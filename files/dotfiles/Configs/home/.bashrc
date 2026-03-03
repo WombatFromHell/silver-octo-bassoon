@@ -14,6 +14,8 @@ if [[ $- == *i* ]]; then
     # Check if the parent process is NOT fish
     if [[ "$(ps -o comm= -p "$PPID")" != "fish" ]]; then
       exec fish -l
+    else
+      export SHELL_INDICATOR="bash"
     fi
   fi
 

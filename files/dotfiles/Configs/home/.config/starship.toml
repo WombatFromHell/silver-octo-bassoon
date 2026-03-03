@@ -5,6 +5,13 @@ scan_timeout = 10
 add_newline = false
 follow_symlinks = false
 palette = "catppuccin_mocha"
+format = """$directory$git_branch$git_status$cmd_duration$line_break${custom.bash}$character"""
+
+[custom.bash]
+command = "echo 💲"
+when = '[ -n "$SHELL_INDICATOR" ]'
+format = "[$output]($style)"
+style = "yellow"
 
 [character]
 success_symbol = "[(green)❯](teal)"
