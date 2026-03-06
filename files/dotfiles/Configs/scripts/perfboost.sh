@@ -11,6 +11,11 @@ ENABLE_STEAM_ENV="true"
 # SCX Scheduler Configuration
 # SCX_SCHEDULER_NAME="scx_bpfland" # Default SCX scheduler to use
 SCX_SCHEDULER_NAME="scx_lavd"
+SCX_SCHEDULER_ARGS=(
+  --performance
+  --preempt-shift 6
+  --slice-min-us 500
+)
 
 # Performance Mode Configuration (for tuned-adm)
 GAME_PROFILE="throughput-performance-bazzite"
@@ -47,8 +52,8 @@ get_command_paths() {
   tuned_path="$(check_cmd "tuned-adm")"
   local inhibit_path
   inhibit_path="$(check_cmd "systemd-inhibit")"
-  local dbus_send_path
-  dbus_send_path="$(check_cmd "dbus-send")"
+  local scxctl_path
+  scxctl_path="$(check_cmd "scxctl")"
 
   # Validate dependencies based on configuration
   [[ "$ENABLE_PERFORMANCE_MODE" = "true" && -z "$tuned_path" ]] &&
@@ -57,17 +62,17 @@ get_command_paths() {
   [[ "$ENABLE_SCREEN_KEEP_AWAKE" = "true" && -z "$inhibit_path" ]] &&
     error_exit "Screen keep-awake requires 'systemd-inhibit', but it's not installed or not in PATH"
 
-  # Always validate dbus-send since we use it for SCX scheduler management
-  [[ -z "$dbus_send_path" ]] &&
-    error_exit "SCX scheduler management requires 'dbus-send', but it's not installed or not in PATH"
+  # Validate scxctl for SCX scheduler management
+  [[ "$ENABLE_SCX_SCHEDULER" = "true" && -z "$scxctl_path" ]] &&
+    error_exit "SCX scheduler management requires 'scxctl', but it's not installed or not in PATH"
 
-  # Output paths: tuned_path, inhibit_path, dbus_send_path
-  printf "%s\n" "$tuned_path" "$inhibit_path" "$dbus_send_path"
+  # Output paths: tuned_path, inhibit_path, scxctl_path
+  printf "%s\n" "$tuned_path" "$inhibit_path" "$scxctl_path"
 }
 
 # SCX Scheduler Functions
 scx_load() {
-  local dbus_send_path="$1"
+  local scxctl_path="$1"
 
   [[ "$ENABLE_SCX_SCHEDULER" != "true" ]] && {
     log "SCX scheduler disabled by configuration"
@@ -84,16 +89,17 @@ scx_load() {
   }
 
   log "Loading SCX scheduler: $scx"
-  "$dbus_send_path" --system --print-reply --dest=org.scx.Loader /org/scx/Loader org.scx.Loader.SwitchScheduler string:"$scx" uint32:1
+  "$scxctl_path" start -s "$SCX_SCHEDULER_NAME" -a="${SCX_SCHEDULER_ARGS[*]}"
 }
 
 scx_unload() {
-  local dbus_send_path="$1"
+  local scxctl_path="$1"
 
-  [[ -z "$dbus_send_path" ]] && return
+  [[ "$ENABLE_SCX_SCHEDULER" != "true" ]] && return
+  [[ -z "$scxctl_path" ]] && return
 
   log "Unloading SCX scheduler"
-  "$dbus_send_path" --system --print-reply --dest=org.scx.Loader /org/scx/Loader org.scx.Loader.StopScheduler
+  "$scxctl_path" stop
 }
 
 # Performance Mode Functions
@@ -178,11 +184,11 @@ screen_keep_awake_enable() {
 # Cleanup function
 cleanup() {
   local tuned_path="$1"
-  local dbus_send_path="$2"
+  local scxctl_path="$2"
 
   log "Running cleanup..."
   performance_mode_disable "$tuned_path"
-  scx_unload "$dbus_send_path"
+  scx_unload "$scxctl_path"
 }
 
 # Main function
@@ -192,20 +198,20 @@ main() {
   readarray -t command_paths < <(get_command_paths)
   local tuned_path="${command_paths[0]}"
   local inhibit_path="${command_paths[1]}"
-  local dbus_send_path="${command_paths[2]}"
+  local scxctl_path="${command_paths[2]}"
 
   # Store paths in global variables for trap handler
   PERFBOOST_TUNED_PATH="$tuned_path"
-  PERFBOOST_DBUS_SEND_PATH="$dbus_send_path"
+  PERFBOOST_SCXCTL_PATH="$scxctl_path"
 
   # Set trap for cleanup on exit
-  trap 'cleanup "$PERFBOOST_TUNED_PATH" "$PERFBOOST_DBUS_SEND_PATH"' EXIT
+  trap 'cleanup "$PERFBOOST_TUNED_PATH" "$PERFBOOST_SCXCTL_PATH"' EXIT
 
   # Enable performance mode if configured
   performance_mode_enable "$tuned_path"
 
   # Enable SCX scheduler if configured
-  scx_load "$dbus_send_path"
+  scx_load "$scxctl_path"
 
   # Enable audio priority boost if configured
   [[ "$ENABLE_AUDIO_PRIORITY_BOOST" = "true" ]] && audio_priority_boost_enable
