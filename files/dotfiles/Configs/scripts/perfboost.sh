@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -euxo pipefail
+
 # Configuration Section - Customize these variables to control script behavior
 # Set to "true" to enable a feature, "false" to disable it
 ENABLE_SCX_SCHEDULER="true"
@@ -89,7 +91,12 @@ scx_load() {
   }
 
   log "Loading SCX scheduler: $scx"
-  "$scxctl_path" start -s "$SCX_SCHEDULER_NAME" -a="${SCX_SCHEDULER_ARGS[*]}"
+  SCXCTL_ARGS=(
+    start
+    -s "$SCX_SCHEDULER_NAME"
+    -a="${SCX_SCHEDULER_ARGS[*]}"
+  )
+  "$scxctl_path" "${SCXCTL_ARGS[@]}"
 }
 
 scx_unload() {
