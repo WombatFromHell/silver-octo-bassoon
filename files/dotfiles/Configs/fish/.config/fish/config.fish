@@ -45,6 +45,11 @@ if test -f $ARCHIVE_HELPER
     source $ARCHIVE_HELPER
 end
 
+set WORKTREES_HELPER $HOME/.config/fish/worktrees.fish
+if test -f $WORKTREES_HELPER
+    source $WORKTREES_HELPER
+end
+
 if status is-interactive
     set -Ux fish_greeting # disable initial fish greeting
 
@@ -171,7 +176,7 @@ function lactd_uv
 end
 function start-llm
     lactd_reset
-    /var/mnt/data/vllm/llm.sh start
+    /var/mnt/data/vllm/llm.sh start $argv
 end
 function stop-llm
     /var/mnt/data/vllm/llm.sh stop
