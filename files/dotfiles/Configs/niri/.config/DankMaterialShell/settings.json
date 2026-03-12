@@ -244,7 +244,7 @@
   "soundNewNotification": true,
   "soundVolumeChanged": true,
   "soundPluggedIn": true,
-  "acMonitorTimeout": 1200,
+  "acMonitorTimeout": 0,
   "acLockTimeout": 900,
   "acSuspendTimeout": 7200,
   "acSuspendBehavior": 0,
@@ -382,7 +382,8 @@
     "logout",
     "poweroff",
     "suspend",
-    "lock"
+    "lock",
+    "restart"
   ],
   "powerMenuDefaultAction": "suspend",
   "powerMenuGridLayout": false,

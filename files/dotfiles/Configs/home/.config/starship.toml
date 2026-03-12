@@ -11,11 +11,13 @@ format = """$directory$git_branch$git_status$cmd_duration$line_break${custom.dis
 command = "echo 💲"
 when = '[ -n "$SHELL_INDICATOR" ]'
 format = "[$output]($style)"
+ignore_timeout = true
 
 [custom.distrobox]
 command = "echo 📦"
 when = '[ -n "$CONTAINER_ID" ]'
 format = "[$output]($style) "
+ignore_timeout = true
 
 [character]
 success_symbol = "[(green)❯](teal)"
