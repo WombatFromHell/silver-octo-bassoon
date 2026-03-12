@@ -69,11 +69,6 @@ input {
     // focus-follows-mouse max-scroll-amount="0%"
 }
 
-workspace "scratchpad"
-workspace "main"
-workspace "terminals"
-spawn-at-startup "niri" "msg" "action" "focus-workspace" "2"
-
 // You can configure outputs by their name, which you can find
 // by running `niri msg outputs` while inside a niri instance.
 // The built-in laptop monitor is usually called "eDP-1".
@@ -319,25 +314,9 @@ animations {
 // Find more information on the wiki:
 // https://yalter.github.io/niri/Configuration:-Window-Rules
 
-// Work around WezTerm's initial configure bug
-// by setting an empty default-column-width.
-window-rule {
-    // This regular expression is intentionally made as specific as possible,
-    // since this is the default config, and we want no false positives.
-    // You can get away with just app-id="wezterm" if you want.
-    match app-id=r#"^org\.wezfurlong\.wezterm$"#
-    default-column-width {}
-}
-
-window-rule {
-    match app-id="steam"
-    open-on-workspace "scratchpad"
-}
-
 window-rule {
     match app-id="steam" title=r#"^notificationtoasts_\d+_desktop$"#
     default-floating-position x=10 y=10 relative-to="bottom-right"
-    open-maximized false
 }
 
 // Open the Firefox picture-in-picture player as floating by default.
@@ -394,7 +373,8 @@ binds {
     // Suggested binds for running programs: terminal, app launcher, screen locker.
     Mod+T hotkey-overlay-title="Open a Terminal" { spawn "ghostty"; }
     Mod+Space hotkey-overlay-title="Run an Application: fuzzel" { spawn "fuzzel"; }
-    Mod+Alt+B hotkey-overlay-title="Open Browser" { spawn-sh "xdg-open https://search.brave.com/"; }
+    Mod+Alt+B hotkey-overlay-title="Open Browser" { spawn-sh "spawn-browser.sh"; }
+    Mod+Alt+D hotkey-overlay-title="Open DSearch" { spawn "dsearch"; }
     Mod+Alt+F hotkey-overlay-title="Open Dolphin" { spawn "dolphin"; }
     // Mod+Alt+L hotkey-overlay-title="Lock Session" { spawn-sh "loginctl lock-session"; }
     Mod+Alt+L hotkey-overlay-title="Lock Session" { spawn-sh "qs -c noctalia-shell ipc call lockScreen lock"; }
