@@ -381,11 +381,10 @@
     "reboot",
     "logout",
     "poweroff",
-    "lock",
     "suspend",
-    "restart"
+    "lock"
   ],
-  "powerMenuDefaultAction": "logout",
+  "powerMenuDefaultAction": "suspend",
   "powerMenuGridLayout": false,
   "customPowerActionLock": "",
   "customPowerActionLogout": "",

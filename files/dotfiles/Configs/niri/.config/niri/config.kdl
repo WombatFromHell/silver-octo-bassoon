@@ -377,8 +377,9 @@ binds {
     Mod+Alt+D hotkey-overlay-title="Open DSearch" { spawn "dsearch"; }
     Mod+Alt+F hotkey-overlay-title="Open Dolphin" { spawn "dolphin"; }
     // Mod+Alt+L hotkey-overlay-title="Lock Session" { spawn-sh "loginctl lock-session"; }
-    Mod+Alt+L hotkey-overlay-title="Lock Session" { spawn-sh "qs -c noctalia-shell ipc call lockScreen lock"; }
-    Mod+Shift+Q hotkey-overlay-title="Session Menu" { spawn-sh "qs -c noctalia-shell ipc call sessionMenu toggle"; }
+    Super+Shift+L hotkey-overlay-title="Lock Screen" { spawn "dms" "ipc" "call" "lock" "lock"; }
+    Super+Shift+Q hotkey-overlay-title="Power Menu: Toggle" { spawn "dms" "ipc" "call" "powermenu" "toggle"; }
+
 
     // Use spawn-sh to run a shell command. Do this if you need pipes, multiple commands, etc.
     // Note: the entire command goes as a single argument. It's passed verbatim to `sh -c`.
