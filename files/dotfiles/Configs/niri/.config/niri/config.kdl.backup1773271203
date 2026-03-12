@@ -71,6 +71,7 @@ input {
 
 workspace "scratchpad"
 workspace "main"
+workspace "editing"
 workspace "terminals"
 spawn-at-startup "niri" "msg" "action" "focus-workspace" "2"
 
@@ -276,8 +277,8 @@ layout {
 // spawn-at-startup "waybar"
 
 // attempt to unlock kwallet automatically on login
-spawn-at-startup "/usr/libexec/pam_kwallet_init"
-spawn-at-startup "/usr/libexec/kf6/polkit-kde-authentication-agent-1"
+spawn-sh-at-startup "/usr/libexec/pam_kwallet_init"
+spawn-sh-at-startup "/usr/libexec/kf6/polkit-kde-authentication-agent-1"
 // only uncomment below if using 'kdewallet' with blank password
 // spawn-sh-at-startup "qdbus org.kde.kwalletd6 /modules/kwalletd6 org.kde.KWallet.open kdewallet 0 login"
 
@@ -650,5 +651,3 @@ binds {
 
 include "dms/cursor.kdl"
 include "dms/binds.kdl"
-
-include "dms/windowrules.kdl"
