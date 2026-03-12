@@ -183,8 +183,8 @@ screen_keep_awake_enable() {
     log "kde-inhibit not available, skipping KDE color correction"
 
   log "Enabling screen keep-awake and disabling KDE color correction"
-  # Audio priority boost is handled via exported environment variable
-  "$inhibit_path" --why "perfboost.sh is running" -- \
+  # Inhibits idle (screen off) AND sleep (suspend), using 'block' mode to force refusal
+  "$inhibit_path" --what=idle:sleep --mode=block --why "perfboost.sh is running" -- \
     "$kde_inhibit" --colorCorrect "$@"
 }
 
