@@ -7,7 +7,7 @@
   "runUserMatugenTemplates": true,
   "matugenTargetMonitor": "",
   "popupTransparency": 1,
-  "dockTransparency": 1,
+  "dockTransparency": 0.85,
   "widgetBackgroundColor": "sch",
   "widgetColorMode": "default",
   "controlCenterTileColorMode": "primary",
@@ -123,6 +123,11 @@
       "id": "darkMode",
       "enabled": true,
       "width": 50
+    },
+    {
+      "id": "idleInhibitor",
+      "enabled": true,
+      "width": 50
     }
   ],
   "showWorkspaceIndex": true,
@@ -201,7 +206,7 @@
   "dankLauncherV2BorderThickness": 2,
   "dankLauncherV2BorderColor": "primary",
   "dankLauncherV2ShowFooter": true,
-  "dankLauncherV2UnloadOnClose": false,
+  "dankLauncherV2UnloadOnClose": true,
   "useAutoLocation": true,
   "weatherEnabled": true,
   "networkPreference": "wifi",
@@ -300,19 +305,19 @@
   "matugenTemplateZed": true,
   "showDock": false,
   "dockAutoHide": false,
-  "dockSmartAutoHide": false,
-  "dockGroupByApp": false,
+  "dockSmartAutoHide": true,
+  "dockGroupByApp": true,
   "dockRestoreSpecialWorkspaceOnClick": false,
-  "dockOpenOnOverview": false,
+  "dockOpenOnOverview": true,
   "dockPosition": 1,
-  "dockSpacing": 4,
+  "dockSpacing": 9,
   "dockBottomGap": 0,
   "dockMargin": 0,
   "dockIconSize": 40,
   "dockIndicatorStyle": "circle",
-  "dockBorderEnabled": false,
-  "dockBorderColor": "surfaceText",
-  "dockBorderOpacity": 1,
+  "dockBorderEnabled": true,
+  "dockBorderColor": "primary",
+  "dockBorderOpacity": 0.24,
   "dockBorderThickness": 1,
   "dockIsolateDisplays": false,
   "dockLauncherEnabled": false,
@@ -400,7 +405,11 @@
   "displayNameMode": "system",
   "screenPreferences": {},
   "showOnLastDisplay": {},
-  "niriOutputSettings": {},
+  "niriOutputSettings": {
+    "DP-1": {
+      "vrrOnDemand": true
+    }
+  },
   "hyprlandOutputSettings": {},
   "displayProfiles": {},
   "activeDisplayProfile": {},
@@ -418,9 +427,22 @@
       ],
       "showOnLastDisplay": true,
       "leftWidgets": [
-        "launcherButton",
-        "workspaceSwitcher",
-        "focusedWindow"
+        {
+          "id": "launcherButton",
+          "enabled": true
+        },
+        {
+          "id": "workspaceSwitcher",
+          "enabled": true
+        },
+        {
+          "id": "appsDock",
+          "enabled": true
+        },
+        {
+          "id": "focusedWindow",
+          "enabled": true
+        }
       ],
       "centerWidgets": [
         "music",
