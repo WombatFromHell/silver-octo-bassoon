@@ -14,7 +14,7 @@
         paths: "{{ role_path }}/files/units"
         file_type: file
         recurse: false
-        excludes: "{{ ['nvidia-tdp.*', 'veridian-controller.service'] if not nvidia_exists | default(false) else [] }}"
+        excludes: "{{ ['nvidia-tdp.*', 'veridian-controller.service'] if not (nvidia_exists | default(false)) else [] }}"
       register: base_unit_files
 
     - name: Copy unit files to /etc/systemd/system with proper permissions
@@ -29,6 +29,58 @@
         loop_var: file_item
         label: "Copying {{ file_item.path | basename }}"
       when: base_unit_files.matched > 0
+      notify: reload_global_systemd
+
+    - name: Check if redundant fix-wakeups.service exists
+      ansible.builtin.stat:
+        path: /etc/systemd/system/fix-wakeups.service
+      register: base_old_fix_wakeups_service
+
+    - name: Ensure redundant fix-wakeups.service is stopped and disabled
+      ansible.builtin.systemd:
+        name: fix-wakeups.service
+        enabled: false
+        state: stopped
+      when:
+        - not ansible_check_mode
+        - base_old_fix_wakeups_service.stat.exists
+
+    - name: Remove redundant fix-wakeups.service unit file
+      ansible.builtin.file:
+        path: /etc/systemd/system/fix-wakeups.service
+        state: absent
+      notify: reload_global_systemd
+
+    - name: Check if NVIDIA-related unit files exist (for cleanup)
+      ansible.builtin.stat:
+        path: "/etc/systemd/system/{{ item }}"
+      register: base_nvidia_unit_stats
+      loop:
+        - nvidia-tdp.service
+        - nvidia-tdp.timer
+        - veridian-controller.service
+      when: not (nvidia_exists | default(false))
+
+    - name: Stop and disable NVIDIA-related services if present
+      ansible.builtin.systemd:
+        name: "{{ item.item }}"
+        enabled: false
+        state: stopped
+      loop: "{{ base_nvidia_unit_stats.results }}"
+      when:
+        - not ansible_check_mode
+        - item.stat is defined
+        - item.stat.exists
+      failed_when: false
+
+    - name: Remove NVIDIA-related unit files when NVIDIA is not present
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ item.item }}"
+        state: absent
+      loop: "{{ base_nvidia_unit_stats.results }}"
+      when:
+        - item.stat is defined
+        - item.stat.exists
       notify: reload_global_systemd
 
     # - name: Enable service units

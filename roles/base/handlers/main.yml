@@ -68,7 +68,7 @@
     name: scx_loader.service
     enabled: true
     daemon_reload: true
-  when: base_scx_service_stat.stat.exists
+  when: base_scx_service_exists | default(false)
   listen: enable_scx_loader
 
 - name: Restart polkit service

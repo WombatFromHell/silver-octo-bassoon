@@ -14,8 +14,8 @@
         paths: "{{ role_path }}/files/bin"
         file_type: file
         recurse: false
-        # conditionally exclude nvidia related binaries
-        excludes: "{{ ['nvidia-pm.py', 'veridian-controller'] if not nvidia_exists | default(false) else [] }}"
+        # conditionally exclude nvidia related binaries and fix-wakeups.sh
+        excludes: "{{ (['nvidia-pm.py', 'veridian-controller'] if not (nvidia_exists | default(false)) else []) + ['fix-wakeups.sh'] }}"
       register: base_bin_files
 
     - name: Copy binary files to /usr/local/bin with proper permissions
@@ -31,3 +31,36 @@
         label: "Copying {{ file_item.path | basename }}"
       when: base_bin_files.matched > 0
       become: true
+
+    - name: Ensure old fix-wakeups.sh script is removed
+      become: true
+      ansible.builtin.file:
+        path: /usr/local/bin/fix-wakeups.sh
+        state: absent
+
+    - name: Check if NVIDIA-related binaries exist (for cleanup)
+      become: true
+      ansible.builtin.stat:
+        path: "/usr/local/bin/{{ item }}"
+      register: base_nvidia_bin_stats
+      loop:
+        - nvidia-pm.py
+        - veridian-controller
+      when: not (nvidia_exists | default(false))
+
+    - name: Remove NVIDIA-related binaries when NVIDIA is not present
+      become: true
+      ansible.builtin.file:
+        path: "/usr/local/bin/{{ item.item }}"
+        state: absent
+      loop: "{{ base_nvidia_bin_stats.results }}"
+      when:
+        - item.stat is defined
+        - item.stat.exists
+
+    - name: Manage fix-wakeups tmpfiles configuration via script
+      become: true
+      ansible.builtin.script:
+        cmd: "{{ role_path }}/files/bin/fix-wakeups.sh {{ 'install' if enable_fix_wakeups | default(false) else 'uninstall' }}"
+      register: base_fix_wakeups_script_result
+      changed_when: "'CHANGED' in base_fix_wakeups_script_result.stdout"

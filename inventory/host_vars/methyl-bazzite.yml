@@ -96,3 +96,4 @@ brew_packages:
 # enable_devbox: false
 
 install_arpc_fix: false
+enable_fix_wakeups: false
