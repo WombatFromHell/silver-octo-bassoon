@@ -84,6 +84,8 @@ brew_packages:
   - fd
   - fish
   - fzf
+  - khal
+  - vdirsyncer
   - lazygit
   - neovim
   - rdfind

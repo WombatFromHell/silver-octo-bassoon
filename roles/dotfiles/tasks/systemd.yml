@@ -28,13 +28,58 @@
             recurse: true
           register: dotfiles_systemd_dotfiles
 
-        - name: Sync systemd unit files
+        - name: Filter out vdirsyncer units from general sync
+          ansible.builtin.set_fact:
+            dotfiles_systemd_non_vdirsyncer: "{{ dotfiles_systemd_dotfiles.files | rejectattr('path', 'search', 'vdirsyncer\\.(service|timer)$') | list }}"
+
+        - name: Sync systemd unit files (excluding vdirsyncer)
           ansible.builtin.file:
             path: "{{ dotfiles_systemd_user_dir }}/{{ item.path | regex_replace('^.*/user/?', '') }}"
             src: "{{ item.path }}"
             state: link
             force: true
-          loop: "{{ dotfiles_systemd_dotfiles.files }}"
+          loop: "{{ dotfiles_systemd_non_vdirsyncer }}"
           loop_control:
             label: "{{ item.path | basename }}"
           notify: reload_user_systemd
+
+        - name: Check if vdirsyncer is installed
+          ansible.builtin.shell:
+            cmd: command -v vdirsyncer
+            executable: /bin/bash
+          register: dotfiles_vdirsyncer_in_path
+          failed_when: false
+          changed_when: false
+
+        - name: Manage vdirsyncer symlink and units
+          when: dotfiles_vdirsyncer_in_path.rc == 0
+          block:
+            - name: Create vdirsyncer symlink at /usr/local/bin
+              become: true
+              ansible.builtin.file:
+                path: /usr/local/bin/vdirsyncer
+                src: "{{ dotfiles_vdirsyncer_in_path.stdout | trim }}"
+                state: link
+                force: true
+
+            - name: Install vdirsyncer systemd service
+              ansible.builtin.file:
+                path: "{{ dotfiles_systemd_user_dir }}/vdirsyncer.service"
+                src: "{{ dotfiles_root }}/Configs/systemd/.config/systemd/user/vdirsyncer.service"
+                state: link
+                force: true
+              notify: reload_user_systemd
+
+            - name: Install vdirsyncer systemd timer
+              ansible.builtin.file:
+                path: "{{ dotfiles_systemd_user_dir }}/vdirsyncer.timer"
+                src: "{{ dotfiles_root }}/Configs/systemd/.config/systemd/user/vdirsyncer.timer"
+                state: link
+                force: true
+              notify: reload_user_systemd
+
+        - name: Remove stale vdirsyncer symlink when not installed
+          when: dotfiles_vdirsyncer_in_path.rc != 0
+          ansible.builtin.file:
+            path: /usr/local/bin/vdirsyncer
+            state: absent

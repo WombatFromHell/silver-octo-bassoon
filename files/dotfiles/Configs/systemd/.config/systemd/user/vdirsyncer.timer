@@ -1,0 +1,12 @@
+[Unit]
+Description=Run vdirsyncer every 3 hours
+
+[Timer]
+# Run 5 minutes after boot, then every 3 hours
+OnBootSec=5min
+OnUnitActiveSec=3h
+# Start even if the computer was off during the scheduled time
+Persistent=true
+
+[Install]
+WantedBy=timers.target
