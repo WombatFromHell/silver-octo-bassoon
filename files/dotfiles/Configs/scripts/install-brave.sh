@@ -103,6 +103,39 @@ do_desktop_fix() {
     # Capture and preserve trailing arguments (e.g., %U, --incognito)
     if sed -i -E "s#^Exec=.*distrobox-enter[[:space:]]+-n[[:space:]]+[^[:space:]]+[[:space:]]+--[[:space:]]+/usr/bin/${package_name}(.*)#Exec=bravebox-wrapper.sh\1#" "$main_desktop"; then
       echo "✓ Modified desktop file: $main_desktop"
+
+      # Add/Update StartupWMClass in the first [Desktop Entry] block (ensuring only one exists)
+      # This ensures proper window grouping in taskbars/launchers
+      awk -v wmclass="${package_name}" '
+        BEGIN { in_block = 0; added = 0; blank_buffer = "" }
+        /^\[Desktop Entry\]/ { in_block = 1; print; next }
+        /^\[/ && !/^\[Desktop Entry\]/ {
+          if (in_block && !added) {
+            print "StartupWMClass=" wmclass
+            added = 1
+          }
+          in_block = 0
+          print blank_buffer $0
+          blank_buffer = ""
+          next
+        }
+        /^StartupWMClass=/ && in_block {
+          if (!added) {
+            print "StartupWMClass=" wmclass
+            added = 1
+          }
+          next
+        }
+        /^[[:space:]]*$/ && in_block && !added {
+          blank_buffer = blank_buffer $0 "\n"
+          next
+        }
+        { print blank_buffer $0; blank_buffer = "" }
+        END {
+          if (in_block && !added) print "StartupWMClass=" wmclass
+        }
+      ' "$main_desktop" >"${main_desktop}.tmp" && mv "${main_desktop}.tmp" "$main_desktop"
+      echo "✓ Added StartupWMClass=${package_name} to: $main_desktop"
       # rm -f "${main_desktop}.bak"
     else
       echo "⚠ Warning: sed modification failed for: $main_desktop" >&2
