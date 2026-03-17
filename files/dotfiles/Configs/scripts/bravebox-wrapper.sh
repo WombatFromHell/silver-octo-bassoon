@@ -24,16 +24,7 @@ find_browser() {
 
 notify() {
   local title="$1" body="$2"
-  if command -v notify-send &>/dev/null; then
-    notify-send -a "$NOTIFY_APP" "$title" "$body" 2>/dev/null
-  else
-    gdbus call --session \
-      --dest org.freedesktop.Notifications \
-      --object-path /org/freedesktop/Notifications \
-      --method org.freedesktop.Notifications.Notify \
-      "$NOTIFY_APP" uint32:0 string:"" string:"$title" string:"$body" \
-      array:{} array:{} int32:-1 &>/dev/null || true
-  fi
+  notify-send -a "$NOTIFY_APP" "$title" "$body" 2>/dev/null || true
 }
 
 upgrade() {

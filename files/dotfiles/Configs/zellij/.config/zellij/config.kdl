@@ -226,9 +226,6 @@ keybinds clear-defaults=true {
         bind "l" {
             Resize "Increase right"
         }
-        bind "Ctrl n" {
-            SwitchToMode "normal"
-        }
     }
     move {
         bind "left" {
@@ -431,11 +428,6 @@ keybinds clear-defaults=true {
             SwitchToMode "pane"
         }
     }
-    shared_except "locked" "resize" {
-        bind "Ctrl n" {
-            SwitchToMode "resize"
-        }
-    }
     shared_except "normal" "locked" "entersearch" {
         bind "enter" {
             SwitchToMode "normal"
@@ -623,11 +615,14 @@ keybinds clear-defaults=true {
             SwitchToMode "normal"
         }
         bind "r" {
-            Detach
+            SwitchToMode "resize"
         }
         bind "s" {
             NewPane "down"
             SwitchToMode "normal"
+        }
+        bind "d" {
+            Detach
         }
         bind "Ctrl s" {
             Write 19
