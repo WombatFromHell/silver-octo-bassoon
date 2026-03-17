@@ -4,3 +4,5 @@ Description=Sync calendars and contacts with vdirsyncer
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/vdirsyncer sync
+ExecStartPost=/usr/local/bin/khalreminder.sh
+Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus"
