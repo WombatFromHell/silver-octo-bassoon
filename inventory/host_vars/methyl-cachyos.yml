@@ -61,6 +61,7 @@ base_packages:
   - wl-clipboard
   - yay
   - yazi
+  - zellij
   - zoxide
   - zstd
 
