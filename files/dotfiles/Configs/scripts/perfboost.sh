@@ -176,16 +176,23 @@ screen_keep_awake_enable() {
     return
   }
 
-  local kde_inhibit
-  kde_inhibit="$(check_cmd "kde-inhibit")"
+  local kde_inhibit=""
+  # Only use kde-inhibit if running under KDE
+  if [[ "${XDG_SESSION_DESKTOP:-}" == "KDE" || "${XDG_CURRENT_DESKTOP:-}" == *"KDE"* ]]; then
+    kde_inhibit="$(check_cmd "kde-inhibit")"
+    [[ -z "$kde_inhibit" ]] &&
+      log "kde-inhibit not available, skipping KDE color correction"
+  fi
 
-  [[ -z "$kde_inhibit" ]] &&
-    log "kde-inhibit not available, skipping KDE color correction"
-
-  log "Enabling screen keep-awake and disabling KDE color correction"
+  log "Enabling screen keep-awake"
   # Inhibits idle (screen off) AND sleep (suspend), using 'block' mode to force refusal
-  "$inhibit_path" --what=idle:sleep --mode=block --why "perfboost.sh is running" -- \
-    "$kde_inhibit" --colorCorrect "$@"
+  if [[ -n "$kde_inhibit" ]]; then
+    log "Disabling KDE color correction"
+    "$inhibit_path" --what=idle:sleep --mode=block --why "perfboost.sh is running" -- \
+      "$kde_inhibit" --colorCorrect "$@"
+  else
+    "$inhibit_path" --what=idle:sleep --mode=block --why "perfboost.sh is running" -- "$@"
+  fi
 }
 
 # Cleanup function
