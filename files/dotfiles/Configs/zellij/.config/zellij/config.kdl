@@ -83,6 +83,22 @@ keybinds clear-defaults=true {
             TogglePaneFrames
             SwitchToMode "normal"
         }
+        bind "H" {
+            MovePane "left"
+            SwitchToMode "normal"
+        }
+        bind "J" {
+            MovePane "down"
+            SwitchToMode "normal"
+        }
+        bind "K" {
+            MovePane "up"
+            SwitchToMode "normal"
+        }
+        bind "L" {
+            MovePane "right"
+            SwitchToMode "normal"
+        }
     }
     tab {
         bind "left" {
@@ -381,11 +397,11 @@ keybinds clear-defaults=true {
         bind "Ctrl g" {
             SwitchToMode "locked"
         }
+        bind "Alt Shift h" {
+            MoveTab "left"
+        }
         bind "Alt h" {
             GoToPreviousTab
-        }
-        bind "Alt i" {
-            MoveTab "left"
         }
         bind "Alt j" {
             MoveFocus "down"
@@ -396,11 +412,11 @@ keybinds clear-defaults=true {
         bind "Alt l" {
             GoToNextTab
         }
+        bind "Alt Shift l" {
+            MoveTab "right"
+        }
         bind "Alt n" {
             NewPane
-        }
-        bind "Alt o" {
-            MoveTab "right"
         }
         bind "Alt p" {
             ToggleFloatingPanes
@@ -411,6 +427,11 @@ keybinds clear-defaults=true {
         bind "Ctrl q" {
             // Quit
             Detach
+        }
+    }
+    shared_except "locked" "move" {
+        bind "Ctrl m" {
+            SwitchToMode "move"
         }
     }
     shared_except "locked" "session" {
@@ -603,6 +624,9 @@ keybinds clear-defaults=true {
             MoveFocus "right"
             SwitchToMode "normal"
         }
+        bind "m" {
+            SwitchToMode "move"
+        }
         bind "n" {
             GoToNextTab
             SwitchToMode "normal"
@@ -660,9 +684,9 @@ plugins {
     //     welcome_screen false
     // }
     autolock location="https://github.com/fresh2dev/zellij-autolock/releases/latest/download/zellij-autolock.wasm" {
-        triggers "nvim|vim|v|nv"  // Lock when any open these programs open. They are expected to unlock themselves when closed (e.g., using zellij.vim plugin).
-        watch_triggers "fzf|zoxide|atuin|atac"  // Lock when any of these open and monitor until closed.
-        watch_interval "1.0"  // When monitoring, check every X seconds.
+        triggers "nvim|vim|v|nv"
+        watch_triggers "fzf|zoxide|atuin|atac"
+        watch_interval "1.0"
     }
 }
 // Plugins to load in the background when a new session starts
@@ -730,7 +754,6 @@ mouse_mode true
 //   - false
 //
 pane_frames false
-
 // When attaching to an existing session with other users,
 // should the session be mirrored (true)
 // or should each user have their own cursor (false)
@@ -746,9 +769,8 @@ pane_frames false
 //   - quit
 //
 // on_force_close "quit"
-on_force_close "detach" // be explicit
-
-// Configure the scroll back buffer size
+on_force_close "detach"
+// be explicit// Configure the scroll back buffer size
 // This is the number of lines zellij stores for each pane in the scroll back
 // buffer. Excess number of lines are discarded in a FIFO fashion.
 // (Requires restart)
@@ -779,10 +801,10 @@ on_force_close "detach" // be explicit
 // Default: true
 //
 copy_on_select true
-
 // Path to the default editor to use to edit pane scrollbuffer
 // Default: $EDITOR or $VISUAL
 // scrollback_editor "/usr/bin/vim"
+scrollback_editor "/usr/local/bin/nvim"
 // A fixed name to always give the Zellij session.
 // Consider also setting `attach_to_session true,`
 // otherwise this will error if such a session exists.
@@ -806,7 +828,6 @@ copy_on_select true
 //   - false
 //
 session_serialization false
-
 // Whether pane viewports are serialized along with the session, default is false
 // Options:
 //   - true
