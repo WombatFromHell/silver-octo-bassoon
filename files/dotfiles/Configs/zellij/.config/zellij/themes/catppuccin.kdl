@@ -1,0 +1,140 @@
+themes {
+    catppuccin-mocha-teal {
+        // Legacy color slots (kept for compatibility)
+        bg "#585b70"
+        fg "#cdd6f4"
+        red "#f38ba8"
+        green "#a6e3a1"
+        yellow "#f9e2af"
+        blue "#89b4fa"
+        magenta "#f5c2e7"
+        cyan "#94e2d5"
+        black "#1e1e2e"
+        white "#a6adc8"
+        orange "#fab387"
+
+        // Status bar / tab bar ribbons
+        ribbon_selected {
+            base "#1e1e2e"       // Crust (text on active tab)
+            background "#94e2d5" // Teal (active tab bg)
+            emphasis_0 "#f38ba8"
+            emphasis_1 "#a6e3a1"
+            emphasis_2 "#f9e2af"
+            emphasis_3 "#89b4fa"
+        }
+        ribbon_unselected {
+            base "#cdd6f4"       // Text
+            background "#313244" // Surface0 (inactive tab bg)
+            emphasis_0 "#f38ba8"
+            emphasis_1 "#a6e3a1"
+            emphasis_2 "#f9e2af"
+            emphasis_3 "#89b4fa"
+        }
+
+        // Pane frames
+        frame_selected {
+            base "#94e2d5"       // Teal (focused pane border)
+            background "#1e1e2e"
+            emphasis_0 "#f38ba8"
+            emphasis_1 "#a6e3a1"
+            emphasis_2 "#f9e2af"
+            emphasis_3 "#89b4fa"
+        }
+        frame_unselected {
+            base "#45475a"       // Surface1 (unfocused pane border)
+            background "#1e1e2e"
+            emphasis_0 "#f38ba8"
+            emphasis_1 "#a6e3a1"
+            emphasis_2 "#f9e2af"
+            emphasis_3 "#89b4fa"
+        }
+        frame_highlight {
+            base "#f9e2af"       // Yellow (border when in a mode like PANE/TAB)
+            background "#1e1e2e"
+            emphasis_0 "#f38ba8"
+            emphasis_1 "#a6e3a1"
+            emphasis_2 "#f9e2af"
+            emphasis_3 "#89b4fa"
+        }
+
+        // Status bar text
+        text_selected {
+            base "#1e1e2e"
+            background "#94e2d5"
+            emphasis_0 "#f38ba8"
+            emphasis_1 "#a6e3a1"
+            emphasis_2 "#f9e2af"
+            emphasis_3 "#89b4fa"
+        }
+        text_unselected {
+            base "#cdd6f4"
+            background "#1e1e2e"
+            emphasis_0 "#94e2d5" // Teal for key hints
+            emphasis_1 "#a6e3a1"
+            emphasis_2 "#f9e2af"
+            emphasis_3 "#89b4fa"
+        }
+
+        // Plugin tables (session manager etc.)
+        table_title {
+            base "#94e2d5"
+            background "#1e1e2e"
+            emphasis_0 "#f38ba8"
+            emphasis_1 "#a6e3a1"
+            emphasis_2 "#f9e2af"
+            emphasis_3 "#89b4fa"
+        }
+        table_cell_selected {
+            base "#1e1e2e"
+            background "#94e2d5"
+            emphasis_0 "#f38ba8"
+            emphasis_1 "#a6e3a1"
+            emphasis_2 "#f9e2af"
+            emphasis_3 "#89b4fa"
+        }
+        table_cell_unselected {
+            base "#cdd6f4"
+            background "#181825" // Mantle
+            emphasis_0 "#f38ba8"
+            emphasis_1 "#a6e3a1"
+            emphasis_2 "#f9e2af"
+            emphasis_3 "#89b4fa"
+        }
+
+        // List items (session manager etc.)
+        list_selected {
+            base "#1e1e2e"
+            background "#94e2d5"
+            emphasis_0 "#f38ba8"
+            emphasis_1 "#a6e3a1"
+            emphasis_2 "#f9e2af"
+            emphasis_3 "#89b4fa"
+        }
+        list_unselected {
+            base "#cdd6f4"
+            background "#1e1e2e"
+            emphasis_0 "#94e2d5"
+            emphasis_1 "#a6e3a1"
+            emphasis_2 "#f9e2af"
+            emphasis_3 "#89b4fa"
+        }
+
+        // Command pane exit codes
+        exit_code_success {
+            base "#a6e3a1"
+            background "#1e1e2e"
+            emphasis_0 "#1e1e2e"
+            emphasis_1 "#1e1e2e"
+            emphasis_2 "#1e1e2e"
+            emphasis_3 "#1e1e2e"
+        }
+        exit_code_error {
+            base "#f38ba8"
+            background "#1e1e2e"
+            emphasis_0 "#1e1e2e"
+            emphasis_1 "#1e1e2e"
+            emphasis_2 "#1e1e2e"
+            emphasis_3 "#1e1e2e"
+        }
+    }
+}

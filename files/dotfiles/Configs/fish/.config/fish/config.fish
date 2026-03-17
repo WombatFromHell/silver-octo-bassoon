@@ -34,9 +34,15 @@ function ensure_fisher
 end
 
 # include our home-grown tmux helper
-set TMUX_HELPER $HOME/.config/fish/tmux.fish
-if test -f $TMUX_HELPER
-    source $TMUX_HELPER
+# set TMUX_HELPER $HOME/.config/fish/tmux.fish
+# if test -f $TMUX_HELPER
+#     source $TMUX_HELPER
+# end
+
+# include our home-grown zellij helper
+set ZELLIJ_HELPER $HOME/.config/fish/zellij.fish
+if test -f $ZELLIJ_HELPER
+    source $ZELLIJ_HELPER
 end
 
 # include our archiver helper
@@ -51,7 +57,30 @@ if test -f $WORKTREES_HELPER
 end
 
 if status is-interactive
-    set -Ux fish_greeting # disable initial fish greeting
+    set -g fish_greeting # disable initial fish greeting
+    set -g nvm_default_version v25.7.0
+    set -x GPG_TTY (tty)
+    set -x XDG_DATA_HOME $HOME/.local/share
+    set -x XDG_CONFIG_HOME $HOME/.config
+
+    set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
+    set -x CARGO_HOME $HOME/.cargo
+    set -x MASON_BIN $HOME/.local/share/nvim/mason/bin
+
+    set -x LLAMA_API_KEY llama-cpp
+
+    set --erase fish_user_paths
+    fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.rd/bin ~/.spicetify /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MASON_BIN
+
+    set pure_shorten_prompt_current_directory_length 1
+    set pure_truncate_prompt_current_directory_keeps 0
+    set fish_prompt_pwd_dir_length 3
+    # exclude some common cli tools from done notifications
+    set -U --erase __done_exclude
+    set -g __done_exclude '^git (?!push|pull|fetch)'
+    set -g --append __done_exclude '^(nvim|nano|bat|cat|less|lazygit|lg)'
+    set -g --append __done_exclude '^sudo (nvim|nano|bat|cat|less)'
+    set -g --append __done_exclude '^sedit'
 
     # respect system file descriptor limits
     ulimit -n (ulimit -Hn)
@@ -143,7 +172,7 @@ end
 
 function setup_podman_sock
     if test -r "$XDG_RUNTIME_DIR"/podman/podman.sock
-        set -Ux DOCKER_HOST unix:///run/user/$(id -u)/podman/podman.sock
+        set -g DOCKER_HOST unix:///run/user/$(id -u)/podman/podman.sock
     end
 end
 
@@ -185,30 +214,6 @@ end
 
 setup_podman_sock
 
-set -Ux nvm_default_version v25.7.0
-set -x GPG_TTY (tty)
-set -x XDG_DATA_HOME $HOME/.local/share
-set -x XDG_CONFIG_HOME $HOME/.config
-
-set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
-set -x CARGO_HOME $HOME/.cargo
-set -x MASON_BIN $HOME/.local/share/nvim/mason/bin
-
-set -x LLAMA_API_KEY llama-cpp
-
-set --erase fish_user_paths
-fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.rd/bin ~/.spicetify /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MASON_BIN
-
-set pure_shorten_prompt_current_directory_length 1
-set pure_truncate_prompt_current_directory_keeps 0
-set fish_prompt_pwd_dir_length 3
-# exclude some common cli tools from done notifications
-set -U --erase __done_exclude
-set -U __done_exclude '^git (?!push|pull|fetch)'
-set -U --append __done_exclude '^(nvim|nano|bat|cat|less|lazygit|lg)'
-set -U --append __done_exclude '^sudo (nvim|nano|bat|cat|less)'
-set -U --append __done_exclude '^sedit'
-
 if command -q eza
     set -g EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --color=auto -A
     alias l="eza $EZA_STANDARD_OPTIONS"
@@ -219,6 +224,7 @@ if command -q eza
     alias llt="eza $EZA_STANDARD_OPTIONS --long --tree"
     alias treed="eza $EZA_STANDARD_OPTIONS -DTA"
     alias tree="eza $EZA_STANDARD_OPTIONS -TA"
+    alias treei="eza $EZA_STANDARD_OPTIONS -TA --git-ignore"
 end
 #
 alias vi='$EDITOR'
@@ -231,15 +237,6 @@ alias edit='$EDITOR'
 alias sedit='sudo -E $EDITOR'
 alias mkdir='mkdir -pv'
 alias sudoe='sudo -E env PATH=(string join ':' $PATH)'
-# zellij shortcuts
-alias zls='zellij ls'
-alias zac='zellij attach -c'
-alias zkill='zellij kill-session'
-alias zka='zellij ka'
-alias zda='zellij da'
-alias zr='zellij run'
-alias za='zellij attach'
-alias zd='zellij detach'
 # rsync shortcuts
 alias _rsync='rsync -avL --partial --update'
 alias _rsyncd='_rsync --dry-run'
@@ -298,7 +295,7 @@ alias update_tmux='~/.config/tmux/plugins/tpm/bin/update_plugins all'
 alias kclear="printf '\033[2J\033[3J\033[1;1H'"
 
 set NIX_DAEMON_FISH_SRC /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
-if test -z $NIX_PROFILES; and test -r "$NIX_DAEMON_FISH_SRC"
+if test -z "$NIX_PROFILES"; and test -r "$NIX_DAEMON_FISH_SRC"
     source "$NIX_DAEMON_FISH_SRC"
 end
 
