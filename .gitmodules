@@ -22,3 +22,9 @@
 [submodule "files/dotfiles/Configs/tmux/.config/tmux/plugins/tmux-floax"]
 	path = files/dotfiles/Configs/tmux/.config/tmux/plugins/tmux-floax
 	url = https://github.com/omerxx/tmux-floax.git
+[submodule "files/dotfiles/Configs/tmux/.config/tmux/plugins/tmux-resurrect"]
+  path = files/dotfiles/Configs/tmux/.config/tmux/plugins/tmux-resurrect
+  url = https://github.com/tmux-plugins/tmux-resurrect.git
+[submodule "files/dotfiles/Configs/tmux/.config/tmux/plugins/tmux-continuum"]
+  path = files/dotfiles/Configs/tmux/.config/tmux/plugins/tmux-continuum
+  url = https://github.com/tmux-plugins/tmux-continuum.git

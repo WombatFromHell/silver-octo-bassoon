@@ -4,6 +4,11 @@
 command -q zellij; or return 0
 set -q __zellij_loaded; and return 0
 set -g __zellij_loaded
+# Abort if ZELLIJ_ENABLED is false
+set -q ZELLIJ_ENABLED; or set -g ZELLIJ_ENABLED true
+if not string match -qir '^(1|true|yes|on)$' "$ZELLIJ_ENABLED"
+    return 0
+end
 
 # --- Configuration ---
 set -q ZELLIJ_DEFAULT_SESSION; or set -g ZELLIJ_DEFAULT_SESSION main

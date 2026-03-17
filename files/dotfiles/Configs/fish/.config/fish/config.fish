@@ -33,31 +33,36 @@ function ensure_fisher
     update_fisher &>/dev/null &
 end
 
-# include our home-grown tmux helper
-# set TMUX_HELPER $HOME/.config/fish/tmux.fish
-# if test -f $TMUX_HELPER
-#     source $TMUX_HELPER
-# end
-
-# include our home-grown zellij helper
-set ZELLIJ_HELPER $HOME/.config/fish/zellij.fish
-if test -f $ZELLIJ_HELPER
-    source $ZELLIJ_HELPER
-end
-
-# include our archiver helper
-set ARCHIVE_HELPER $HOME/.config/fish/archiver.fish
-if test -f $ARCHIVE_HELPER
-    source $ARCHIVE_HELPER
-end
-
-set WORKTREES_HELPER $HOME/.config/fish/worktrees.fish
-if test -f $WORKTREES_HELPER
-    source $WORKTREES_HELPER
-end
-
 if status is-interactive
     set -g fish_greeting # disable initial fish greeting
+
+    # --- Configuration ---
+    set -g ZELLIJ_ENABLED false
+    set -g TMUX_ENABLED true
+
+    # include our home-grown tmux helper
+    set TMUX_HELPER $HOME/.config/fish/tmux.fish
+    if test -f $TMUX_HELPER
+        source $TMUX_HELPER
+    end
+
+    # include our home-grown zellij helper
+    set ZELLIJ_HELPER $HOME/.config/fish/zellij.fish
+    if test -f $ZELLIJ_HELPER
+        source $ZELLIJ_HELPER
+    end
+
+    # include our archiver helper
+    set ARCHIVE_HELPER $HOME/.config/fish/archiver.fish
+    if test -f $ARCHIVE_HELPER
+        source $ARCHIVE_HELPER
+    end
+
+    set WORKTREES_HELPER $HOME/.config/fish/worktrees.fish
+    if test -f $WORKTREES_HELPER
+        source $WORKTREES_HELPER
+    end
+
     set -g nvm_default_version v25.7.0
     set -x GPG_TTY (tty)
     set -x XDG_DATA_HOME $HOME/.local/share

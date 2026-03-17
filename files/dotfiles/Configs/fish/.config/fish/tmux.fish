@@ -19,17 +19,23 @@ if not command -q tmux
     return 0
 end
 
+# Check if a string represents a truthy value (1, true, yes, on).
+function __tmux_is_truthy -d "Check if argument is truthy"
+    string match -qir '^(1|true|yes|on)$' $argv[1]
+end
+
+# Abort if TMUX_ENABLED is false
+set -q TMUX_ENABLED; or set -g TMUX_ENABLED true
+if not __tmux_is_truthy "$TMUX_ENABLED"
+    return 0
+end
+
 # --- Configuration ---
 set -q TMUX_DEFAULT_SESSION; or set -g TMUX_DEFAULT_SESSION main
 set -q TMUX_ON_SSH; or set -g TMUX_ON_SSH true
 set -q EXIT_SHELL_ON_TMUX_EXIT; or set -g EXIT_SHELL_ON_TMUX_EXIT false
 
 # --- Helper Functions ---
-
-# Check if a string represents a truthy value (1, true, yes, on).
-function __tmux_is_truthy -d "Check if argument is truthy"
-    string match -qir '^(1|true|yes|on)$' $argv[1]
-end
 
 # Check if a tmux session exists.
 function __tmux_session_exists -d "Check if session exists"
