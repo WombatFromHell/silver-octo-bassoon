@@ -54,6 +54,7 @@ base_packages:
   - sshfs
   - starship
   - steam
+  - trash-cli
   - tmux
   - tuned
   - unzip

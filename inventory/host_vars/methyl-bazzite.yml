@@ -94,6 +94,7 @@ brew_packages:
   - ripgrep
   - rustup
   - starship
+  - trash-cli
   - yazi
   - zellij
   - zoxide
