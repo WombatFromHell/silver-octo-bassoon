@@ -4,7 +4,6 @@ set -euo pipefail
 readonly CONTAINER_NAME="bravebox"
 readonly LAUNCHER_SCRIPT="${HOME}/.local/bin/scripts/chrome_with_flags.py"
 readonly NOTIFY_APP="bravebox-wrapper"
-readonly BROWSER_PROCESS="brave"
 readonly BROWSER_CANDIDATES=(brave brave-browser-beta brave-browser)
 
 in_container() {
@@ -23,20 +22,8 @@ find_browser() {
 }
 
 notify() {
-  local title="$1" body="$2"
-  notify-send -a "$NOTIFY_APP" "$title" "$body" 2>/dev/null || true
-}
-
-upgrade() {
-  local pkg="$1" out rc=0
-  out=$(sudo dnf upgrade -y "$pkg" 2>&1) || rc=$?
-  echo "$out"
-  if grep -qE "^(Upgrading|Installing|Removing): " <<<"$out"; then
-    return 0 # upgraded
-  elif [[ $rc -ne 0 ]]; then
-    return 1 # error
-  fi
-  return 2 # nothing to do
+  local title="$1" body="$2" urgency="${3:-normal}" timeout="${4:-3000}"
+  notify-send -a "$NOTIFY_APP" -u "$urgency" -t "$timeout" "$title" "$body" 2>/dev/null || true
 }
 
 main() {
@@ -48,23 +35,24 @@ main() {
     exit 1
   }
 
-  if pgrep -x "$BROWSER_PROCESS" &>/dev/null; then
-    echo "Browser still running, skipping upgrade."
-  else
-    local rc=0
-    upgrade "$browser" || rc=$?
-    case $rc in
-    0) notify "Upgrade Complete" "$browser upgraded successfully." ;;
-    2) ;; # nothing to do
-    *)
-      notify "Upgrade Failed" "Failed to upgrade $browser."
-      echo "Error: upgrade of '$browser' failed" >&2
-      exit 1
-      ;;
-    esac
-  fi
+  # Launch browser immediately
+  "$LAUNCHER_SCRIPT" "$browser" "$@" &
+  local browser_pid=$!
 
-  exec "$LAUNCHER_SCRIPT" "$browser" "$@"
+  # Upgrade in background while browser runs
+  {
+    local out rc=0
+    out=$(sudo dnf upgrade -y "$browser" 2>&1) || rc=$?
+    if grep -qE "^(Upgrading|Installing|Removing): " <<<"$out"; then
+      notify "Update Available" "$browser was upgraded. Restart the browser to apply updates."
+    elif [[ $rc -ne 0 ]]; then
+      notify "Upgrade Failed" "Failed to upgrade $browser." "critical"
+    fi
+    # rc=2 (nothing to do) -> no notification
+  } &
+
+  # Wait for browser to exit
+  wait "$browser_pid"
 }
 
 main "$@"
