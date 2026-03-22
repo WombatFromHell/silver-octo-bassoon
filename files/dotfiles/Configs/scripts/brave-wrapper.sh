@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly CONTAINER_NAME="bravebox"
 readonly LAUNCHER_SCRIPT="${HOME}/.local/bin/scripts/chrome_with_flags.py"
-readonly NOTIFY_APP="bravebox-wrapper"
+readonly NOTIFY_APP="brave-wrapper"
 readonly BROWSER_CANDIDATES=(brave brave-browser-beta brave-browser)
 
 in_container() {
@@ -21,12 +21,27 @@ find_browser() {
   return 1
 }
 
+brave_flatpak_installed() {
+  flatpak list --app | grep -q 'com.brave.Browser'
+}
+
+distrobox_exists() {
+  command -v distrobox &>/dev/null && distrobox list 2>/dev/null | grep -q "$CONTAINER_NAME"
+}
+
 notify() {
   local title="$1" body="$2" urgency="${3:-normal}" timeout="${4:-3000}"
   notify-send -a "$NOTIFY_APP" -u "$urgency" -t "$timeout" "$title" "$body" 2>/dev/null || true
 }
 
 main() {
+  # Prefer Flatpak Brave if installed — no need for distrobox
+  if brave_flatpak_installed; then
+    "$LAUNCHER_SCRIPT" flatpak run com.brave.Browser "$@"
+    exit $?
+  fi
+
+  # Fall back to distrobox container
   in_container || exec distrobox-enter -n "$CONTAINER_NAME" -- "$0" "$@"
 
   local browser
@@ -34,8 +49,6 @@ main() {
     echo "Error: no brave browser found in PATH" >&2
     exit 1
   }
-
-  # Launch browser immediately
   "$LAUNCHER_SCRIPT" "$browser" "$@" &
   local browser_pid=$!
 

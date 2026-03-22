@@ -55,11 +55,14 @@ def main() -> None:
         for i, arg in enumerate(args):
             if re.match(r"^[a-zA-Z0-9]+(\.[a-zA-Z0-9]+){2,}$", arg):
                 cmd = [flatpak] + args[: i + 1] + flags + args[i + 1 :]
-                os.execvp(cmd[0], cmd)
+                print(f"DEBUG: Executing: {' '.join(cmd)}", file=sys.stderr)
+                print(f"DEBUG: DISPLAY={os.environ.get('DISPLAY')} WAYLAND_DISPLAY={os.environ.get('WAYLAND_DISPLAY')}", file=sys.stderr)
+                os.execvpe(cmd[0], cmd, os.environ)
                 break
         else:  # No package ID found
             cmd = [flatpak] + args + flags
-            os.execvp(cmd[0], cmd)
+            print(f"DEBUG: Executing: {' '.join(cmd)}", file=sys.stderr)
+            os.execvpe(cmd[0], cmd, os.environ)
 
     # Handle distrobox commands
     elif "distrobox" in command and "--" in args:
@@ -75,7 +78,7 @@ def main() -> None:
         if command_part:
             new_command_part = [command_part[0]] + flags + command_part[1:]
             cmd = [distrobox_exec] + distrobox_args + ["--"] + new_command_part
-            os.execvp(cmd[0], cmd)
+            os.execvpe(cmd[0], cmd, os.environ)
         else:
             print("Error: No command specified after '--'")
             sys.exit(1)
@@ -83,7 +86,7 @@ def main() -> None:
     # Standard command execution
     else:
         cmd = [command] + flags + args
-        os.execvp(cmd[0], cmd)
+        os.execvpe(cmd[0], cmd, os.environ)
 
 
 if __name__ == "__main__":

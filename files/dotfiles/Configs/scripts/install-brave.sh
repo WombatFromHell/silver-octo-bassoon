@@ -1,8 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Default values
+WRAPPER_SCRIPT="${WRAPPER_SCRIPT:-brave-wrapper.sh}"
+
+show_help() {
+  echo "Usage: install-brave.sh [OPTIONS] [stable|beta]"
+  echo ""
+  echo "Options:"
+  echo "  --flatpak    Install Brave via Flatpak instead of DNF (stable only)"
+  echo "  --help       Show this help message"
+  echo ""
+  echo "Examples:"
+  echo "  install-brave.sh stable              # Install stable via DNF"
+  echo "  install-brave.sh beta                # Install beta via DNF"
+  echo "  install-brave.sh --flatpak stable    # Install stable via Flatpak"
+}
+
 if [ -z "$1" ] || [ "$1" == "--help" ]; then
-  echo "Usage: install-brave.sh [stable|beta]"
+  show_help
   exit 0
 fi
 
@@ -24,20 +40,37 @@ check_container_env() {
 }
 
 do_install() {
-  if [ "$1" == "stable" ]; then
-    sudo dnf install -y dnf-plugins-core &&
-      sudo dnf config-manager addrepo --overwrite --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo &&
-      sudo dnf install -y brave-browser &&
-      distrobox-export -a brave
-    echo 0
-  elif [ "$1" == "beta" ]; then
-    sudo dnf install -y dnf-plugins-core &&
-      sudo dnf config-manager addrepo --overwrite --from-repofile=https://brave-browser-rpm-beta.s3.brave.com/brave-browser-beta.repo &&
-      sudo dnf install -y brave-browser-beta &&
-      distrobox-export -a brave-browser-beta
+  local install_type="$1"
+  local use_flatpak="${2:-false}"
+
+  if [ "$use_flatpak" == "true" ]; then
+    # Flatpak installation (only stable is available via Flatpak)
+    if [ "$install_type" != "stable" ]; then
+      echo "Error: Flatpak installation only supports 'stable' channel" >&2
+      return 1
+    fi
+
+    local flatpak_id="com.brave.Browser"
+    echo "Installing Brave via Flatpak: $flatpak_id"
+    flatpak install --user -y "$flatpak_id"
     echo 0
   else
-    echo 1
+    # DNF installation
+    if [ "$install_type" == "stable" ]; then
+      sudo dnf install -y dnf-plugins-core &&
+        sudo dnf config-manager addrepo --overwrite --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo &&
+        sudo dnf install -y brave-browser &&
+        distrobox-export -a brave
+      echo 0
+    elif [ "$install_type" == "beta" ]; then
+      sudo dnf install -y dnf-plugins-core &&
+        sudo dnf config-manager addrepo --overwrite --from-repofile=https://brave-browser-rpm-beta.s3.brave.com/brave-browser-beta.repo &&
+        sudo dnf install -y brave-browser-beta &&
+        distrobox-export -a brave-browser-beta
+      echo 0
+    else
+      echo 1
+    fi
   fi
 }
 
@@ -72,7 +105,8 @@ EOF
 
 do_desktop_fix() {
   local install_type="$1"
-  local package_name desktop_suffix
+  local use_flatpak="${2:-false}"
+  local package_name desktop_suffix exec_prefix
 
   if [ "$install_type" == "stable" ]; then
     package_name="brave-browser"
@@ -86,65 +120,123 @@ do_desktop_fix() {
   fi
 
   local apps_dir="${HOME}/.local/share/applications"
-  local container_prefix="${CONTAINER_ID}"
+  local container_prefix="${CONTAINER_ID:-}"
 
-  # 1. Remove superfluous com.brave.Browser{.beta}.desktop file
-  local superfluous_file="${apps_dir}/${container_prefix}-com.brave.Browser${desktop_suffix}.desktop"
-  if [ -f "$superfluous_file" ]; then
-    rm -f "$superfluous_file"
-    echo "✓ Removed superfluous desktop file: $superfluous_file"
+  # Determine the Exec command based on installation method
+  exec_prefix="${WRAPPER_SCRIPT}"
+
+  # 1. Remove superfluous com.brave.Browser{.beta}.desktop file (from container exports)
+  if [ -n "$container_prefix" ]; then
+    local superfluous_file="${apps_dir}/${container_prefix}-com.brave.Browser${desktop_suffix}.desktop"
+    if [ -f "$superfluous_file" ]; then
+      rm -f "$superfluous_file"
+      echo "✓ Removed superfluous desktop file: $superfluous_file"
+    fi
   fi
 
-  # 2. Modify the main desktop file to use bravebox-wrapper.sh
-  local main_desktop="${apps_dir}/${container_prefix}-${package_name}.desktop"
-  if [ -f "$main_desktop" ]; then
-    cp "$main_desktop" "${main_desktop}.bak"
+  # 2. Find and modify the appropriate desktop file
+  local main_desktop
+  if [ "$use_flatpak" == "true" ]; then
+    # For Flatpak: copy from Flatpak exports to user applications directory, then modify
+    local flatpak_desktop="${HOME}/.local/share/flatpak/exports/share/applications/com.brave.Browser.desktop"
+    local user_desktop="${apps_dir}/com.brave.Browser.desktop"
 
-    # Capture and preserve trailing arguments (e.g., %U, --incognito)
-    if sed -i -E "s#^Exec=.*distrobox-enter[[:space:]]+-n[[:space:]]+[^[:space:]]+[[:space:]]+--[[:space:]]+/usr/bin/${package_name}(.*)#Exec=bravebox-wrapper.sh\1#" "$main_desktop"; then
-      echo "✓ Modified desktop file: $main_desktop"
-
-      # Add/Update StartupWMClass in the first [Desktop Entry] block (ensuring only one exists)
-      # This ensures proper window grouping in taskbars/launchers
-      awk -v wmclass="${package_name}" '
-        BEGIN { in_block = 0; added = 0; blank_buffer = "" }
-        /^\[Desktop Entry\]/ { in_block = 1; print; next }
-        /^\[/ && !/^\[Desktop Entry\]/ {
-          if (in_block && !added) {
-            print "StartupWMClass=" wmclass
-            added = 1
-          }
-          in_block = 0
-          print blank_buffer $0
-          blank_buffer = ""
-          next
-        }
-        /^StartupWMClass=/ && in_block {
-          if (!added) {
-            print "StartupWMClass=" wmclass
-            added = 1
-          }
-          next
-        }
-        /^[[:space:]]*$/ && in_block && !added {
-          blank_buffer = blank_buffer $0 "\n"
-          next
-        }
-        { print blank_buffer $0; blank_buffer = "" }
-        END {
-          if (in_block && !added) print "StartupWMClass=" wmclass
-        }
-      ' "$main_desktop" >"${main_desktop}.tmp" && mv "${main_desktop}.tmp" "$main_desktop"
-      echo "✓ Added StartupWMClass=${package_name} to: $main_desktop"
-      # rm -f "${main_desktop}.bak"
+    if [ -f "$flatpak_desktop" ]; then
+      # Check if user desktop file already exists and is already properly configured
+      if [ -f "$user_desktop" ]; then
+        # Check if Exec line already contains the wrapper and StartupWMClass is set correctly
+        if grep -q "^Exec=${exec_prefix}" "$user_desktop" && grep -q "^StartupWMClass=com.brave.Browser" "$user_desktop"; then
+          echo "✓ Desktop file already configured: $user_desktop"
+          main_desktop="$user_desktop"
+        else
+          # Backup and replace existing unmodified desktop file
+          mv "$user_desktop" "${user_desktop}.old"
+          echo "✓ Backed up existing desktop file: ${user_desktop}.old"
+          install -Z -m 644 "$flatpak_desktop" "$user_desktop"
+          main_desktop="$user_desktop"
+          echo "✓ Copied Flatpak desktop file to: $user_desktop"
+        fi
+      else
+        # No existing desktop file, copy from Flatpak exports
+        install -Z -m 644 "$flatpak_desktop" "$user_desktop"
+        main_desktop="$user_desktop"
+        echo "✓ Copied Flatpak desktop file to: $user_desktop"
+      fi
     else
-      echo "⚠ Warning: sed modification failed for: $main_desktop" >&2
-      mv "${main_desktop}.bak" "$main_desktop"
+      echo "⚠ Warning: Flatpak desktop file not found: $flatpak_desktop" >&2
       return 1
     fi
+  elif [ -n "$container_prefix" ]; then
+    # For DNF/distrobox in container: use container-prefixed desktop file
+    main_desktop="${apps_dir}/${container_prefix}-${package_name}.desktop"
   else
-    echo "⚠ Warning: Desktop file not found: $main_desktop" >&2
-    echo "  Expected: ${container_prefix}-${package_name}.desktop" >&2
+    # Fallback: look for any brave desktop file
+    main_desktop=$(find "${apps_dir}" -maxdepth 1 -name "*brave*.desktop" -type f 2>/dev/null | head -n1)
+  fi
+
+  if [ -n "$main_desktop" ] && [ -f "$main_desktop" ]; then
+    # Skip modification if already configured (Flatpak case with early detection above)
+    if [ "$use_flatpak" == "true" ] && grep -q "^Exec=${exec_prefix}" "$main_desktop" && grep -q "^StartupWMClass=com.brave.Browser" "$main_desktop"; then
+      echo "✓ Skipping modification (already configured)"
+    else
+      cp "$main_desktop" "${main_desktop}.bak"
+
+      # Capture and preserve trailing arguments (e.g., %U, --incognito)
+      if sed -i -E "s#^Exec=.*(.*)#Exec=${exec_prefix}\1#" "$main_desktop"; then
+        echo "✓ Modified desktop file: $main_desktop"
+
+        # Add/Update StartupWMClass in the first [Desktop Entry] block
+        local wmclass_value
+        if [ "$use_flatpak" == "true" ]; then
+          wmclass_value="com.brave.Browser"
+        else
+          wmclass_value="${package_name}"
+        fi
+
+        awk -v wmclass="${wmclass_value}" '
+          BEGIN { in_block = 0; added = 0; blank_buffer = "" }
+          /^\[Desktop Entry\]/ { in_block = 1; print; next }
+          /^\[/ && !/^\[Desktop Entry\]/ {
+            if (in_block && !added) {
+              print "StartupWMClass=" wmclass
+              added = 1
+            }
+            in_block = 0
+            print blank_buffer $0
+            blank_buffer = ""
+            next
+          }
+          /^StartupWMClass=/ && in_block {
+            if (!added) {
+              print "StartupWMClass=" wmclass
+              added = 1
+            }
+            next
+          }
+          /^[[:space:]]*$/ && in_block && !added {
+            blank_buffer = blank_buffer $0 "\n"
+            next
+          }
+          { print blank_buffer $0; blank_buffer = "" }
+          END {
+            if (in_block && !added) print "StartupWMClass=" wmclass
+          }
+        ' "$main_desktop" >"${main_desktop}.tmp" && mv "${main_desktop}.tmp" "$main_desktop"
+        echo "✓ Added StartupWMClass=${wmclass_value} to: $main_desktop"
+        # rm -f "${main_desktop}.bak"
+      else
+        echo "⚠ Warning: sed modification failed for: $main_desktop" >&2
+        mv "${main_desktop}.bak" "$main_desktop"
+        return 1
+      fi
+    fi
+  else
+    echo "⚠ Warning: Desktop file not found" >&2
+    if [ "$use_flatpak" == "true" ]; then
+      echo "  Expected: ${HOME}/.local/share/applications/com.brave.Browser.desktop" >&2
+    elif [ -n "$container_prefix" ]; then
+      echo "  Expected: ${container_prefix}-${package_name}.desktop" >&2
+    fi
     return 1
   fi
 
@@ -157,12 +249,56 @@ do_desktop_fix() {
 }
 
 # Main execution flow
-if do_install "$1"; then
+# Parse arguments
+USE_FLATPAK="false"
+INSTALL_TYPE=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+  --flatpak)
+    USE_FLATPAK="true"
+    shift
+    ;;
+  stable | beta)
+    INSTALL_TYPE="$1"
+    shift
+    ;;
+  --help)
+    show_help
+    exit 0
+    ;;
+  *)
+    echo "Error: Unknown argument: $1" >&2
+    show_help
+    exit 1
+    ;;
+  esac
+done
+
+if [ -z "$INSTALL_TYPE" ]; then
+  echo "Error: Install type (stable|beta) is required" >&2
+  show_help
+  exit 1
+fi
+
+if [ "$USE_FLATPAK" == "true" ] && [ "$INSTALL_TYPE" != "stable" ]; then
+  echo "Error: Flatpak installation only supports 'stable' channel" >&2
+  show_help
+  exit 1
+fi
+
+if do_install "$INSTALL_TYPE" "$USE_FLATPAK"; then
   do_xdg_fix
 
-  # Run desktop fixes only if we can reliably identify the container
-  if check_container_env; then
-    if ! do_desktop_fix "$1"; then
+  # Run desktop fixes for Flatpak installs (host) or container-based installs
+  if [ "$USE_FLATPAK" == "true" ]; then
+    # Flatpak: run desktop fixes on host
+    if ! do_desktop_fix "$INSTALL_TYPE" "$USE_FLATPAK"; then
+      echo "Warning: Desktop file modification had issues (app may still work)" >&2
+    fi
+  elif check_container_env; then
+    # DNF/distrobox: run desktop fixes only if we can reliably identify the container
+    if ! do_desktop_fix "$INSTALL_TYPE" "$USE_FLATPAK"; then
       echo "Warning: Desktop file modification had issues (app may still work)" >&2
     fi
   else
