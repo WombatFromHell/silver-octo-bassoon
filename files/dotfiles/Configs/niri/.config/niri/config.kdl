@@ -170,7 +170,8 @@ layout {
         // - CSS-like notation: "rgb(255, 127, 0)", rgba(), hsl() and a few others.
 
         // Color of the ring on the active monitor.
-        active-color "#7fc8ff"
+        // active-color "#7fc8ff"
+        active-color "#87CEC3" // Catppuccin Mocha Teal Accent
 
         // Color of the ring on inactive monitors.
         //
