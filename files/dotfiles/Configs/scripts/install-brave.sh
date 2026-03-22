@@ -53,7 +53,7 @@ do_install() {
     local flatpak_id="com.brave.Browser"
     echo "Installing Brave via Flatpak: $flatpak_id"
     flatpak install --user -y "$flatpak_id"
-    echo 0
+    return 0
   else
     # DNF installation
     if [ "$install_type" == "stable" ]; then
@@ -61,15 +61,15 @@ do_install() {
         sudo dnf config-manager addrepo --overwrite --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo &&
         sudo dnf install -y brave-browser &&
         distrobox-export -a brave
-      echo 0
+      return 0
     elif [ "$install_type" == "beta" ]; then
       sudo dnf install -y dnf-plugins-core &&
         sudo dnf config-manager addrepo --overwrite --from-repofile=https://brave-browser-rpm-beta.s3.brave.com/brave-browser-beta.repo &&
         sudo dnf install -y brave-browser-beta &&
         distrobox-export -a brave-browser-beta
-      echo 0
+      return 0
     else
-      echo 1
+      return 1
     fi
   fi
 }
@@ -181,8 +181,43 @@ do_desktop_fix() {
     else
       cp "$main_desktop" "${main_desktop}.bak"
 
-      # Capture and preserve trailing arguments (e.g., %U, --incognito)
-      if sed -i -E "s#^Exec=.*(.*)#Exec=${exec_prefix}\1#" "$main_desktop"; then
+      # Capture and preserve trailing arguments (e.g., %U, --incognito, --tor)
+      # For Flatpak: preserve args after 'com.brave.Browser' (e.g., --incognito, --tor)
+      # Pattern: Exec=...com.brave.Browser[ ARGS] -> Exec=wrapper[ ARGS]
+      local sed_result=0
+      if [ "$use_flatpak" == "true" ]; then
+        # Use awk to handle all Exec= lines, preserving arguments after com.brave.Browser
+        # Strip Flatpak's @@ placeholders (@@u, @@, etc.) which are not standard
+        awk -v wrapper="${exec_prefix}" '
+          /^Exec=/ {
+            # Find com.brave.Browser and capture everything after it
+            if (match($0, /^Exec=.*com\.brave\.Browser(.*$)/, arr)) {
+              # Strip @@ placeholders from the captured arguments
+              args = arr[1]
+              gsub(/@@[^ ]*/, "", args)
+              # Clean up extra spaces
+              gsub(/  +/, " ", args)
+              gsub(/^ +| +$/, "", args)
+              # Only add %U if args is empty (main Exec line had only @@ placeholders)
+              if (args == "") {
+                args = "%U"
+              }
+              print "Exec=" wrapper " " args
+            } else {
+              print
+            }
+            next
+          }
+          { print }
+        ' "$main_desktop" >"${main_desktop}.tmp" && mv "${main_desktop}.tmp" "$main_desktop"
+        sed_result=$?
+      else
+        # Non-Flatpak: simple replacement
+        sed -i "s#^Exec=.*#Exec=${exec_prefix}#" "$main_desktop"
+        sed_result=$?
+      fi
+
+      if [ $sed_result -eq 0 ]; then
         echo "✓ Modified desktop file: $main_desktop"
 
         # Add/Update StartupWMClass in the first [Desktop Entry] block
@@ -225,7 +260,7 @@ do_desktop_fix() {
         echo "✓ Added StartupWMClass=${wmclass_value} to: $main_desktop"
         # rm -f "${main_desktop}.bak"
       else
-        echo "⚠ Warning: sed modification failed for: $main_desktop" >&2
+        echo "⚠ Warning: Exec line modification failed for: $main_desktop" >&2
         mv "${main_desktop}.bak" "$main_desktop"
         return 1
       fi
@@ -288,7 +323,10 @@ if [ "$USE_FLATPAK" == "true" ] && [ "$INSTALL_TYPE" != "stable" ]; then
 fi
 
 if do_install "$INSTALL_TYPE" "$USE_FLATPAK"; then
-  do_xdg_fix
+  # Run xdg-fix only for container-based (DNF) installs, not Flatpak (host)
+  if [ "$USE_FLATPAK" != "true" ] && check_container_env; then
+    do_xdg_fix
+  fi
 
   # Run desktop fixes for Flatpak installs (host) or container-based installs
   if [ "$USE_FLATPAK" == "true" ]; then

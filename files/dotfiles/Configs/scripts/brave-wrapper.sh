@@ -22,7 +22,7 @@ find_browser() {
 }
 
 brave_flatpak_installed() {
-  flatpak list --app | grep -q 'com.brave.Browser'
+  flatpak info com.brave.Browser &>/dev/null
 }
 
 distrobox_exists() {

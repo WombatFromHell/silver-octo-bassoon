@@ -4,6 +4,7 @@
   "customThemeFile": "/home/josh/.config/DankMaterialShell/themes/catppuccin/theme.json",
   "registryThemeVariants": {},
   "matugenScheme": "scheme-tonal-spot",
+  "matugenContrast": 0,
   "runUserMatugenTemplates": true,
   "matugenTargetMonitor": "",
   "popupTransparency": 1,
