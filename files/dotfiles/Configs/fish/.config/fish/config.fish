@@ -63,7 +63,7 @@ if status is-interactive
         source $WORKTREES_HELPER
     end
 
-    set -g nvm_default_version v25.7.0
+    set -gx nvm_default_version v25.7.0
     set -x GPG_TTY (tty)
     set -x XDG_DATA_HOME $HOME/.local/share
     set -x XDG_CONFIG_HOME $HOME/.config
