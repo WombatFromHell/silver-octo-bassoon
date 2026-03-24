@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -euxo pipefail
+set -euo pipefail
 
 # Configuration Section - Customize these variables to control script behavior
 # Set to "true" to enable a feature, "false" to disable it
@@ -9,9 +9,14 @@ ENABLE_PERFORMANCE_MODE="false"
 ENABLE_SCREEN_KEEP_AWAKE="true"
 ENABLE_AUDIO_PRIORITY_BOOST="false"
 ENABLE_STEAM_ENV="true"
+#
+NIRI_OUTPUT="DP-1"
+
+# State tracking (for idempotency)
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/perfboost"
+STATE_FILE="${STATE_DIR}/active.state"
 
 # SCX Scheduler Configuration
-# SCX_SCHEDULER_NAME="scx_bpfland" # Default SCX scheduler to use
 SCX_SCHEDULER_NAME="scx_lavd"
 SCX_SCHEDULER_ARGS=(
   --performance
@@ -26,12 +31,23 @@ DESKTOP_PROFILE="balanced-bazzite"
 # Audio Priority Boost Configuration
 PULSE_LATENCY_MSEC=60 # PulseAudio latency setting for audio priority
 
-# Global State (minimal - only what's truly needed across functions)
-# Most variables are now localized to their functions
-
 # Logging function for better debugging
 log() {
   echo "[perfboost.sh] $1"
+}
+
+# State tracking functions for idempotency
+is_active() {
+  [[ -f "$STATE_FILE" ]] && [[ "$(cat "$STATE_FILE" 2>/dev/null)" == "active" ]]
+}
+
+set_state_active() {
+  mkdir -p "$STATE_DIR"
+  echo "active" >"$STATE_FILE"
+}
+
+set_state_inactive() {
+  rm -f "$STATE_FILE"
 }
 
 # Error handling function
@@ -46,6 +62,23 @@ check_cmd() {
   else
     echo ""
   fi
+}
+
+# Usage info
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [COMMAND] [ARGS...]
+
+Commands:
+  on              Enable performance settings (SCX, VRR, Power Profile).
+                  Does not support process-based features (Inhibit, Audio Env).
+  off             Disable performance settings and restore defaults.
+  <command>       Run the specified command with all features enabled (Wrapper Mode).
+                  Supports full feature set including Inhibit and Audio Env.
+
+If no command is provided, runs in Wrapper Mode with the provided arguments.
+EOF
+  exit 0
 }
 
 # Get command paths and validate dependencies
@@ -64,7 +97,6 @@ get_command_paths() {
   [[ "$ENABLE_SCREEN_KEEP_AWAKE" = "true" && -z "$inhibit_path" ]] &&
     error_exit "Screen keep-awake requires 'systemd-inhibit', but it's not installed or not in PATH"
 
-  # Validate scxctl for SCX scheduler management
   [[ "$ENABLE_SCX_SCHEDULER" = "true" && -z "$scxctl_path" ]] &&
     error_exit "SCX scheduler management requires 'scxctl', but it's not installed or not in PATH"
 
@@ -90,6 +122,16 @@ scx_load() {
     return
   }
 
+  # Check if already loaded (idempotency)
+  if "$scxctl_path" status &>/dev/null; then
+    local current_sched
+    current_sched=$("$scxctl_path" status 2>/dev/null | head -1)
+    if [[ "$current_sched" == *"$scx"* ]]; then
+      log "SCX scheduler already loaded: $scx"
+      return 0
+    fi
+  fi
+
   log "Loading SCX scheduler: $scx"
   SCXCTL_ARGS=(
     start
@@ -105,8 +147,56 @@ scx_unload() {
   [[ "$ENABLE_SCX_SCHEDULER" != "true" ]] && return
   [[ -z "$scxctl_path" ]] && return
 
+  # Check if scheduler is loaded (idempotency)
+  if ! "$scxctl_path" status &>/dev/null; then
+    log "SCX scheduler not loaded, skipping unload"
+    return 0
+  fi
+
   log "Unloading SCX scheduler"
   "$scxctl_path" stop
+}
+
+niri_vrr_enable() {
+  local output="${1:-DP-1}"
+  local niri_cmd
+  niri_cmd="$(check_cmd "niri")"
+
+  [[ -z "$niri_cmd" ]] && {
+    log "niri not found, skipping VRR enablement..."
+    return 1
+  }
+
+  # Check if VRR is already enabled (idempotency)
+  local vrr_status
+  vrr_status=$("$niri_cmd" msg -j outputs 2>/dev/null | jq -r --arg on "$output" '.[] | select(.name == $on) | .vrr' 2>/dev/null)
+  if [[ "$vrr_status" == "true" ]]; then
+    log "VRR already enabled on $output"
+    return 0
+  fi
+
+  log "Enabling VRR on $output"
+  "$niri_cmd" msg output "$output" vrr on
+  return 0
+}
+niri_vrr_disable() {
+  local output="${1:-DP-1}"
+  local niri_cmd
+  niri_cmd="$(check_cmd "niri")"
+
+  [[ -z "$niri_cmd" ]] && return 1
+
+  # Check if VRR is already disabled (idempotency)
+  local vrr_status
+  vrr_status=$("$niri_cmd" msg -j outputs 2>/dev/null | jq -r --arg on "$output" '.[] | select(.name == $on) | .vrr' 2>/dev/null)
+  if [[ "$vrr_status" == "false" ]]; then
+    log "VRR already disabled on $output"
+    return 0
+  fi
+
+  log "Disabling VRR on $output"
+  "$niri_cmd" msg output "$output" vrr off
+  return 0
 }
 
 # Performance Mode Functions
@@ -123,6 +213,14 @@ performance_mode_enable() {
     return
   }
 
+  # Check current profile (idempotency)
+  local current_profile
+  current_profile=$("$tuned_path" active 2>/dev/null | grep -oP '(?<=Active profile: ).*')
+  if [[ "$current_profile" == "$GAME_PROFILE" ]]; then
+    log "Performance mode already active: $GAME_PROFILE"
+    return 0
+  fi
+
   log "Enabling performance mode: $GAME_PROFILE"
   "$tuned_path" profile "$GAME_PROFILE"
 }
@@ -132,6 +230,14 @@ performance_mode_disable() {
 
   [[ "$ENABLE_PERFORMANCE_MODE" != "true" ]] && return
   [[ -z "$tuned_path" ]] && return
+
+  # Check current profile (idempotency)
+  local current_profile
+  current_profile=$("$tuned_path" active 2>/dev/null | grep -oP '(?<=Active profile: ).*')
+  if [[ "$current_profile" == "$DESKTOP_PROFILE" ]]; then
+    log "Performance mode already set to: $DESKTOP_PROFILE"
+    return 0
+  fi
 
   log "Disabling performance mode: $DESKTOP_PROFILE"
   "$tuned_path" profile "$DESKTOP_PROFILE"
@@ -199,33 +305,64 @@ screen_keep_awake_enable() {
 cleanup() {
   local tuned_path="$1"
   local scxctl_path="$2"
+  local niri_output="$3"
 
   log "Running cleanup..."
   performance_mode_disable "$tuned_path"
   scx_unload "$scxctl_path"
+  niri_vrr_disable "$niri_output"
 }
 
-# Main function
-main() {
-  # Get command paths and validate dependencies
-  local command_paths
-  readarray -t command_paths < <(get_command_paths)
-  local tuned_path="${command_paths[0]}"
-  local inhibit_path="${command_paths[1]}"
-  local scxctl_path="${command_paths[2]}"
+# --- Action Targets --
 
-  # Store paths in global variables for trap handler
-  PERFBOOST_TUNED_PATH="$tuned_path"
-  PERFBOOST_SCXCTL_PATH="$scxctl_path"
+# Action: Turn everything on (State-based)
+action_on() {
+  log "Activating performance mode (Toggle ON)..."
+
+  # Note: Audio Priority Boost and Screen Keep-Awake only work in wrapper mode
+  # as they require the process to run within the inhibited context
+
+  if is_active; then
+    log "Already active, skipping (idempotent)"
+    return 0
+  fi
+
+  performance_mode_enable "$TUNED_PATH"
+  niri_vrr_enable "$NIRI_OUTPUT"
+  scx_load "$SCXCTL_PATH"
+  set_state_active
+}
+
+# Action: Turn everything off (State-based)
+action_off() {
+  log "Deactivating performance mode (Toggle OFF)..."
+
+  if ! is_active; then
+    log "Not active, skipping (idempotent)"
+    return 0
+  fi
+
+  # Cleanup handles disabling everything
+  cleanup "$TUNED_PATH" "$SCXCTL_PATH" "$NIRI_OUTPUT"
+  set_state_inactive
+}
+
+# Action: Wrap a process
+action_wrapper() {
+  log "Running in Wrapper Mode..."
 
   # Set trap for cleanup on exit
-  trap 'cleanup "$PERFBOOST_TUNED_PATH" "$PERFBOOST_SCXCTL_PATH"' EXIT
+  # We use global vars here so the trap handler can see them
+  trap 'cleanup "$TUNED_PATH" "$SCXCTL_PATH" "$NIRI_OUTPUT"' EXIT
 
   # Enable performance mode if configured
-  performance_mode_enable "$tuned_path"
+  performance_mode_enable "$TUNED_PATH"
+
+  # Enable VRR in Niri (if available)
+  niri_vrr_enable "$NIRI_OUTPUT"
 
   # Enable SCX scheduler if configured
-  scx_load "$scxctl_path"
+  scx_load "$SCXCTL_PATH"
 
   # Enable audio priority boost if configured
   [[ "$ENABLE_AUDIO_PRIORITY_BOOST" = "true" ]] && audio_priority_boost_enable
@@ -237,9 +374,9 @@ main() {
   # Run the tool with screen keep-awake if configured
   if [[ "$ENABLE_SCREEN_KEEP_AWAKE" = "true" ]]; then
     if [[ -n "$steam_wrapper" ]]; then
-      screen_keep_awake_enable "$inhibit_path" "$steam_wrapper" "$@"
+      screen_keep_awake_enable "$INHIBIT_PATH" "$steam_wrapper" "$@"
     else
-      screen_keep_awake_enable "$inhibit_path" "$@"
+      screen_keep_awake_enable "$INHIBIT_PATH" "$@"
     fi
   else
     # No screen keep-awake, run with Steam wrapper if configured
@@ -251,5 +388,41 @@ main() {
   fi
 }
 
-# Run main function with all arguments
+# --- Main Execution ---
+
+# Global paths needed for cleanup trap and actions
+declare TUNED_PATH="" INHIBIT_PATH="" SCXCTL_PATH=""
+
+main() {
+  # Parse arguments
+  if [[ $# -eq 0 ]]; then
+    usage
+  fi
+
+  local mode="$1"
+
+  # Get command paths and validate dependencies
+  local command_paths
+  readarray -t command_paths < <(get_command_paths)
+  TUNED_PATH="${command_paths[0]}"
+  INHIBIT_PATH="${command_paths[1]}"
+  SCXCTL_PATH="${command_paths[2]}"
+
+  case "$mode" in
+  on)
+    action_on
+    ;;
+  off)
+    action_off
+    ;;
+  -h | --help)
+    usage
+    ;;
+  *)
+    # Not a keyword, assume it's a command to wrap
+    action_wrapper "$@"
+    ;;
+  esac
+}
+
 main "$@"

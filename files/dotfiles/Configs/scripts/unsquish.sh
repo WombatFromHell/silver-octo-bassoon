@@ -92,60 +92,60 @@ parse_arguments() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -y | --yes)
-        SKIP_CHECKSUM=1
+    -y | --yes)
+      SKIP_CHECKSUM=1
+      shift
+      ;;
+    -o | --output)
+      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+        OUTPUT_DIR="$2"
         shift
-        ;;
-      -o | --output)
-        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-          OUTPUT_DIR="$2"
-          shift
-        else
-          log_error "Argument for $1 is missing or invalid."
-          exit 1
-        fi
-        shift
-        ;;
-      --check)
-        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-          check_archive "$2"
-          exit 0
-        else
-          log_error "Argument for $1 is missing or invalid."
-          exit 1
-        fi
-        ;;
-      --list | --ls)
-        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-          list_archive "$2"
-          exit 0
-        else
-          log_error "Argument for $1 is missing or invalid."
-          exit 1
-        fi
-        ;;
-      -h | --help)
-        echo "SquashFS Extractor (unsquish) v${VERSION}"
-        echo ""
-        echo "Usage:"
-        echo "  $SCRIPT_NAME <archive.sqsh> [-o output_dir] [-y]   Extract archive"
-        echo "  $SCRIPT_NAME --check <archive_file>                Verify archive integrity"
-        echo "  $SCRIPT_NAME --list <archive_file>                 List archive contents"
-        echo ""
-        echo "Options:"
-        echo "  -o, --output <dir>     Specify extraction directory (default: archive stem)"
-        echo "  -y, --yes              Skip checksum verification errors"
-        echo "  -h, --help             Show this help message"
+      else
+        log_error "Argument for $1 is missing or invalid."
+        exit 1
+      fi
+      shift
+      ;;
+    --check)
+      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+        check_archive "$2"
         exit 0
-        ;;
-      *)
-        if [[ -n $INPUT_FILE ]]; then
-          log_error "Unexpected argument: '$1'. Only one archive file may be specified."
-          exit 1
-        fi
-        INPUT_FILE="$(realpath "$1")"
-        shift
-        ;;
+      else
+        log_error "Argument for $1 is missing or invalid."
+        exit 1
+      fi
+      ;;
+    --list | --ls)
+      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+        list_archive "$2"
+        exit 0
+      else
+        log_error "Argument for $1 is missing or invalid."
+        exit 1
+      fi
+      ;;
+    -h | --help)
+      echo "SquashFS Extractor (unsquish) v${VERSION}"
+      echo ""
+      echo "Usage:"
+      echo "  $SCRIPT_NAME <archive.sqsh> [-o output_dir] [-y]   Extract archive"
+      echo "  $SCRIPT_NAME --check <archive_file>                Verify archive integrity"
+      echo "  $SCRIPT_NAME --list <archive_file>                 List archive contents"
+      echo ""
+      echo "Options:"
+      echo "  -o, --output <dir>     Specify extraction directory (default: archive stem)"
+      echo "  -y, --yes              Skip checksum verification errors"
+      echo "  -h, --help             Show this help message"
+      exit 0
+      ;;
+    *)
+      if [[ -n $INPUT_FILE ]]; then
+        log_error "Unexpected argument: '$1'. Only one archive file may be specified."
+        exit 1
+      fi
+      INPUT_FILE="$(realpath "$1")"
+      shift
+      ;;
     esac
   done
 
@@ -204,8 +204,8 @@ _run_unsquashfs_gui() {
       -d "$target_dir" \
       "$INPUT_FILE" 2>&1
     echo "$?" >"$status_file"
-  ) | tee >(grep -v -E '^[0-9]+$' >/dev/tty) \
-    | grep --line-buffered -E '^[0-9]+$' >"$fifo" &
+  ) | tee >(grep -v -E '^[0-9]+$' >/dev/tty) |
+    grep --line-buffered -E '^[0-9]+$' >"$fifo" &
 
   UNSQ_PIPE_PID=$!
 }

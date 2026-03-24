@@ -22,7 +22,10 @@ if [[ "$DESKTOP_FILE" =~ ^[a-z][a-z0-9]*\.[a-z][a-z0-9.-]*\.[a-z][a-z0-9.-]*\.de
       "$HOME/.local/share/applications" \
       /usr/local/share/applications \
       /usr/share/applications; do
-      [[ -f "$dir/$DESKTOP_FILE" ]] && { echo "$dir/$DESKTOP_FILE"; break; }
+      [[ -f "$dir/$DESKTOP_FILE" ]] && {
+        echo "$dir/$DESKTOP_FILE"
+        break
+      }
     done
   )"
 else
@@ -34,7 +37,10 @@ else
       /usr/share/applications \
       "$HOME/.local/share/flatpak/exports/share/applications" \
       /var/lib/flatpak/exports/share/applications; do
-      [[ -f "$dir/$DESKTOP_FILE" ]] && { echo "$dir/$DESKTOP_FILE"; break; }
+      [[ -f "$dir/$DESKTOP_FILE" ]] && {
+        echo "$dir/$DESKTOP_FILE"
+        break
+      }
     done
   )"
 fi

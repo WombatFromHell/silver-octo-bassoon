@@ -28,12 +28,12 @@ validate_input() {
 # Check if the specific terminal binary is currently running
 # We use -x (exact match) to avoid matching this script's own arguments
 is_terminal_process_running() {
-  pgrep -x "$(basename "$TERMINAL")" > /dev/null 2>&1
+  pgrep -x "$(basename "$TERMINAL")" >/dev/null 2>&1
 }
 
 # Check if our specific tmux session exists
 is_tmux_session_running() {
-  tmux has-session -t "$SESSION_NAME" > /dev/null 2>&1
+  tmux has-session -t "$SESSION_NAME" >/dev/null 2>&1
 }
 
 # Create a new tmux window (tab) inside the existing session
@@ -53,18 +53,18 @@ launch_terminal() {
   # Since we just created the window in 'create_tmux_window' (if running),
   # or are about to create the session (if not), this brings it to view.
   case "$term_name" in
-    kitty)
-      # Kitty: No flags. Pass args distinctively.
-      nohup "$TERMINAL" tmux new-session -A -s "$SESSION_NAME" >/dev/null 2>&1 &
-      ;;
-    ghostty|alacritty)
-      # Ghostty/Alacritty: Use -e.
-      nohup "$TERMINAL" -e tmux new-session -A -s "$SESSION_NAME" >/dev/null 2>&1 &
-      ;;
-    *)
-      # Fallback
-      nohup "$TERMINAL" -e tmux new-session -A -s "$SESSION_NAME" >/dev/null 2>&1 &
-      ;;
+  kitty)
+    # Kitty: No flags. Pass args distinctively.
+    nohup "$TERMINAL" tmux new-session -A -s "$SESSION_NAME" >/dev/null 2>&1 &
+    ;;
+  ghostty | alacritty)
+    # Ghostty/Alacritty: Use -e.
+    nohup "$TERMINAL" -e tmux new-session -A -s "$SESSION_NAME" >/dev/null 2>&1 &
+    ;;
+  *)
+    # Fallback
+    nohup "$TERMINAL" -e tmux new-session -A -s "$SESSION_NAME" >/dev/null 2>&1 &
+    ;;
   esac
 }
 

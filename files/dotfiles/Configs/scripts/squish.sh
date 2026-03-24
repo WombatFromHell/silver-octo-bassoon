@@ -345,68 +345,68 @@ parse_arguments() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -o | --output)
-        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-          OUTPUT_FILE="$2"
-          shift
-        else
-          log_error "Argument for $1 is missing or invalid."
-          exit 1
-        fi
+    -o | --output)
+      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+        OUTPUT_FILE="$2"
         shift
-        ;;
-      --check)
-        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-          check_archive "$2"
-          exit 0
-        else
-          log_error "Argument for $1 is missing or invalid."
-          exit 1
-        fi
-        ;;
-      -y | --yes | --skip-verify)
-        SKIP_VERIFY=1
-        shift
-        ;;
-      -m | --mount)
-        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-          check_squashfuse
-          mount_archive "$2"
-          exit 0
-        else
-          log_error "Argument for $1 is missing or invalid."
-          exit 1
-        fi
-        ;;
-      -u | --unmount)
-        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-          check_squashfuse
-          unmount_archive "$2"
-          exit 0
-        else
-          log_error "Argument for $1 is missing or invalid."
-          exit 1
-        fi
-        ;;
-      -h | --help)
-        echo "SquashFS Archiver (squish) v${VERSION}"
-        echo ""
-        echo "Usage:"
-        echo "  $SCRIPT_NAME <source1> [source2...] [-o output.sqsh]   Create a new archive"
-        echo "  $SCRIPT_NAME --check <archive_file>                  Verify archive integrity"
-        echo "  $SCRIPT_NAME -m <archive_file> [-y]                  Mount archive to managed directory"
-        echo "  $SCRIPT_NAME -u <archive_file | mountpoint>          Unmount archive and cleanup"
-        echo ""
-        echo "Options:"
-        echo "  -o, --output <file>    Specify output filename (default: <first_source>.sqsh)"
-        echo "  -y, --skip-verify      Skip SHA-256 verification before mounting"
-        echo "  -h, --help             Show this help message"
+      else
+        log_error "Argument for $1 is missing or invalid."
+        exit 1
+      fi
+      shift
+      ;;
+    --check)
+      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+        check_archive "$2"
         exit 0
-        ;;
-      *)
-        SOURCES+=("$(realpath "$1")")
-        shift
-        ;;
+      else
+        log_error "Argument for $1 is missing or invalid."
+        exit 1
+      fi
+      ;;
+    -y | --yes | --skip-verify)
+      SKIP_VERIFY=1
+      shift
+      ;;
+    -m | --mount)
+      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+        check_squashfuse
+        mount_archive "$2"
+        exit 0
+      else
+        log_error "Argument for $1 is missing or invalid."
+        exit 1
+      fi
+      ;;
+    -u | --unmount)
+      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+        check_squashfuse
+        unmount_archive "$2"
+        exit 0
+      else
+        log_error "Argument for $1 is missing or invalid."
+        exit 1
+      fi
+      ;;
+    -h | --help)
+      echo "SquashFS Archiver (squish) v${VERSION}"
+      echo ""
+      echo "Usage:"
+      echo "  $SCRIPT_NAME <source1> [source2...] [-o output.sqsh]   Create a new archive"
+      echo "  $SCRIPT_NAME --check <archive_file>                  Verify archive integrity"
+      echo "  $SCRIPT_NAME -m <archive_file> [-y]                  Mount archive to managed directory"
+      echo "  $SCRIPT_NAME -u <archive_file | mountpoint>          Unmount archive and cleanup"
+      echo ""
+      echo "Options:"
+      echo "  -o, --output <file>    Specify output filename (default: <first_source>.sqsh)"
+      echo "  -y, --skip-verify      Skip SHA-256 verification before mounting"
+      echo "  -h, --help             Show this help message"
+      exit 0
+      ;;
+    *)
+      SOURCES+=("$(realpath "$1")")
+      shift
+      ;;
     esac
   done
 
@@ -464,8 +464,8 @@ _run_mksquashfs_gui() {
       -info \
       -percentage 2>&1
     echo "$?" >"$status_file"
-  ) | tee >(grep -v -E '^[0-9]+$' >/dev/tty) \
-    | grep --line-buffered -E '^[0-9]+$' >"$fifo" &
+  ) | tee >(grep -v -E '^[0-9]+$' >/dev/tty) |
+    grep --line-buffered -E '^[0-9]+$' >"$fifo" &
 
   MKSQ_PIPE_PID=$!
 }
