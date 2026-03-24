@@ -39,8 +39,8 @@ run_hooks() {
   fi
 
   for hook_spec in "${hooks_ref[@]}"; do
-    # Split into command and args
-    read -r -a parts <<<"$hook_spec"
+    # Split into command and args (need to reset IFS temporarily since we set it to $'\n\t' globally)
+    IFS=' ' read -r -a parts <<<"$hook_spec"
     local hook="${parts[0]}"
     local args=("${parts[@]:1}")
 
@@ -62,36 +62,57 @@ run_hooks() {
 # Detects the current state by fetching window and output data
 # Sets global variables: OUTPUT_NAME, CURRENT_STATE
 detect_state() {
-  local json_data
+  local outputs_json windows_json
   # Fetch all necessary data in one go to minimize IPC calls
-  json_data=$(niri msg -j outputs)
+  outputs_json=$(niri msg -j outputs)
+  windows_json=$(niri msg -j windows)
 
-  # 1. Find the focused output (where the cursor/input is)
-  OUTPUT_NAME=$(jq -r '.[] | select(.is_focused == true) | .name' <<<"$json_data")
+  # 1. Get the focused window
+  local focused_win
+  focused_win=$(jq -r '.[] | select(.is_focused == true)' <<<"$windows_json")
 
-  if [[ -z "$OUTPUT_NAME" ]]; then
-    # Fallback: if no focused output found, try to find the one with the focused window?
-    # For now, we skip cycle if we can't identify the active output.
+  if [[ -z "$focused_win" || "$focused_win" == "null" ]]; then
     CURRENT_STATE="unknown"
     return
   fi
 
-  # 2. Get Logical Resolution of the focused output
-  local output_res
-  output_res=$(jq -r --arg on "$OUTPUT_NAME" '.[] | select(.name == $on) | "\(.logical_width)x\(.logical_height)"' <<<"$json_data")
+  # 2. Get focused window's workspace_id to find which output it's on
+  local workspace_id
+  workspace_id=$(jq -r '.workspace_id' <<<"$focused_win")
 
-  # 3. Get Focused Window Dimensions
-  # We fetch windows separately as they change rapidly
-  local win_res
-  win_res=$(niri msg -j windows | jq -r '.[] | select(.is_focused == true) | "\(.layout.window_size[0])x\(.layout.window_size[1])"')
+  # 3. Find the output that contains this workspace (use first output for now)
+  # Since niri's output JSON doesn't have workspace mapping, use the first output
+  OUTPUT_NAME=$(jq -r 'keys[0]' <<<"$outputs_json")
 
-  # 4. Determine State
-  if [[ -z "$win_res" || -z "$output_res" ]]; then
+  if [[ -z "$OUTPUT_NAME" || "$OUTPUT_NAME" == "null" ]]; then
     CURRENT_STATE="unknown"
-  elif [[ "$output_res" == "$win_res" ]]; then
-    CURRENT_STATE="fullscreen"
+    return
+  fi
+
+  # 4. Get Logical Resolution of the output
+  local output_width output_height
+  output_width=$(jq -r --arg on "$OUTPUT_NAME" '.[$on].logical.width' <<<"$outputs_json")
+  output_height=$(jq -r --arg on "$OUTPUT_NAME" '.[$on].logical.height' <<<"$outputs_json")
+
+  # 5. Get Focused Window Dimensions
+  local win_width win_height
+  win_width=$(jq -r '.layout.window_size[0]' <<<"$focused_win")
+  win_height=$(jq -r '.layout.window_size[1]' <<<"$focused_win")
+
+  # 6. Determine State - compare dimensions (handle float vs int)
+  if [[ -z "$win_width" || -z "$win_height" || -z "$output_width" || -z "$output_height" ]]; then
+    CURRENT_STATE="unknown"
   else
-    CURRENT_STATE="windowed"
+    # Use arithmetic comparison to handle float/int differences
+    local w_diff h_diff
+    w_diff=$(echo "$output_width - $win_width" | bc -l | cut -d'.' -f1)
+    h_diff=$(echo "$output_height - $win_height" | bc -l | cut -d'.' -f1)
+    
+    if [[ "${w_diff:-0}" -eq 0 && "${h_diff:-0}" -eq 0 ]]; then
+      CURRENT_STATE="fullscreen"
+    else
+      CURRENT_STATE="windowed"
+    fi
   fi
 }
 
@@ -128,6 +149,11 @@ main() {
 
   if ! command -v niri &>/dev/null; then
     echo "Error: 'niri' is required but not installed." >&2
+    exit 1
+  fi
+
+  if ! command -v bc &>/dev/null; then
+    echo "Error: 'bc' is required but not installed." >&2
     exit 1
   fi
 
