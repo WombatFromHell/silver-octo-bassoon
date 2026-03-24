@@ -11,14 +11,23 @@ readonly STARTUP_DELAY=3
 
 # Hook Arrays
 # Each element is "script arg1 arg2..." - args are optional
+# The output name is exported as NIRI_OUTPUT_NAME env var for hooks to use
 # Example: ON_FULLSCREEN_HOOKS=("$HOME/.config/hooks/disable-compositor.sh")
+# Hook scripts can access the output name via $NIRI_OUTPUT_NAME
 # shellcheck disable=SC2034
 declare -a ON_FULLSCREEN_HOOKS=("$HOME/.local/bin/scripts/perfboost.sh on")
 # shellcheck disable=SC2034
 declare -a ON_EXIT_FULLSCREEN_HOOKS=("$HOME/.local/bin/scripts/perfboost.sh off")
 
+# Exclusion List - Apps that should never trigger VRR (even when fullscreen)
+# Add app_id values from 'niri msg -j windows' to exclude specific applications
+# Example: "brave-browser", "firefox", "vlc", "mpv"
+# shellcheck disable=SC2034
+declare -a EXCLUDE_APP_IDS=("brave-browser")
+
 # --- State ---
-LAST_STATE="windowed" # Tracks 'fullscreen' or 'windowed'
+# Maps output_name -> "fullscreen"|"windowed"
+declare -A OUTPUT_STATES
 
 # --- Helper Functions ---
 
@@ -28,10 +37,24 @@ log() {
   echo "${timestamp}: $1" >>"${LOG_FILE}"
 }
 
+# Check if an app_id is in the exclusion list
+is_excluded_app() {
+  local app_id="$1"
+  local excluded
+  for excluded in "${EXCLUDE_APP_IDS[@]}"; do
+    if [[ "$app_id" == "$excluded" ]]; then
+      return 0 # true - is excluded
+    fi
+  done
+  return 1 # false - not excluded
+}
+
 # Executes an array of scripts/hooks in the background
 # Each hook spec is "script arg1 arg2..." (args optional)
+# If output_name is provided, it's exported as NIRI_OUTPUT_NAME env var
 run_hooks() {
   local hook_array_name="$1"
+  local output_name="${2:-}" # Optional output name
   local -n hooks_ref="${hook_array_name}"
 
   if [[ ${#hooks_ref[@]} -eq 0 ]]; then
@@ -45,11 +68,19 @@ run_hooks() {
     local args=("${parts[@]:1}")
 
     if [[ -x "$hook" ]]; then
-      log "Executing hook: $hook_spec"
-      if [[ ${#args[@]} -gt 0 ]]; then
-        ("$hook" "${args[@]}") &
+      if [[ -n "$output_name" ]]; then
+        log "Executing hook: $hook_spec (NIRI_OUTPUT_NAME=$output_name)"
+        (
+          export NIRI_OUTPUT_NAME="$output_name"
+          "$hook" "${args[@]}"
+        ) &
       else
-        ("$hook") &
+        log "Executing hook: $hook_spec"
+        if [[ ${#args[@]} -gt 0 ]]; then
+          ("$hook" "${args[@]}") &
+        else
+          ("$hook") &
+        fi
       fi
     else
       log "Warning: Hook not found or not executable: $hook"
@@ -59,83 +90,157 @@ run_hooks() {
 
 # --- Core Logic ---
 
-# Detects the current state by fetching window and output data
-# Sets global variables: OUTPUT_NAME, CURRENT_STATE
-detect_state() {
-  local outputs_json windows_json
-  # Fetch all necessary data in one go to minimize IPC calls
-  outputs_json=$(niri msg -j outputs)
-  windows_json=$(niri msg -j windows)
+# Helper: Determine if a window is fullscreen on a given output
+# Returns "fullscreen" or "windowed"
+determine_window_state() {
+  local output_name="$1"
+  local win_json="$2"
+  local outputs_json="$3"
 
-  # 1. Get the focused window
-  local focused_win
-  focused_win=$(jq -r '.[] | select(.is_focused == true)' <<<"$windows_json")
-
-  if [[ -z "$focused_win" || "$focused_win" == "null" ]]; then
-    CURRENT_STATE="unknown"
-    return
-  fi
-
-  # 2. Get focused window's workspace_id to find which output it's on
-  local workspace_id
-  workspace_id=$(jq -r '.workspace_id' <<<"$focused_win")
-
-  # 3. Find the output that contains this workspace (use first output for now)
-  # Since niri's output JSON doesn't have workspace mapping, use the first output
-  OUTPUT_NAME=$(jq -r 'keys[0]' <<<"$outputs_json")
-
-  if [[ -z "$OUTPUT_NAME" || "$OUTPUT_NAME" == "null" ]]; then
-    CURRENT_STATE="unknown"
-    return
-  fi
-
-  # 4. Get Logical Resolution of the output
+  # Get output resolution
   local output_width output_height
-  output_width=$(jq -r --arg on "$OUTPUT_NAME" '.[$on].logical.width' <<<"$outputs_json")
-  output_height=$(jq -r --arg on "$OUTPUT_NAME" '.[$on].logical.height' <<<"$outputs_json")
+  output_width=$(jq -r --arg on "$output_name" '.[$on].logical.width' <<<"$outputs_json")
+  output_height=$(jq -r --arg on "$output_name" '.[$on].logical.height' <<<"$outputs_json")
 
-  # 5. Get Focused Window Dimensions
+  # Get window dimensions
   local win_width win_height
-  win_width=$(jq -r '.layout.window_size[0]' <<<"$focused_win")
-  win_height=$(jq -r '.layout.window_size[1]' <<<"$focused_win")
+  win_width=$(jq -r '.layout.window_size[0]' <<<"$win_json")
+  win_height=$(jq -r '.layout.window_size[1]' <<<"$win_json")
 
-  # 6. Determine State - compare dimensions (handle float vs int)
+  # Validate dimensions
   if [[ -z "$win_width" || -z "$win_height" || -z "$output_width" || -z "$output_height" ]]; then
-    CURRENT_STATE="unknown"
+    echo "unknown"
+    return
+  fi
+
+  # Compare dimensions (handle float vs int)
+  local w_diff h_diff
+  w_diff=$(echo "$output_width - $win_width" | bc -l | cut -d'.' -f1)
+  h_diff=$(echo "$output_height - $win_height" | bc -l | cut -d'.' -f1)
+
+  if [[ "${w_diff:-0}" -eq 0 && "${h_diff:-0}" -eq 0 ]]; then
+    echo "fullscreen"
   else
-    # Use arithmetic comparison to handle float/int differences
-    local w_diff h_diff
-    w_diff=$(echo "$output_width - $win_width" | bc -l | cut -d'.' -f1)
-    h_diff=$(echo "$output_height - $win_height" | bc -l | cut -d'.' -f1)
-    
-    if [[ "${w_diff:-0}" -eq 0 && "${h_diff:-0}" -eq 0 ]]; then
-      CURRENT_STATE="fullscreen"
-    else
-      CURRENT_STATE="windowed"
-    fi
+    echo "windowed"
   fi
 }
 
-apply_state() {
-  local new_state="$1"
+# Detects state for all outputs
+# Populates OUTPUT_STATES associative array
+detect_all_outputs() {
+  local outputs_json windows_json workspaces_json
+  # Fetch all necessary data in one go to minimize IPC calls
+  outputs_json=$(niri msg -j outputs)
+  windows_json=$(niri msg -j windows)
+  workspaces_json=$(niri msg -j workspaces)
 
-  if [[ "$new_state" == "$LAST_STATE" ]]; then
-    return
+  # Build workspace_id -> output mapping from workspaces JSON
+  declare -A workspace_to_output
+  while IFS= read -r line; do
+    local ws_id ws_output
+    ws_id=$(echo "$line" | jq -r '.id')
+    ws_output=$(echo "$line" | jq -r '.output // empty')
+    if [[ -n "$ws_id" && "$ws_id" != "null" && -n "$ws_output" ]]; then
+      workspace_to_output["$ws_id"]="$ws_output"
+    fi
+  done < <(jq -c '.[]' <<<"$workspaces_json")
+
+  # Get the globally focused window (for determining which output is "active")
+  local focused_win
+  focused_win=$(jq -c '.[] | select(.is_focused == true)' <<<"$windows_json" | head -1)
+  local focused_workspace=""
+  if [[ -n "$focused_win" && "$focused_win" != "null" ]]; then
+    focused_workspace=$(echo "$focused_win" | jq -r '.workspace_id')
   fi
 
-  log "State change: $LAST_STATE -> $new_state (Output: ${OUTPUT_NAME:-N/A})"
+  # Iterate through all outputs and determine state
+  while IFS= read -r output_name; do
+    local state="windowed" # Default to windowed if no window found
 
-  if [[ "$new_state" == "fullscreen" ]]; then
-    log "Running on_fullscreen hooks..."
-    # niri msg output "$OUTPUT_NAME" vrr on
-    run_hooks ON_FULLSCREEN_HOOKS
-  elif [[ "$new_state" == "windowed" ]]; then
-    log "Running on_exit_fullscreen hooks..."
-    # niri msg output "$OUTPUT_NAME" vrr off
-    run_hooks ON_EXIT_FULLSCREEN_HOOKS
-  fi
+    # Find all workspace IDs on this output
+    local output_workspaces=()
+    for ws_id in "${!workspace_to_output[@]}"; do
+      if [[ "${workspace_to_output[$ws_id]}" == "$output_name" ]]; then
+        output_workspaces+=("$ws_id")
+      fi
+    done
 
-  LAST_STATE="$new_state"
+    if [[ ${#output_workspaces[@]} -gt 0 ]]; then
+      # Find the focused window if it's on this output
+      local win_on_output=""
+      if [[ -n "$focused_workspace" ]]; then
+        for ws_id in "${output_workspaces[@]}"; do
+          if [[ "$focused_workspace" == "$ws_id" ]]; then
+            win_on_output="$focused_win"
+            break
+          fi
+        done
+      fi
+
+      # If no focused window on this output, find any window on its workspaces
+      if [[ -z "$win_on_output" ]]; then
+        for ws_id in "${output_workspaces[@]}"; do
+          win_on_output=$(jq -c --argjson ws "$ws_id" '.[] | select(.workspace_id == $ws)' <<<"$windows_json" | head -1)
+          if [[ -n "$win_on_output" && "$win_on_output" != "null" ]]; then
+            break
+          fi
+        done
+      fi
+
+      if [[ -n "$win_on_output" && "$win_on_output" != "null" ]]; then
+        state=$(determine_window_state "$output_name" "$win_on_output" "$outputs_json")
+
+        # Check if app is excluded - if so, force windowed state (no VRR, no hooks)
+        local app_id
+        app_id=$(echo "$win_on_output" | jq -r '.app_id // empty')
+        if [[ -n "$app_id" ]] && is_excluded_app "$app_id"; then
+          state="windowed"
+        fi
+      fi
+    fi
+
+    OUTPUT_STATES["$output_name"]="$state"
+  done < <(jq -r 'keys[]' <<<"$outputs_json")
+}
+
+apply_all_states() {
+  # Track previous states (static to persist between calls)
+  declare -gA PREV_STATES
+
+  # Iterate through all current outputs
+  for output_name in "${!OUTPUT_STATES[@]}"; do
+    local new_state="${OUTPUT_STATES[$output_name]}"
+    local prev_state="${PREV_STATES[$output_name]:-windowed}"
+
+    # Skip if state hasn't changed
+    if [[ "$new_state" == "$prev_state" ]]; then
+      continue
+    fi
+
+    log "State change: $prev_state -> $new_state (Output: $output_name)"
+
+    if [[ "$new_state" == "fullscreen" ]]; then
+      log "Enabling VRR on $output_name"
+      niri msg output "$output_name" vrr on
+      log "Running on_fullscreen hooks for $output_name..."
+      run_hooks ON_FULLSCREEN_HOOKS "$output_name"
+    elif [[ "$new_state" == "windowed" ]]; then
+      log "Disabling VRR on $output_name"
+      niri msg output "$output_name" vrr off
+      log "Running on_exit_fullscreen hooks for $output_name..."
+      run_hooks ON_EXIT_FULLSCREEN_HOOKS "$output_name"
+    fi
+
+    PREV_STATES["$output_name"]="$new_state"
+  done
+
+  # Handle outputs that were removed (no longer in OUTPUT_STATES)
+  for output_name in "${!PREV_STATES[@]}"; do
+    if [[ -z "${OUTPUT_STATES[$output_name]:-}" ]]; then
+      log "Output $output_name removed, cleaning up state"
+      unset "PREV_STATES[$output_name]"
+    fi
+  done
 }
 
 # --- Main Entry Point ---
@@ -157,6 +262,9 @@ main() {
     exit 1
   fi
 
+  # Initialize log file (overwrite previous run's log)
+  : >"${LOG_FILE}"
+
   log "Starting Niri VRR Watcher..."
 
   # Wait for niri to be fully initialized
@@ -164,8 +272,8 @@ main() {
   sleep "$STARTUP_DELAY"
 
   while true; do
-    detect_state
-    apply_state "$CURRENT_STATE"
+    detect_all_outputs
+    apply_all_states
     sleep "$POLL_INTERVAL"
   done
 }

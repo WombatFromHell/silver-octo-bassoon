@@ -10,7 +10,9 @@ ENABLE_SCREEN_KEEP_AWAKE="true"
 ENABLE_AUDIO_PRIORITY_BOOST="false"
 ENABLE_STEAM_ENV="true"
 #
-NIRI_OUTPUT="DP-1"
+# Default output name (can be overridden via command-line argument or NIRI_OUTPUT_NAME env var)
+NIRI_OUTPUT_DEFAULT="DP-1"
+NIRI_OUTPUT=""  # Set by main() from env var, args, or default
 
 # State tracking (for idempotency)
 STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/perfboost"
@@ -67,16 +69,29 @@ check_cmd() {
 # Usage info
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [COMMAND] [ARGS...]
+Usage: $(basename "$0") [COMMAND] [OUTPUT] [ARGS...]
 
 Commands:
-  on              Enable performance settings (SCX, VRR, Power Profile).
+  on [OUTPUT]     Enable performance settings (SCX, VRR, Power Profile).
+                  OUTPUT is optional - specifies the niri output name (e.g., DP-1, HDMI-A-1).
                   Does not support process-based features (Inhibit, Audio Env).
-  off             Disable performance settings and restore defaults.
+  off [OUTPUT]    Disable performance settings and restore defaults.
+                  OUTPUT is optional - specifies the niri output name.
   <command>       Run the specified command with all features enabled (Wrapper Mode).
                   Supports full feature set including Inhibit and Audio Env.
 
 If no command is provided, runs in Wrapper Mode with the provided arguments.
+
+Output Resolution (priority order):
+  1. NIRI_OUTPUT_NAME env var (set by niri-watcher.sh for hooks)
+  2. OUTPUT command-line argument
+  3. NIRI_OUTPUT_DEFAULT (DP-1, or custom in script config)
+
+Examples:
+  $(basename "$0") on DP-1          # Enable with VRR on DP-1
+  $(basename "$0") off HDMI-A-1     # Disable VRR on HDMI-A-1
+  $(basename "$0") steam            # Run steam with all features (wrapper mode)
+  NIRI_OUTPUT_NAME=HDMI-A-1 $(basename "$0") on  # Via env var
 EOF
   exit 0
 }
@@ -110,7 +125,7 @@ scx_load() {
 
   [[ "$ENABLE_SCX_SCHEDULER" != "true" ]] && {
     log "SCX scheduler disabled by configuration"
-    return
+    return 0
   }
 
   local scx="${SCX_SCHEDULER_NAME}"
@@ -119,26 +134,29 @@ scx_load() {
 
   [[ -z "$SCXS" ]] && {
     log "Error: '$scx' not found, skipping SCX scheduler..."
-    return
+    return 0
   }
 
-  # Check if already loaded (idempotency)
-  if "$scxctl_path" status &>/dev/null; then
-    local current_sched
-    current_sched=$("$scxctl_path" status 2>/dev/null | head -1)
+  # Check current scheduler status (idempotency)
+  local current_sched
+  current_sched=$("$scxctl_path" status 2>/dev/null | head -1) || true
+
+  if [[ -n "$current_sched" ]]; then
+    # A scheduler is already loaded
     if [[ "$current_sched" == *"$scx"* ]]; then
       log "SCX scheduler already loaded: $scx"
       return 0
+    else
+      # Different scheduler loaded, need to switch
+      log "Switching SCX scheduler to: $scx (from: $current_sched)"
+      "$scxctl_path" switch -s "$SCX_SCHEDULER_NAME" -a="${SCX_SCHEDULER_ARGS[*]}"
+      return $?
     fi
   fi
 
+  # No scheduler loaded, use start
   log "Loading SCX scheduler: $scx"
-  SCXCTL_ARGS=(
-    start
-    -s "$SCX_SCHEDULER_NAME"
-    -a="${SCX_SCHEDULER_ARGS[*]}"
-  )
-  "$scxctl_path" "${SCXCTL_ARGS[@]}"
+  "$scxctl_path" start -s "$SCX_SCHEDULER_NAME" -a="${SCX_SCHEDULER_ARGS[*]}"
 }
 
 scx_unload() {
@@ -164,14 +182,19 @@ niri_vrr_enable() {
 
   [[ -z "$niri_cmd" ]] && {
     log "niri not found, skipping VRR enablement..."
-    return 1
+    return 0
   }
 
   # Check if VRR is already enabled (idempotency)
   local vrr_status
-  vrr_status=$("$niri_cmd" msg -j outputs 2>/dev/null | jq -r --arg on "$output" '.[] | select(.name == $on) | .vrr' 2>/dev/null)
+  vrr_status=$("$niri_cmd" msg -j outputs 2>/dev/null | jq -r --arg on "$output" '.[] | select(.name == $on) | .vrr' 2>/dev/null) || true
+
   if [[ "$vrr_status" == "true" ]]; then
     log "VRR already enabled on $output"
+    return 0
+  elif [[ -z "$vrr_status" ]]; then
+    # Output not found or niri not responding - skip silently
+    log "Output '$output' not found or niri not responding, skipping VRR enable"
     return 0
   fi
 
@@ -184,13 +207,21 @@ niri_vrr_disable() {
   local niri_cmd
   niri_cmd="$(check_cmd "niri")"
 
-  [[ -z "$niri_cmd" ]] && return 1
+  [[ -z "$niri_cmd" ]] && {
+    log "niri not found, skipping VRR disable"
+    return 0
+  }
 
   # Check if VRR is already disabled (idempotency)
   local vrr_status
-  vrr_status=$("$niri_cmd" msg -j outputs 2>/dev/null | jq -r --arg on "$output" '.[] | select(.name == $on) | .vrr' 2>/dev/null)
+  vrr_status=$("$niri_cmd" msg -j outputs 2>/dev/null | jq -r --arg on "$output" '.[] | select(.name == $on) | .vrr' 2>/dev/null) || true
+
   if [[ "$vrr_status" == "false" ]]; then
     log "VRR already disabled on $output"
+    return 0
+  elif [[ -z "$vrr_status" ]]; then
+    # Output not found or niri not responding - skip silently
+    log "Output '$output' not found or niri not responding, skipping VRR disable"
     return 0
   fi
 
@@ -327,10 +358,27 @@ action_on() {
     return 0
   fi
 
-  performance_mode_enable "$TUNED_PATH"
-  niri_vrr_enable "$NIRI_OUTPUT"
-  scx_load "$SCXCTL_PATH"
+  # Set state active first to mark intent, then perform operations
+  # If any operation fails, we clean up the state to maintain consistency
   set_state_active
+
+  if ! performance_mode_enable "$TUNED_PATH"; then
+    log "Failed to enable performance mode, cleaning up state"
+    set_state_inactive
+    return 1
+  fi
+
+  if ! niri_vrr_enable "$NIRI_OUTPUT"; then
+    log "Failed to enable VRR, cleaning up state"
+    set_state_inactive
+    return 1
+  fi
+
+  if ! scx_load "$SCXCTL_PATH"; then
+    log "Failed to load SCX scheduler, cleaning up state"
+    set_state_inactive
+    return 1
+  fi
 }
 
 # Action: Turn everything off (State-based)
@@ -338,7 +386,10 @@ action_off() {
   log "Deactivating performance mode (Toggle OFF)..."
 
   if ! is_active; then
-    log "Not active, skipping (idempotent)"
+    log "Not active (no state file), but running cleanup anyway to ensure consistent state..."
+    # Run cleanup anyway to handle cases where state file was lost but features are still enabled
+    cleanup "$TUNED_PATH" "$SCXCTL_PATH" "$NIRI_OUTPUT"
+    set_state_inactive
     return 0
   fi
 
@@ -400,6 +451,16 @@ main() {
   fi
 
   local mode="$1"
+  local output_arg="${2:-}"  # Optional output name (e.g., DP-1, HDMI-A-1)
+
+  # Set NIRI_OUTPUT from env var, argument, or default (in priority order)
+  if [[ -n "${NIRI_OUTPUT_NAME:-}" ]]; then
+    NIRI_OUTPUT="$NIRI_OUTPUT_NAME"  # Env var from niri-watcher.sh
+  elif [[ -n "$output_arg" && "$mode" =~ ^(on|off)$ ]]; then
+    NIRI_OUTPUT="$output_arg"  # Command-line argument
+  else
+    NIRI_OUTPUT="$NIRI_OUTPUT_DEFAULT"  # Default fallback
+  fi
 
   # Get command paths and validate dependencies
   local command_paths
