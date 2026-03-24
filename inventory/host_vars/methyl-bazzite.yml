@@ -37,6 +37,8 @@ script_links:
     dest: "/usr/local/bin/squish"
   - src: "khalreminder.sh"
     dest: "/usr/local/bin/khalreminder"
+  - src: "niri-watcher.sh"
+    dest: "/usr/local/bin/niri-watcher"
 
 # To be run after dotfiles are processed
 program_handlers:

@@ -17,20 +17,47 @@
         force: true
       when: dotfiles_root is defined
 
+    - name: Check if niri is installed
+      ansible.builtin.shell:
+        cmd: command -v niri || test -x /usr/bin/niri || test -x /usr/local/bin/niri
+        executable: /bin/bash
+      register: dotfiles_niri_in_path
+      failed_when: false
+      changed_when: false
+
+    - name: Filter script_links based on niri availability
+      ansible.builtin.set_fact:
+        dotfiles_script_links_filtered: >-
+          {{
+            script_links
+            | rejectattr('src', 'equalto', 'niri-watcher.sh')
+            | list
+            if dotfiles_niri_in_path.rc != 0
+            else script_links
+          }}
+      when: script_links is defined
+
     - name: Link global scripts
       ansible.builtin.file:
         path: "{{ script_item.dest }}"
         src: "{{ scripts_dir }}/{{ script_item.src }}"
         state: link
         force: true
-      loop: "{{ script_links }}"
+      loop: "{{ dotfiles_script_links_filtered | default(script_links, true) }}"
       loop_control:
         loop_var: script_item
         label: "Linking {{ script_item.src }}"
       when:
-        - script_links is defined
-        - script_links | length > 0
+        - (script_links is defined or dotfiles_script_links_filtered is defined)
+        - (dotfiles_script_links_filtered | default(script_links, true)) | length > 0
       become: true
+
+    - name: Remove stale niri-watcher link when niri not installed
+      when: dotfiles_niri_in_path.rc != 0
+      become: true
+      ansible.builtin.file:
+        path: /usr/local/bin/niri-watcher
+        state: absent
 
 - name: Some Steam-specific Wayland enhancements
   tags: [extra, dotfiles, dotfiles_scripts]

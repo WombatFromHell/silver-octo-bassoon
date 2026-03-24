@@ -1,0 +1,44 @@
+[Unit]
+Description=Niri VRR/Fullscreen Watcher
+Documentation=man:niri(1)
+# Only start after niri.service is active
+After=niri.service
+# Bind this service's lifecycle to niri.service
+BindsTo=niri.service
+# Stop if niri.service stops (e.g., switching to another WM)
+PartOf=niri.service
+# Ensure we only run in niri sessions
+ConditionEnvironment=WAYLAND_DISPLAY
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/niri-watcher
+Restart=on-failure
+RestartSec=5
+# Clean up on stop
+KillMode=mixed
+TimeoutStopSec=10
+
+# Environment
+Environment=XDG_RUNTIME_DIR=%t
+Environment=WAYLAND_DISPLAY=%i
+
+# Security hardening (optional but recommended)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+MemoryDenyWriteExecute=true
+LockPersonality=true
+
+# Allow access to niri socket and XDG_RUNTIME_DIR
+ReadWritePaths=%t
+
+[Install]
+# Only wanted when niri.service is wanted
+WantedBy=niri.service
