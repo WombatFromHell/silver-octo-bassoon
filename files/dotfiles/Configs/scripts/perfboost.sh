@@ -12,7 +12,7 @@ ENABLE_STEAM_ENV="true"
 #
 # Default output name (can be overridden via command-line argument or NIRI_OUTPUT_NAME env var)
 NIRI_OUTPUT_DEFAULT="DP-1"
-NIRI_OUTPUT=""  # Set by main() from env var, args, or default
+NIRI_OUTPUT="" # Set by main() from env var, args, or default
 
 # State tracking (for idempotency)
 STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/perfboost"
@@ -451,15 +451,15 @@ main() {
   fi
 
   local mode="$1"
-  local output_arg="${2:-}"  # Optional output name (e.g., DP-1, HDMI-A-1)
+  local output_arg="${2:-}" # Optional output name (e.g., DP-1, HDMI-A-1)
 
   # Set NIRI_OUTPUT from env var, argument, or default (in priority order)
   if [[ -n "${NIRI_OUTPUT_NAME:-}" ]]; then
-    NIRI_OUTPUT="$NIRI_OUTPUT_NAME"  # Env var from niri-watcher.sh
+    NIRI_OUTPUT="$NIRI_OUTPUT_NAME" # Env var from niri-watcher.sh
   elif [[ -n "$output_arg" && "$mode" =~ ^(on|off)$ ]]; then
-    NIRI_OUTPUT="$output_arg"  # Command-line argument
+    NIRI_OUTPUT="$output_arg" # Command-line argument
   else
-    NIRI_OUTPUT="$NIRI_OUTPUT_DEFAULT"  # Default fallback
+    NIRI_OUTPUT="$NIRI_OUTPUT_DEFAULT" # Default fallback
   fi
 
   # Get command paths and validate dependencies

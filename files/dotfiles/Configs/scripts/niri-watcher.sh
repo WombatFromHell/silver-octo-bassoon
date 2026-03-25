@@ -15,15 +15,26 @@ readonly STARTUP_DELAY=3
 # Example: ON_FULLSCREEN_HOOKS=("$HOME/.config/hooks/disable-compositor.sh")
 # Hook scripts can access the output name via $NIRI_OUTPUT_NAME
 # shellcheck disable=SC2034
-declare -a ON_FULLSCREEN_HOOKS=("$HOME/.local/bin/scripts/perfboost.sh on")
+declare -a ON_FULLSCREEN_HOOKS=(
+  "$HOME/.local/bin/scripts/perfboost.sh on"
+)
 # shellcheck disable=SC2034
-declare -a ON_EXIT_FULLSCREEN_HOOKS=("$HOME/.local/bin/scripts/perfboost.sh off")
+declare -a ON_EXIT_FULLSCREEN_HOOKS=(
+  "$HOME/.local/bin/scripts/perfboost.sh off"
+)
 
 # Exclusion List - Apps that should never trigger VRR (even when fullscreen)
 # Add app_id values from 'niri msg -j windows' to exclude specific applications
 # Example: "brave-browser", "firefox", "vlc", "mpv"
 # shellcheck disable=SC2034
-declare -a EXCLUDE_APP_IDS=("brave-browser")
+declare -a EXCLUDE_APP_IDS=(
+  "brave-browser"
+  "brave-browser-beta"
+  "org.mozilla.firefox"
+  "org.kde.haruna"
+  "mpv"
+  "io.mpv.Mpv"
+)
 
 # --- State ---
 # Maps output_name -> "fullscreen"|"windowed"
