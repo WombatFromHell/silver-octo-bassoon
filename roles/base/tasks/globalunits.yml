@@ -2,6 +2,9 @@
 - name: Copy and enable systemd units to /etc/systemd/system
   tags: [extra, globalunits]
   become: true
+  vars:
+    base_nvidia_enabled: "{{ nvidia_exists | default(false) }}"
+    base_fix_wakeups_enabled: "{{ enable_fix_wakeups | default(false) }}"
   block:
     - name: Ensure /etc/systemd/system directory exists
       ansible.builtin.file:
@@ -9,15 +12,16 @@
         state: directory
         mode: "0755"
 
-    - name: Find all unit files, filtering out unnecessary ones if NVIDIA driver is missing
+    # Copy generic unit files (excludes NVIDIA conditionally)
+    - name: Find all unit files in role's files/units directory
       ansible.builtin.find:
         paths: "{{ role_path }}/files/units"
         file_type: file
         recurse: false
-        excludes: "{{ ['nvidia-tdp.*', 'veridian-controller.service'] if not (nvidia_exists | default(false)) else [] }}"
+        excludes: "{{ ['nvidia-tdp.*', 'veridian-controller.service'] if not base_nvidia_enabled else [] }}"
       register: base_unit_files
 
-    - name: Copy unit files to /etc/systemd/system with proper permissions
+    - name: Copy unit files to /etc/systemd/system
       ansible.builtin.copy:
         src: "{{ file_item.path }}"
         dest: "/etc/systemd/system/{{ file_item.path | basename }}"
@@ -31,26 +35,42 @@
       when: base_unit_files.matched > 0
       notify: reload_global_systemd
 
-    - name: Check if redundant fix-wakeups.service exists
+    # Manage fix-wakeups.service
+    - name: Copy fix-wakeups.service when enabled
+      ansible.builtin.copy:
+        src: "{{ role_path }}/files/units/fix-wakeups.service"
+        dest: /etc/systemd/system/fix-wakeups.service
+        mode: "0644"
+        remote_src: false
+        backup: true
+      when: base_fix_wakeups_enabled
+      notify: reload_global_systemd
+
+    - name: Check if fix-wakeups.service exists
       ansible.builtin.stat:
         path: /etc/systemd/system/fix-wakeups.service
-      register: base_old_fix_wakeups_service
+      register: base_fix_wakeups_service_stat
 
-    - name: Ensure redundant fix-wakeups.service is stopped and disabled
+    - name: Stop and disable fix-wakeups.service when disabled
       ansible.builtin.systemd:
         name: fix-wakeups.service
         enabled: false
         state: stopped
       when:
         - not ansible_check_mode
-        - base_old_fix_wakeups_service.stat.exists
+        - base_fix_wakeups_service_stat.stat.exists
+        - not base_fix_wakeups_enabled
 
-    - name: Remove redundant fix-wakeups.service unit file
+    - name: Remove fix-wakeups.service when disabled
       ansible.builtin.file:
         path: /etc/systemd/system/fix-wakeups.service
         state: absent
+      when:
+        - base_fix_wakeups_service_stat.stat.exists
+        - not base_fix_wakeups_enabled
       notify: reload_global_systemd
 
+    # Cleanup: remove NVIDIA unit files when NVIDIA is disabled
     - name: Check if NVIDIA-related unit files exist (for cleanup)
       ansible.builtin.stat:
         path: "/etc/systemd/system/{{ item }}"
@@ -59,7 +79,7 @@
         - nvidia-tdp.service
         - nvidia-tdp.timer
         - veridian-controller.service
-      when: not (nvidia_exists | default(false))
+      when: not base_nvidia_enabled
 
     - name: Stop and disable NVIDIA-related services if present
       ansible.builtin.systemd:
@@ -71,6 +91,7 @@
         - not ansible_check_mode
         - item.stat is defined
         - item.stat.exists
+        - not base_nvidia_enabled
       failed_when: false
 
     - name: Remove NVIDIA-related unit files when NVIDIA is not present
@@ -81,23 +102,11 @@
       when:
         - item.stat is defined
         - item.stat.exists
+        - not base_nvidia_enabled
       notify: reload_global_systemd
 
-    # - name: Enable service units
-    #   when: not ansible_check_mode
-    #   ansible.builtin.systemd:
-    #     name: "{{ unit_file.path | basename }}"
-    #     daemon_reload: true
-    #     enabled: true
-    #     state: started
-    #   loop: "{{ base_unit_files.files }}"
-    #   loop_control:
-    #     loop_var: unit_file
-    #     label: "Enabling {{ unit_file.path | basename }}"
-    #   check_mode: false
-
+    # Configure scx_loader if service exists
     - name: Check if scx_loader.service exists
-      become: true
       ansible.builtin.stat:
         path: "{{ item }}"
       register: base_scx_service_stat
@@ -107,7 +116,7 @@
         - /usr/lib/systemd/system/scx_loader.service
         - /lib/systemd/system/scx_loader.service
 
-    - name: Set fact if service exists
+    - name: Set fact if scx_loader service exists
       ansible.builtin.set_fact:
         base_scx_service_exists: "{{ base_scx_service_stat.results | selectattr('stat.exists') | list | length > 0 }}"
       when: base_scx_service_stat.results is defined
@@ -122,7 +131,6 @@
           changed_when: false
 
         - name: Backup existing scx_loader.toml if it exists
-          become: true
           ansible.builtin.copy:
             src: /etc/scx_loader.toml
             dest: /etc/scx_loader.toml.bak
@@ -135,7 +143,6 @@
             - base_existing_scx_toml.stat.exists
 
         - name: Copy scx_loader.toml configuration
-          become: true
           ansible.builtin.copy:
             src: "{{ role_path }}/files/etc/scx_loader.toml"
             dest: /etc/scx_loader.toml
