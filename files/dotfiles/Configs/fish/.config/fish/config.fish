@@ -345,8 +345,13 @@ alias update_tmux='~/.config/tmux/plugins/tpm/bin/update_plugins all'
 alias kclear="printf '\033[2J\033[3J\033[1;1H'"
 
 set NIX_DAEMON_FISH_SRC /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
-if test -z "$NIX_PROFILES"; and test -r "$NIX_DAEMON_FISH_SRC"
+if test -r "$NIX_DAEMON_FISH_SRC"
     source "$NIX_DAEMON_FISH_SRC"
+end
+
+set NIX_SESSION_VARS $HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
+if test -r "$NIX_SESSION_VARS"
+    fenv source "$NIX_SESSION_VARS"
 end
 
 source "$HOME/.config/fish/catppuccin-fzf-mocha.fish"
