@@ -4,7 +4,8 @@ set -euo pipefail
 #==============================================================================
 # CONFIGURATION
 #==============================================================================
-readonly WRAPPER_SCRIPT="${WRAPPER_SCRIPT:-brave-wrapper.sh}"
+readonly WRAPPER_PATH="$(realpath "$HOME"/.local/bin/scripts/brave-wrapper.sh)"
+readonly WRAPPER_SCRIPT="${WRAPPER_SCRIPT:-$WRAPPER_PATH}"
 readonly CONTAINER_NAME="${CONTAINER_NAME:-bravebox}"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_PATH="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
@@ -276,15 +277,22 @@ configure_desktop_file() {
   fi
   echo "✓ Modified Exec line"
 
-  # 5. Add StartupWMClass
-  if ! grep -q "^StartupWMClass=" "$desktop_file"; then
-    local wm_class="$FLATPAK_ID"
-    [[ "$USE_FLATPAK" == "false" ]] && wm_class="$PKG_NAME"
+  # 5. Add StartupWMClass after Exec= line in [Desktop Entry] section
+  local wm_class="$FLATPAK_ID"
+  [[ "$USE_FLATPAK" == "false" ]] && wm_class="$PKG_NAME"
 
-    # Insert after [Desktop Entry] section header
-    sed -i "/^\[Desktop Entry\]/a StartupWMClass=${wm_class}" "$desktop_file"
-    echo "✓ Added StartupWMClass"
-  fi
+  # Remove any existing StartupWMClass lines to ensure only one instance
+  grep -v "^StartupWMClass=" "$desktop_file" > "${desktop_file}.tmp" && mv "${desktop_file}.tmp" "$desktop_file"
+
+  # Insert StartupWMClass after the first Exec= line in [Desktop Entry] section
+  awk -v wc="StartupWMClass=${wm_class}" '
+    BEGIN { in_desktop_entry = 0; added = 0 }
+    /^\[Desktop Entry\]/ { in_desktop_entry = 1 }
+    /^\[/ && !/^\[Desktop Entry\]/ { in_desktop_entry = 0 }
+    /^Exec=/ && in_desktop_entry && !added { print; print wc; added = 1; next }
+    { print }
+  ' "$desktop_file" > "${desktop_file}.tmp" && mv "${desktop_file}.tmp" "$desktop_file"
+  echo "✓ Added StartupWMClass"
 
   update-desktop-database "${apps_dir}" 2>/dev/null || true
 }
