@@ -1,0 +1,9 @@
+{
+  "qalcLauncher": {
+    "enabled": true
+  },
+  "calculator": {
+    "enabled": true,
+    "trigger": "="
+  }
+}

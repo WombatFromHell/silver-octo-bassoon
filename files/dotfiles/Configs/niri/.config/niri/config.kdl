@@ -50,6 +50,7 @@ layout {
         // active-color "#87CEC3"
         // Color of the ring on inactive monitors.
         inactive-color "#969EBE"
+        urgent-color "#f5c2e7"
         // Teal dominant (top-right) with muted secondary accent (bottom-left)
         active-gradient from="#5A607D" to="#87CEC3" angle=45
     }
@@ -99,10 +100,16 @@ window-rule {
     block-out-from "screen-capture"
  // block-out-from "screencast"
 }
+// float deletion progress dialogs of Dolphin like Transfers
+window-rule {
+    match app-id="org.kde.dolphin" title="^Deleting"
+    open-floating true
+}
 window-rule {
     geometry-corner-radius 4
     clip-to-geometry true
 }
+//
 environment {
     QT_QPA_PLATFORMTHEME "qt6ct"
     QT_QPA_PLATFORM "wayland"
