@@ -7,6 +7,7 @@ set -euo pipefail
 readonly CONTAINER_NAME="${CONTAINER_NAME:-bravebox}"
 readonly CONTAINER_IMAGE="${CONTAINER_IMAGE:-fedora:43}"
 readonly FLATPAK_ID="com.brave.Browser"
+readonly LAST_DEFAULT_BROWSER_FILE="$HOME/.local/share/install-brave-last_default.txt"
 
 # Auto-detect script locations via PATH
 WRAPPER_PATH="$(command -v brave-wrapper.sh 2>/dev/null || echo "")"
@@ -19,6 +20,29 @@ log() { printf "\e[1;34m>>\e[0m %s\n" "$@"; }
 err() { printf "\e[1;31m!!\e[0m %s\n" "$@" >&2; }
 
 is_inside_container() { [[ -f /var/run/.containerenv ]]; }
+
+# Find all .desktop files that declare handling of http/https scheme handlers
+# Searches Flatpak export directories and standard XDG locations
+find_web_browser_desktop_files() {
+  local search_dirs=(
+    "/var/lib/flatpak/exports/share/applications"
+    "$HOME/.local/share/flatpak/exports/share/applications"
+    "$HOME/.local/share/applications"
+    "/usr/share/applications"
+  )
+
+  local results=()
+  for dir in "${search_dirs[@]}"; do
+    [[ -d "$dir" ]] || continue
+    while IFS= read -r -d '' file; do
+      if grep -q "MimeType=.*x-scheme-handler/http" "$file" 2>/dev/null; then
+        results+=("$file")
+      fi
+    done < <(find "$dir" -name "*.desktop" -type f -print0 2>/dev/null)
+  done
+
+  printf '%s\n' "${results[@]}"
+}
 
 get_container_id() {
   local id=""
@@ -119,6 +143,9 @@ do_uninstall() {
   read -r pkg_name repo_url export_name <<<"$(get_browser_config "$install_type")"
 
   log "Removing ${export_name} export..."
+
+  # Restore previous default web browser if it was set by us
+  restore_default_web_browser
 
   # Remove export from host (inside container)
   if container_exists; then
@@ -383,8 +410,118 @@ configure_desktop_file() {
     { print }
   ' "$desktop_file" >"$desktop_file.tmp" && mv "$desktop_file.tmp" "$desktop_file"
 
+  # Fix Icon= to use generic name instead of distro-specific path
+  sed -i 's|^Icon=.*|Icon=brave-browser|' "$desktop_file"
+
   update-desktop-database "$apps_dir" 2>/dev/null || true
   log "Configured desktop file for $launcher_desc"
+
+  # Set as default web browser if desktop file modification was successful
+  set_default_web_browser "$desktop_file"
+}
+
+set_default_web_browser() {
+  local desktop_file="$1"
+  local desktop_filename
+  desktop_filename="$(basename "$desktop_file")"
+
+  # Get current default web browser and store it (always update)
+  local current_default
+  current_default="$(xdg-settings get default-web-browser 2>/dev/null || echo "")"
+
+  # Store the previous default (overwrite to track current state before install)
+  if [[ -n "$current_default" ]]; then
+    mkdir -p "$(dirname "$LAST_DEFAULT_BROWSER_FILE")"
+    echo "$current_default" > "$LAST_DEFAULT_BROWSER_FILE"
+    log "Stored previous default browser: $current_default"
+  fi
+
+  # Check if already set to our desktop file
+  if [[ "$current_default" == "$desktop_filename" ]]; then
+    log "Default web browser already set to: $desktop_filename"
+    return 0
+  fi
+
+  # Validate that our desktop file is a valid web browser (has http/https MIME handlers)
+  if ! grep -q "MimeType=.*x-scheme-handler/http" "$desktop_file" 2>/dev/null; then
+    err "Desktop file does not declare http/https MIME handlers: $desktop_file"
+    return 1
+  fi
+
+  # Warn if a different browser is set as default
+  if [[ -n "$current_default" ]]; then
+    log "Current default web browser: $current_default"
+  fi
+
+  # Set our desktop file as the default web browser
+  log "Setting default web browser to: $desktop_filename"
+  if xdg-settings set default-web-browser "$desktop_filename" 2>/dev/null; then
+    log "Default web browser updated successfully"
+    
+    # Verify the change took effect
+    local new_default
+    new_default="$(xdg-settings get default-web-browser 2>/dev/null || echo "")"
+    if [[ "$new_default" == "$desktop_filename" ]]; then
+      log "Verified: default web browser is now $desktop_filename"
+      return 0
+    else
+      err "Verification failed: expected $desktop_filename but got $new_default"
+      return 1
+    fi
+  else
+    err "Failed to set default web browser to $desktop_filename"
+    return 1
+  fi
+}
+
+restore_default_web_browser() {
+  if [[ ! -f "$LAST_DEFAULT_BROWSER_FILE" ]]; then
+    log "No previous default browser stored to restore"
+    return 0
+  fi
+
+  local previous_default
+  previous_default="$(cat "$LAST_DEFAULT_BROWSER_FILE")"
+
+  if [[ -z "$previous_default" ]]; then
+    log "Stored default browser entry is empty"
+    rm -f "$LAST_DEFAULT_BROWSER_FILE"
+    return 0
+  fi
+
+  # Validate that the stored desktop file still exists and is a valid browser
+  local desktop_found="false"
+  while IFS= read -r file; do
+    if [[ "$(basename "$file")" == "$previous_default" ]]; then
+      desktop_found="true"
+      break
+    fi
+  done < <(find_web_browser_desktop_files)
+
+  if [[ "$desktop_found" == "false" ]]; then
+    log "Previously stored browser no longer available: $previous_default"
+    rm -f "$LAST_DEFAULT_BROWSER_FILE"
+    return 0
+  fi
+
+  local current_default
+  current_default="$(xdg-settings get default-web-browser 2>/dev/null || echo "")"
+
+  if [[ "$current_default" == "$previous_default" ]]; then
+    log "Default web browser is already set to: $previous_default"
+    rm -f "$LAST_DEFAULT_BROWSER_FILE"
+    return 0
+  fi
+
+  log "Restoring default web browser to: $previous_default"
+  if xdg-settings set default-web-browser "$previous_default" 2>/dev/null; then
+    log "Default web browser restored successfully"
+    rm -f "$LAST_DEFAULT_BROWSER_FILE"
+    return 0
+  else
+    err "Failed to restore default web browser"
+    return 1
+  fi
 }
 
 create_container() {
