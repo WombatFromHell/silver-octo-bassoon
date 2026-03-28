@@ -50,8 +50,8 @@ layout {
         // active-color "#87CEC3"
         // Color of the ring on inactive monitors.
         inactive-color "#969EBE"
-        // Teal dominant (top-right) with muted pink (bottom-left)
-        active-gradient from="#ED88A5" to="#87CEC3" angle=45
+        // Teal dominant (top-right) with muted secondary accent (bottom-left)
+        active-gradient from="#5A607D" to="#87CEC3" angle=45
     }
 }
 hotkey-overlay {
