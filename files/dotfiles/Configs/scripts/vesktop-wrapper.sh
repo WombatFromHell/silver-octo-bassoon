@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 
-SCRIPTS_BIN="$(realpath "$HOME")/.local/bin/scripts"
-WRAPPER="$SCRIPTS_BIN/chrome_with_flags.py"
-
-FLATPAK="$(which flatpak)"
+WRAPPER="$(command -v chromium-flags.sh 2>/dev/null || echo "")"
+FLATPAK="$(command -v flatpak 2>/dev/null || echo "")"
 FLATPAK_TARGET="dev.vencord.Vesktop"
 
 exec "$WRAPPER" "$FLATPAK" run "$FLATPAK_TARGET" "$@"
