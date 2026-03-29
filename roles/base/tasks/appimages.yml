@@ -9,8 +9,8 @@
         state: directory
         mode: "0755"
       loop:
-        - "{{ home_dir }}/AppImages"
-        - "{{ home_dir }}/.local/bin"
+        - "{{ home_realpath }}/AppImages"
+        - "{{ home_realpath }}/.local/bin"
         - "/usr/local/bin"
 
     - name: Find xdg-open location
@@ -56,7 +56,7 @@
       ansible.builtin.package:
         name: "fuse2"
         state: present
-      when: ansible_facts['distribution'] == "Archlinux"
+      when: os_release_id == "archlinux"
 
     - name: Find all AppImages in source directory
       ansible.builtin.find:
@@ -68,7 +68,7 @@
 
     - name: Check for existing lowercase appimage files
       ansible.builtin.find:
-        paths: "{{ home_dir }}/AppImages"
+        paths: "{{ home_realpath }}/AppImages"
         patterns: "*.appimage"
         file_type: file
       register: base_existing_lowercase_appimages
@@ -114,7 +114,7 @@
         - name: Copy AppImages with proper permissions
           ansible.builtin.copy:
             src: "{{ item }}"
-            dest: "{{ home_dir }}/AppImages/{{ item | basename }}"
+            dest: "{{ home_realpath }}/AppImages/{{ item | basename }}"
             remote_src: false
             mode: "0755"
           loop: "{{ base_final_appimages | default([]) }}"
@@ -223,7 +223,7 @@
       block:
         - name: Check for existing Ghostty installations
           ansible.builtin.stat:
-            path: "{{ home_dir }}/AppImages/alacritty.{{ item }}"
+            path: "{{ home_realpath }}/AppImages/alacritty.{{ item }}"
           loop:
             - "AppImage"
             - "appimage"
@@ -234,9 +234,9 @@
 
         - name: Rename Alacritty to lowercase if needed
           ansible.builtin.command:
-            cmd: mv "{{ home_dir }}/AppImages/alacritty.AppImage" "{{ home_dir }}/AppImages/alacritty.appimage"
+            cmd: mv "{{ home_realpath }}/AppImages/alacritty.AppImage" "{{ home_realpath }}/AppImages/alacritty.appimage"
           args:
-            creates: "{{ home_dir }}/AppImages/alacritty.appimage"
+            creates: "{{ home_realpath }}/AppImages/alacritty.appimage"
           when:
             - base_alacritty_check.results[0].stat.exists | default(false)
             - not base_alacritty_check.results[1].stat.exists | default(false)
@@ -244,8 +244,8 @@
 
         - name: Create symlink for Alacritty
           ansible.builtin.file:
-            src: "{{ home_dir }}/AppImages/alacritty.appimage"
-            dest: "{{ home_dir }}/.local/bin/alacritty"
+            src: "{{ home_realpath }}/AppImages/alacritty.appimage"
+            dest: "{{ home_realpath }}/.local/bin/alacritty"
             state: link
             force: true
           when: >
@@ -260,7 +260,7 @@
       block:
         - name: Check for existing Ghostty installations
           ansible.builtin.stat:
-            path: "{{ home_dir }}/AppImages/ghostty.{{ item }}"
+            path: "{{ home_realpath }}/AppImages/ghostty.{{ item }}"
           loop:
             - "AppImage"
             - "appimage"
@@ -271,9 +271,9 @@
 
         - name: Rename Ghostty to lowercase if needed
           ansible.builtin.command:
-            cmd: mv "{{ home_dir }}/AppImages/ghostty.AppImage" "{{ home_dir }}/AppImages/ghostty.appimage"
+            cmd: mv "{{ home_realpath }}/AppImages/ghostty.AppImage" "{{ home_realpath }}/AppImages/ghostty.appimage"
           args:
-            creates: "{{ home_dir }}/AppImages/ghostty.appimage"
+            creates: "{{ home_realpath }}/AppImages/ghostty.appimage"
           when:
             - base_ghostty_check.results[0].stat.exists | default(false)
             - not base_ghostty_check.results[1].stat.exists | default(false)
@@ -281,8 +281,8 @@
 
         - name: Create symlink for Ghostty
           ansible.builtin.file:
-            src: "{{ home_dir }}/AppImages/ghostty.appimage"
-            dest: "{{ home_dir }}/.local/bin/ghostty"
+            src: "{{ home_realpath }}/AppImages/ghostty.appimage"
+            dest: "{{ home_realpath }}/.local/bin/ghostty"
             state: link
             force: true
           when: >

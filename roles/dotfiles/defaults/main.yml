@@ -1,0 +1,14 @@
+---
+# Default values for dotfiles role
+
+# Feature toggles
+enable_lazyvim: true
+enable_ghostty: false
+enable_alacritty: false
+
+# Paths
+dotfiles_root: "{{ playbook_dir }}/files/dotfiles"
+scripts_dir: "{{ home_realpath }}/.local/bin/scripts"
+
+# Program handlers (run after dotfiles processed)
+program_handlers: {}

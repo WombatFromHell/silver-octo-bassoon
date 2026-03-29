@@ -1,0 +1,11 @@
+---
+# Default values for vfio role
+
+# Feature toggle
+enable_vfio: false
+
+# Kernel arguments for VFIO
+vm_grub_args: >-
+  kvm.ignore_msrs=1 kvm.report_ignored_msrs=0
+  amd_iommu=on iommy=pt rd.driver.pre=vfio_pci
+  vfio_pci.disable_vga=1

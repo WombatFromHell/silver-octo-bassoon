@@ -1,0 +1,35 @@
+#!/usr/bin/env ansible-playbook
+---
+# Test the flatpak role independently
+# Usage: ansible-playbook tests/test_flatpak_role.yml --check
+
+- name: Test flatpak role
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars:
+    test_mode: true
+    home_realpath: "{{ ansible_facts['env']['HOME'] | realpath }}"
+    enable_flatpak: true
+    system_flatpaks: []
+    user_flatpaks: []
+    skip_flatpaks: []
+    install_brave: false
+    install_firefox: false
+    install_peazip: false
+    program_checks: {}
+
+  pre_tasks:
+    - name: Run system facts gathering
+      ansible.builtin.include_role:
+        name: system_facts
+      tags: [always]
+
+  roles:
+    - flatpak
+
+  post_tasks:
+    - name: Test summary
+      ansible.builtin.debug:
+        msg: "Flatpak role test completed successfully"

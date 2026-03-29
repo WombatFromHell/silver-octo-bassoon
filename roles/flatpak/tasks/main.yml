@@ -1,10 +1,16 @@
 ---
+# Role: flatpak
+# Description: Install and manage Flatpak applications
+# check_mode: Supported
+#   - Package installation: Reports changes but doesn't install
+#   - Repository config: Reports changes but doesn't modify
+# Safe to run with --check for preview
 - name: Install Flatpak packages
   tags: [extra, flatpak]
   when: enable_flatpak | default(false)
   block:
     - name: Ensure Flatpak is installed (Archlinux)
-      when: ansible_facts['distribution'] == "Archlinux"
+      when: os_release_id == "archlinux"
       ansible.builtin.package:
         name: "flatpak"
         state: present
@@ -12,7 +18,7 @@
       tags: flatpak_install
 
     - name: Check for flatpak executable
-      when: ansible_facts['distribution'] != "Archlinux"
+      when: os_release_id != "archlinux"
       ansible.builtin.command: which flatpak
       register: flatpak_check
       changed_when: false
@@ -21,7 +27,7 @@
     - name: Validate flatpak installation
       when:
         - not ansible_check_mode
-        - ansible_facts['distribution'] != "Archlinux"
+        - os_release_id != "archlinux"
       ansible.builtin.assert:
         that:
           - flatpak_check is defined
@@ -61,15 +67,15 @@
     - name: Handle flatpak extra packages and workarounds
       block:
         - name: Include flatpak brave tasks
-          ansible.builtin.include_tasks: flatpak_brave.yml
+          ansible.builtin.import_tasks: flatpak_brave.yml
           tags: [extra, flatpak, flatpak_extra, flatpak_brave]
 
         - name: Include flatpak firefox tasks
-          ansible.builtin.include_tasks: flatpak_firefox.yml
+          ansible.builtin.import_tasks: flatpak_firefox.yml
           tags: [extra, flatpak, flatpak_extra, flatpak_firefox]
 
         - name: Include flatpak peazip tasks
-          ansible.builtin.include_tasks: flatpak_peazip.yml
+          ansible.builtin.import_tasks: flatpak_peazip.yml
           tags: [extra, flatpak, flatpak_extra, flatpak_peazip]
 
         - name: Install OBS Studio and plugins
@@ -84,4 +90,4 @@
             - com.obsproject.Studio.Plugin.GStreamerVaapi
             - com.obsproject.Studio
           when: install_obs | default(false)
-          tags: [exta, flatpak, flatpak_extra, flatpak_obs]
+          tags: [extra, flatpak, flatpak_extra, flatpak_obs]

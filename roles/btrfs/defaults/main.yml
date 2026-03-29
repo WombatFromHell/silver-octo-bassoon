@@ -1,0 +1,19 @@
+---
+# Default values for btrfs role
+
+# Feature toggle
+enable_btrfs_snapper: false
+
+# Configuration
+btrfs_mount: /mnt/btrfs
+use_aur_helper: true
+aur_helper: yay
+aur_flags: "-Sy --needed --noconfirm"
+compress_algorithm: "zstd:3"
+commit_interval: 120
+
+# Snapper timers
+snapper_timers:
+  - snapper-cleanup.timer
+  - snapper-backup.timer
+  - snapper-timeline.timer

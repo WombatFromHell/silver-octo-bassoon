@@ -1,0 +1,12 @@
+#!/usr/bin/env ansible-playbook
+---
+- name: Teardown tasks
+  tags: [setup, teardown]
+  hosts: all
+  tasks:
+    - name: Remove sudoers config for ansible
+      tags: sudoers
+      ansible.builtin.file:
+        path: "/etc/sudoers.d/99-ansible-nopasswd"
+        state: absent
+      become: true

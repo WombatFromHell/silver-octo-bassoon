@@ -1,0 +1,20 @@
+---
+# Install packages with proper error handling and idempotency
+#
+# Usage:
+#   ansible.builtin.include_tasks: install_packages.yml
+#   vars:
+#     packages: [pkg1, pkg2]
+#     package_manager: pacman  # optional: pacman, apt, dnf, brew
+#     state: present           # optional: present, latest, absent
+#     become: true             # optional
+
+- name: Install packages via {{ package_manager | default('pacman') }}
+  ansible.builtin.package:
+    name: "{{ packages }}"
+    state: "{{ state | default('present') }}"
+  become: "{{ become | default(true) }}"
+  register: _install_packages_result
+  failed_when: >
+    _install_packages_result.failed and
+    'No package' not in _install_packages_result.msg | default('')

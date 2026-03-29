@@ -1,0 +1,36 @@
+---
+# Install a config file with backup of existing file
+#
+# Usage:
+#   ansible.builtin.include_tasks: install_config.yml
+#   vars:
+#     src: "/path/to/config.conf"
+#     dest: "/etc/myapp/config.conf"
+#     mode: "0644"   # optional
+#     backup: true   # optional, default: true
+#     validate: "myapp --check %s"  # optional
+
+- name: Install config file
+  ansible.builtin.copy:
+    src: "{{ src }}"
+    dest: "{{ dest }}"
+    mode: "{{ mode | default('0644') }}"
+    owner: "{{ owner | default('root') }}"
+    group: "{{ group | default('root') }}"
+    backup: "{{ backup | default(true) }}"
+    validate: "{{ validate | default(omit) }}"
+  become: true
+  register: _install_config_result
+  changed_when: _install_config_result.changed
+
+- name: Verify config was installed
+  ansible.builtin.stat:
+    path: "{{ dest }}"
+  register: _config_stat
+
+- name: Assert config was installed correctly
+  ansible.builtin.assert:
+    that:
+      - _config_stat.stat.exists
+    fail_msg: "Config {{ dest }} was not installed correctly"
+    success_msg: "Config {{ dest }} installed successfully"

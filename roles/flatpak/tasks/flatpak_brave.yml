@@ -7,7 +7,25 @@
   vars:
     brave_app: com.brave.Browser
   block:
-    - name: Install Brave browser
+    - name: Check for install-brave.sh on Bazzite
+      when: os_variant_id == "bazzite"
+      ansible.builtin.command: which install-brave.sh
+      register: brave_script_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install Brave using install-brave.sh (Bazzite)
+      when:
+        - os_variant_id == "bazzite"
+        - brave_script_check.rc == 0
+      ansible.builtin.command: install-brave.sh --recreate --install stable
+      register: brave_install_result
+      changed_when: "'installed' in brave_install_result.stdout or 'recreated' in brave_install_result.stdout"
+      failed_when: false
+
+    - name: Install Brave browser via Flatpak (non-Bazzite or script not found)
+      when:
+        - os_variant_id != "bazzite" or brave_script_check.rc != 0
       community.general.flatpak:
         name: "{{ brave_app }}"
         state: present
@@ -15,7 +33,7 @@
 
     - name: Install libva-nvidia-driver on Arch
       when:
-        - ansible_facts['distribution'] == "Archlinux"
+        - os_release_id == "archlinux"
         - nvidia_exists | default(false)
       become: true
       ansible.builtin.package:
@@ -67,7 +85,7 @@
             - flatpak_brave_script.stat.exists is defined
             - flatpak_brave_script.stat.exists
             - not flatpak_brave_script.stat.isdir
-            - flatpak_vaapi_check is failed # Only run if the assert failed (no drivers found)
+            - flatpak_vaapi_check is failed
           ansible.builtin.script: "{{ flatpak_brave_script.stat.path }}"
           register: flatpak_chromium_vaapi_fix
           ignore_errors: true

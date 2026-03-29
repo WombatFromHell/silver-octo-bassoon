@@ -1,0 +1,21 @@
+---
+# Test configuration
+# These variables apply to all test plays
+
+# Common test settings
+test_mode: true
+
+# Home directory (will be overridden by system_facts if gather_facts: true)
+home_realpath: "{{ ansible_facts['env']['HOME'] | default('/tmp/test-home', true) | realpath }}"
+
+# Skip destructive operations in tests
+skip_destructive: true
+
+# Minimal package lists for faster tests
+test_packages:
+  - bat
+  - eza
+
+# Empty lists for optional features
+test_flatpaks: []
+test_aur_packages: []

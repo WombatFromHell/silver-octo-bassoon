@@ -1,12 +1,15 @@
 ---
 - name: Systemd user units processing
   tags: [extra, dotfiles, dotfiles_systemd]
+  when: dotfiles_root is defined
   block:
     - name: Check for systemd configs in dotfiles
       ansible.builtin.set_fact:
-        dotfiles_systemd_user_dir: "{{ home_dir }}/.config/systemd/user"
-        dotfiles_systemd_service_files: "{{ lookup('fileglob', dotfiles_root + '/Configs/systemd/.config/systemd/user/*.service', wantlist=true) }}"
-        dotfiles_systemd_timer_files: "{{ lookup('fileglob', dotfiles_root + '/Configs/systemd/.config/systemd/user/*.timer', wantlist=true) }}"
+        dotfiles_systemd_user_dir: "{{ home_realpath }}/.config/systemd/user"
+        dotfiles_systemd_service_files: >-
+          {{- lookup('fileglob', dotfiles_root + '/Configs/systemd/.config/systemd/user/*.service', wantlist=true, errors='ignore') }}
+        dotfiles_systemd_timer_files: >-
+          {{- lookup('fileglob', dotfiles_root + '/Configs/systemd/.config/systemd/user/*.timer', wantlist=true, errors='ignore') }}
 
     - name: Determine if systemd configs exist
       ansible.builtin.set_fact:

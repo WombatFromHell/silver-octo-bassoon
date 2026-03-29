@@ -1,0 +1,20 @@
+---
+# Default values for flatpak role
+
+# Feature toggles
+enable_flatpak: false
+remove_existing_flatpaks: false
+
+# Package lists
+system_flatpaks: []
+user_flatpaks: []
+skip_flatpaks: []
+
+# Optional installations
+install_brave: false
+install_firefox: false
+install_peazip: false
+install_obs: false
+
+# VAAPI fix
+chrome_vaapi_fix: false

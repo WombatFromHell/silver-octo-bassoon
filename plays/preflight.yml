@@ -1,0 +1,119 @@
+#!/usr/bin/env ansible-playbook
+---
+- name: Preflight checks
+  hosts: methyl-cachyos methyl-bazzite
+  gather_facts: true
+  tags: [always, preflight]
+
+  pre_tasks:
+    - name: Validate Ansible version
+      ansible.builtin.assert:
+        that:
+          - ansible_version.full is version('2.14', '>=')
+        fail_msg: "Ansible 2.14 or higher is required (found {{ ansible_version.full }})"
+        success_msg: "Ansible version {{ ansible_version.full }} is supported"
+
+    - name: Validate Python interpreter
+      ansible.builtin.assert:
+        that:
+          - ansible_python.version.major >= 3
+        fail_msg: "Python 3+ is required (found {{ ansible_python.version.major }}.{{ ansible_python.version.minor }})"
+        success_msg: "Python {{ ansible_python.version.major }}.{{ ansible_python.version.minor }} is supported"
+
+    - name: Validate connection
+      ansible.builtin.ping:
+      register: ping_result
+
+    - name: Validate sudo access
+      ansible.builtin.command: whoami
+      become: true
+      register: whoami_result
+      changed_when: false
+      failed_when: whoami_result.rc != 0
+
+    - name: Check disk space on root filesystem
+      ansible.builtin.shell: set -o pipefail && df -h / | awk 'NR==2 {print $5}' | tr -d '%'
+      register: root_disk_usage
+      changed_when: false
+      failed_when: false
+
+    - name: Warn if disk usage is high
+      ansible.builtin.debug:
+        msg: "WARNING: Root filesystem is {{ root_disk_usage.stdout }}% full"
+      when: root_disk_usage.stdout | int > 80
+
+  tasks:
+    - name: Validate required variables are defined
+      ansible.builtin.assert:
+        that:
+          - system_hostname is defined
+          - timezone is defined
+          - graphics_card is defined
+        fail_msg: "Required variables missing. Check host_vars/{{ inventory_hostname }}.yml"
+        success_msg: "All required variables are defined"
+
+    - name: Validate OS compatibility
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] in ['Archlinux', 'Fedora']
+        fail_msg: "Unsupported distribution: {{ ansible_facts['distribution'] }}"
+        success_msg: "Distribution {{ ansible_facts['distribution'] }} is supported"
+
+    - name: Check for conflicting bootloader configurations
+      ansible.builtin.set_fact:
+        bootloader_count: >-
+          {{
+            (1 if is_grub_boot | default(false) else 0) +
+            (1 if is_limine_boot | default(false) else 0) +
+            (1 if is_systemd_boot | default(false) else 0) +
+            (1 if is_refind_boot | default(false) else 0)
+          }}
+      check_mode: false
+
+    - name: Warn if multiple booters detected
+      ansible.builtin.debug:
+        msg: "WARNING: Multiple bootloaders detected. This may cause conflicts."
+      when: bootloader_count | default(0) > 1
+
+    - name: Check for existing BTRFS snapper configuration
+      when: enable_btrfs_snapper | default(false)
+      block:
+        - name: Verify snapper is available
+          ansible.builtin.command: which snapper
+          register: snapper_check
+          changed_when: false
+          failed_when: false
+
+        - name: Warn if snapper not installed but enabled
+          ansible.builtin.debug:
+            msg: "WARNING: enable_btrfs_snapper is true but snapper is not installed"
+          when: snapper_check.rc != 0
+
+    - name: Check for Flatpak installation conflicts
+      when: enable_flatpak | default(false)
+      block:
+        - name: Verify flatpak is available
+          ansible.builtin.command: which flatpak
+          register: flatpak_check
+          changed_when: false
+          failed_when: false
+
+        - name: Warn if flatpak not installed but enabled
+          ansible.builtin.debug:
+            msg: "WARNING: enable_flatpak is true but flatpak is not installed"
+          when: flatpak_check.rc != 0
+
+    - name: Preflight summary
+      ansible.builtin.debug:
+        msg: |
+          Preflight checks passed for {{ system_hostname }}
+          - Distribution: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}
+          - Python: {{ ansible_python.version.major }}.{{ ansible_python.version.minor }}
+          - Disk usage: {{ root_disk_usage.stdout | default('N/A') }}%
+          - Bootloader: {{
+              'GRUB' if is_grub_boot | default(false) else
+              'Limine' if is_limine_boot | default(false) else
+              'systemd-boot' if is_systemd_boot | default(false) else
+              'rEFInd' if is_refind_boot | default(false) else
+              'Unknown'
+            }}

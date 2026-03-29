@@ -1,0 +1,29 @@
+#!/usr/bin/env ansible-playbook
+---
+# Test the btrfs role independently
+# Usage: ansible-playbook tests/test_btrfs_role.yml --check --diff
+
+- name: Test btrfs role
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars:
+    test_mode: true
+    home_realpath: "{{ ansible_facts['env']['HOME'] | realpath }}"
+    enable_btrfs_snapper: false  # Set true to test full btrfs setup
+    program_checks: {}
+
+  pre_tasks:
+    - name: Run system facts gathering
+      ansible.builtin.include_role:
+        name: system_facts
+      tags: [always]
+
+  roles:
+    - btrfs
+
+  post_tasks:
+    - name: Test summary
+      ansible.builtin.debug:
+        msg: "BTRFS role test completed successfully"

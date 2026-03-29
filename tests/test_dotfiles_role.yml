@@ -1,0 +1,39 @@
+#!/usr/bin/env ansible-playbook
+---
+# Test the dotfiles role independently
+# Usage: ansible-playbook tests/test_dotfiles_role.yml --check
+
+- name: Test dotfiles role
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars:
+    test_mode: true
+    home_realpath: "{{ ansible_facts['env']['HOME'] | realpath }}"
+    # Point to actual files directory (playbook_dir is tests/ when running this play)
+    dotfiles_root: "{{ playbook_dir | dirname }}/files/dotfiles"
+    vault_file: "{{ playbook_dir | dirname }}/files/support/gpg_vault.yml"
+    gnupg_key_dir: "{{ playbook_dir | dirname }}/files/support/.ssh/gnupg-keys"
+    ssh_key_dir: "{{ playbook_dir | dirname }}/files/support/.ssh"
+    scripts_dir: "{{ ansible_facts['env']['HOME'] | realpath }}/.local/bin/scripts"
+    pipewire_dir: "{{ ansible_facts['env']['HOME'] | realpath }}/.config/pipewire"
+
+    # Empty program checks to avoid processing errors
+    program_checks: {}
+
+    enable_lazyvim: false  # Disable to avoid nvim dependency
+
+  pre_tasks:
+    - name: Run system facts gathering
+      ansible.builtin.include_role:
+        name: system_facts
+      tags: [always]
+
+  roles:
+    - dotfiles
+
+  post_tasks:
+    - name: Test summary
+      ansible.builtin.debug:
+        msg: "Dotfiles role test completed successfully"

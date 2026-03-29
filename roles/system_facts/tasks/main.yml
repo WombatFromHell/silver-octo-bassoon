@@ -1,0 +1,109 @@
+---
+# Fact-gathering role - always runs, even in --check mode
+# All tasks use check_mode: false since they only read system state
+
+- name: Set OS release facts
+  check_mode: false
+  tags: [always, facts]
+  ansible.builtin.set_fact:
+    os_release_id: "{{ ansible_facts.lsb.id | default(ansible_facts['distribution'], true) | lower }}"
+    os_variant_id: "{{
+      lookup('file', '/etc/os-release') |
+      regex_search('^VARIANT_ID=(.*)$', '\\1', multiline=True) | first |
+      default(ansible_facts.lsb.id | default(ansible_facts['distribution'], true) | lower, true) | lower
+      }}"
+
+- name: Set home directory fact
+  check_mode: false
+  tags: [always, facts]
+  ansible.builtin.set_fact:
+    home_realpath: "{{ ansible_facts['env']['HOME'] | realpath }}"
+  when: ansible_facts['env']['HOME'] is defined
+
+- name: Gather NVIDIA driver facts
+  check_mode: false
+  tags: [always, facts]
+  block:
+    - name: Check for NVIDIA driver presence
+      ansible.builtin.stat:
+        path: /proc/driver/nvidia
+      register: system_facts_nvidia_driver
+      when: graphics_card is defined and graphics_card == "nvidia"
+
+    - name: Determine if NVIDIA driver is missing
+      ansible.builtin.set_fact:
+        nvidia_exists: >
+          {{ graphics_card == "nvidia" and system_facts_nvidia_driver.stat is defined and system_facts_nvidia_driver.stat.exists }}
+      when: graphics_card is defined
+
+- name: Gather AMD driver facts
+  check_mode: false
+  tags: [always, facts]
+  block:
+    - name: Get glxinfo
+      ansible.builtin.command: glxinfo
+      register: system_facts_glxinfo_output
+      changed_when: false
+      failed_when: false
+
+    - name: Set a fact if an AMD GPU is installed as an OpenGL vendor
+      ansible.builtin.set_fact:
+        amd_exists: true
+      when: "'OpenGL vendor string: AMD' in system_facts_glxinfo_output.stdout"
+      changed_when: false
+
+- name: Gather GRUB bootloader facts
+  check_mode: false
+  tags: [always, facts]
+  block:
+    - name: Check for GRUB bootloader
+      ansible.builtin.stat:
+        path: /boot/efi/EFI/boot/bootx64.efi
+      register: system_facts_grub_check
+      become: true
+
+    - name: Set GRUB bootloader facts
+      ansible.builtin.set_fact:
+        is_grub_boot: "{{ system_facts_grub_check.stat.exists | default(false) }}"
+
+- name: Gather Limine bootloader facts
+  check_mode: false
+  tags: [always, facts]
+  block:
+    - name: Check for Limine bootloader
+      ansible.builtin.stat:
+        path: /boot/efi/limine/limine_x64.efi
+      register: system_facts_limine_check
+      become: true
+
+    - name: Set Limine bootloader facts
+      ansible.builtin.set_fact:
+        is_limine_boot: "{{ system_facts_limine_check.stat.exists | default(false) }}"
+
+- name: Gather systemd-boot bootloader facts
+  check_mode: false
+  tags: [always, facts]
+  block:
+    - name: Check for systemd-boot bootloader
+      ansible.builtin.stat:
+        path: /boot/efi/EFI/systemd/systemd-bootx64.efi
+      register: system_facts_systemd_boot_check
+      become: true
+
+    - name: Set systemd-boot bootloader facts
+      ansible.builtin.set_fact:
+        is_systemd_boot: "{{ system_facts_systemd_boot_check.stat.exists | default(false) }}"
+
+- name: Gather rEFInd bootloader facts
+  check_mode: false
+  tags: [always, facts]
+  block:
+    - name: Check for rEFInd bootloader
+      ansible.builtin.stat:
+        path: /boot/efi/EFI/refind/refind_x64.efi
+      register: system_facts_refind_check
+      become: true
+
+    - name: Set rEFInd bootloader facts
+      ansible.builtin.set_fact:
+        is_refind_boot: "{{ system_facts_refind_check.stat.exists | default(false) }}"

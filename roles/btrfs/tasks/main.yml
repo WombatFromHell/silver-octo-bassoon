@@ -1,9 +1,19 @@
 ---
+# Role: btrfs
+# Description: Configure BTRFS filesystem with snapper rollback support
+# check_mode: Partially supported
+#   - Detection tasks: Always run (check_mode: false)
+#   - Package installation: Reports changes but doesn't install
+#   - Bootloader config: Reports changes but doesn't modify
+#   - Mount operations: Reports changes but doesn't mount/unmount
+#   - Snapper config: Reports changes but doesn't create configs
+# WARNING: This role modifies critical system files (fstab, bootloader configs)
+# Always run with --check first to review planned changes
 - name: Setup BTRFS on grub/rEFInd
   become: true
   tags: [extra, btrfs]
   when:
-    - ansible_facts['distribution'] == "Archlinux"
+    - os_release_id == "archlinux"
     - enable_btrfs_snapper | default(false)
   vars:
     # User-configurable variables
@@ -38,7 +48,7 @@
       when: not (btrfs_has_supported_bootloader | default(false))
 
     - name: Include system detection tasks
-      ansible.builtin.include_tasks: detection.yml
+      ansible.builtin.import_tasks: detection.yml
       tags: [extra, btrfs, btrfs_detection]
 
     - name: Create and mount BTRFS root volume
@@ -66,32 +76,32 @@
           register: btrfs_mounted
 
     - name: Include snapper installation tasks
-      ansible.builtin.include_tasks: packages.yml
-      when: ansible_facts['distribution'] == "Archlinux"
+      ansible.builtin.import_tasks: packages.yml
+      when: os_release_id == "archlinux"
       tags: [extra, btrfs, btrfs_packages]
 
     - name: Include GRUB configuration tasks for snapper rollback support
-      ansible.builtin.include_tasks: grub.yml
+      ansible.builtin.import_tasks: grub.yml
       tags: [extra, btrfs, btrfs_grub]
 
     - name: Include Limine configuration tasks for snapper rollback support
-      ansible.builtin.include_tasks: limine.yml
+      ansible.builtin.import_tasks: limine.yml
       tags: [extra, btrfs, btrfs_limine]
 
     - name: Include systemd-boot configuration tasks for snapper rollback support
-      ansible.builtin.include_tasks: systemd-boot.yml
+      ansible.builtin.import_tasks: systemd-boot.yml
       tags: [extra, btrfs, btrfs_systemd_boot]
 
     - name: Include rEFInd configuration tasks for snapper rollback support
-      ansible.builtin.include_tasks: refind.yml
+      ansible.builtin.import_tasks: refind.yml
       tags: [extra, btrfs, btrfs_refind]
 
     - name: Include fstab configuration tasks for snapper rollback support
-      ansible.builtin.include_tasks: fstab.yml
+      ansible.builtin.import_tasks: fstab.yml
       tags: [extra, btrfs, btrfs_fstab]
 
     - name: Include snapper configuration tasks
-      ansible.builtin.include_tasks: snapper.yml
+      ansible.builtin.import_tasks: snapper.yml
       tags: [extra, btrfs, btrfs_snapper]
 
     - name: Reload systemd daemon

@@ -1,4 +1,10 @@
 ---
+# Role: arpcbridge
+# Description: Install Discord Flatpak RPC bridge for Rich Presence
+# check_mode: Partially supported
+#   - Unit file checks: Always run (check_mode: false)
+#   - Installation: Reports but doesn't execute in check mode
+# Safe to run with --check for preview
 - name: Install discord-flatpak-rpc-bridge
   when: install_arpc_fix | default(false)
   tags: [extra, arpc]

@@ -1,0 +1,10 @@
+---
+# Default values for mounts role
+
+# Mount configuration files directory
+mounts_files_dir: "{{ role_path }}/files"
+
+# Feature toggles
+enable_automount: true
+enable_swap: true
+enable_creds: true

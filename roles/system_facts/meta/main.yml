@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  author: "methyl"
+  license: "MIT"
+  description: "System hardware, bootloader, and OS detection"
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Fedora
+      versions: [all]
+
+dependencies: []
+
+# Facts provided by this role (set via set_fact with cacheable: false):
+# - os_release_id: Distribution ID lowercase (e.g., "archlinux", "fedora")
+# - os_variant_id: OS variant ID (e.g., "bazzite")
+# - home_realpath: Real path to user's home directory
+# - nvidia_exists: Boolean - NVIDIA driver installed
+# - amd_exists: Boolean - AMD GPU detected
+# - is_grub_boot: Boolean - GRUB bootloader detected
+# - is_limine_boot: Boolean - Limine bootloader detected
+# - is_systemd_boot: Boolean - systemd-boot detected
+# - is_refind_boot: Boolean - rEFInd bootloader detected

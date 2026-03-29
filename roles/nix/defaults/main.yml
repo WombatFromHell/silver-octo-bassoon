@@ -1,0 +1,8 @@
+---
+# Default values for nix role
+
+# Feature toggle
+enable_nix: false
+
+# Home manager
+enable_home_manager: false

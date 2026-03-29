@@ -1,0 +1,22 @@
+#!/usr/bin/env ansible-playbook
+---
+- name: Per-host roles
+  hosts: methyl-cachyos methyl-bazzite
+  gather_facts: true
+
+  pre_tasks:
+    - name: Run system facts gathering
+      ansible.builtin.include_role:
+        name: system_facts
+      tags: [always]
+
+  roles:
+    - btrfs
+    - base
+    - dotfiles
+    - mounts
+    - flatpak
+    - distrobox
+    - vfio
+    - arpcbridge
+    - nix

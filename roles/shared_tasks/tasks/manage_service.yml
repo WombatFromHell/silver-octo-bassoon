@@ -1,0 +1,37 @@
+---
+# Manage a systemd service (enable/start/restart)
+#
+# Usage:
+#   ansible.builtin.include_tasks: manage_service.yml
+#   vars:
+#     service_name: myservice
+#     state: started      # optional: started, stopped, restarted, reloaded
+#     enabled: true       # optional: enable on boot
+#     daemon_reload: true # optional: reload systemd before managing
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+  when: daemon_reload | default(true)
+  changed_when: false
+
+- name: Ensure service is in desired state
+  ansible.builtin.systemd:
+    name: "{{ service_name }}"
+    state: "{{ state | default('started') }}"
+    enabled: "{{ enabled | default(true) }}"
+  become: true
+  register: _service_result
+
+- name: Verify service status
+  ansible.builtin.systemd:
+    name: "{{ service_name }}"
+  register: _service_status
+  changed_when: false
+  failed_when: false
+
+- name: Report service status
+  ansible.builtin.debug:
+    msg: "Service {{ service_name }} is {{ _service_status.status.ActiveState | default('unknown') }}"
+  when: _service_status is defined

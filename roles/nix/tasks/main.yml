@@ -1,4 +1,11 @@
 ---
+# Role: nix
+# Description: Install Nix package manager via Determinate Systems installer
+# check_mode: Partially supported
+#   - Installation check: Always runs (check_mode: false)
+#   - Download installer: Reports but doesn't download in check mode
+#   - Installation: Reports but doesn't execute installer script
+# WARNING: Running without --check will install Nix package manager
 - name: Install Nix from Determinate Systems installer
   when: enable_nix | default(false)
   tags: [extra, nix]
@@ -64,5 +71,5 @@
           changed_when: "'Nix is already installed' not in nix_installation.stderr"
 
         - name: Include 'home-manager' tasks
-          ansible.builtin.include_tasks: hm.yml
+          ansible.builtin.import_tasks: hm.yml
           tags: [extra, nix, home_manager]

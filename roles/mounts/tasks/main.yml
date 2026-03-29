@@ -1,4 +1,12 @@
 ---
+# Role: mounts
+# Description: Configure system mounts, swap, and filesystem credentials
+# check_mode: Partially supported
+#   - Mount detection: Always runs (check_mode: false)
+#   - Mount operations: Reports changes but doesn't mount/unmount
+#   - fstab modifications: Reports changes but doesn't write
+# WARNING: This role modifies /etc/fstab and can affect system boot
+# Always run with --check first to review planned changes
 - name: Setup external filesystem mounts
   tags: [extra, mounts, mounts_automount, mounts_swap, mounts_remove, mounts_creds]
   block:
@@ -16,7 +24,7 @@
 
     - name: "Include remove-existing task"
       tags: [extra, mounts, mounts_remove]
-      ansible.builtin.include_tasks: remove_existing.yml
+      ansible.builtin.import_tasks: remove_existing.yml
 
     - name: "Process each .mount file"
       ansible.builtin.include_tasks: process_mount.yml
@@ -37,5 +45,5 @@
         label: "Processing {{ swap_item.path | basename }}"
 
     - name: "Install SMB creds file"
-      ansible.builtin.include_tasks: creds.yml
+      ansible.builtin.import_tasks: creds.yml
       tags: [extra, mounts, mounts_creds]

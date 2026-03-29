@@ -1,0 +1,16 @@
+#!/usr/bin/env ansible-playbook
+---
+- name: Setup tasks
+  tags: [setup, bootstrap]
+  hosts: all
+  tasks:
+    - name: Install sudoers config for ansible
+      tags: sudoers
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/99-ansible-nopasswd"
+        content: |
+          # ONLY FOR USE DURING ANSIBLE DEPLOYMENT
+          %wheel ALL=(ALL) NOPASSWD: ALL
+        mode: "0400"
+        validate: "visudo -cf %s"
+      become: true

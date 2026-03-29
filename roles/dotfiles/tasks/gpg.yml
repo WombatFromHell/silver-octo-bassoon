@@ -1,16 +1,23 @@
 ---
 - name: GPG and SSH key install and setup
   tags: [extra, dotfiles, dotfiles_gpg]
+  when: vault_file is defined
   block:
+    - name: Check if vault file exists
+      ansible.builtin.stat:
+        path: "{{ vault_file }}"
+      register: dotfiles_vault_stat
+
     - name: Load GPG secrets from vault
       ansible.builtin.include_vars:
         file: "{{ vault_file }}"
         name: dotfiles_secrets
       no_log: true
+      when: dotfiles_vault_stat.stat.exists
 
     - name: Ensure GPG directory exists
       ansible.builtin.file:
-        path: "{{ home_dir }}/.gnupg"
+        path: "{{ home_realpath }}/.gnupg"
         state: directory
         mode: "0700"
 
@@ -75,14 +82,14 @@
 
     - name: Ensure SSH directory exists with correct permissions
       ansible.builtin.file:
-        path: "{{ home_dir }}/.ssh"
+        path: "{{ home_realpath }}/.ssh"
         state: directory
         mode: "0700"
 
     - name: Copy SSH keys to user's .ssh directory
       ansible.builtin.copy:
         src: "{{ ssh_key_dir }}/{{ ssh_item.key }}"
-        dest: "{{ home_dir }}/.ssh/{{ ssh_item.key }}"
+        dest: "{{ home_realpath }}/.ssh/{{ ssh_item.key }}"
         owner: "{{ ansible_facts.user_id }}"
         group: "{{ ansible_facts.user_gid }}"
         mode: "{{ ssh_item.mode }}"
@@ -98,7 +105,7 @@
       block:
         - name: Ensure known_hosts file exists with correct permissions
           ansible.builtin.file:
-            path: "{{ home_dir }}/.ssh/known_hosts"
+            path: "{{ home_realpath }}/.ssh/known_hosts"
             state: touch # 'touch' creates the file if it's missing, or updates its timestamp if it exists.
             mode: "0600"
             owner: "{{ ansible_facts.user_id }}"
@@ -124,7 +131,7 @@
           ansible.builtin.known_hosts:
             name: "{{ item.item.name }}"
             key: "{{ lookup('pipe', item.item.key_scan_command) }}"
-            path: "{{ home_dir }}/.ssh/known_hosts"
+            path: "{{ home_realpath }}/.ssh/known_hosts"
             state: present
             # 'create' and 'mode' have been removed as they are not supported here
           become_user: "{{ ansible_facts.user_id }}"

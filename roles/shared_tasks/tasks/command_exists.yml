@@ -1,0 +1,14 @@
+---
+# Check if a command exists in PATH
+#
+# Usage:
+#   ansible.builtin.include_tasks: command_exists.yml
+#   vars:
+#     command: myapp
+#     register_var: myapp_check  # optional
+
+- name: Check if command exists
+  ansible.builtin.command: which {{ command }}
+  register: "{{ register_var | default(command + '_check') }}"
+  changed_when: false
+  failed_when: false

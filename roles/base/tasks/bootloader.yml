@@ -5,7 +5,7 @@
   block:
     - name: Look for rEFInd
       when:
-        - ansible_facts['distribution'] == "Archlinux"
+        - os_release_id == "archlinux"
         - kernel_args is defined and kernel_args | trim != ""
         - "'refind' in ansible_cmdline"
       block:
@@ -35,7 +35,7 @@
 
     - name: Look for GRUB
       when:
-        - ansible_facts['distribution'] == "Archlinux"
+        - os_release_id == "archlinux"
         - kernel_args is defined and kernel_args | trim != ""
       block:
         - name: Check if /etc/default/grub exists
@@ -65,7 +65,7 @@
 
     - name: Look for Limine
       when:
-        - ansible_facts['distribution'] == "Archlinux"
+        - os_release_id == "archlinux"
         - kernel_args is defined and kernel_args | trim != ""
       block:
         - name: Check if /etc/default/limine exists

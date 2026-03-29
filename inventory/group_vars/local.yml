@@ -1,0 +1,56 @@
+---
+# System Configuration
+timezone: America/Denver
+graphics_card: amd
+
+# User Configuration
+vault_file: "{{ playbook_dir }}/files/support/gpg_vault.yml"
+home_dir: "{{ home_realpath }}"
+scripts_dir: "{{ home_dir }}/.local/bin/scripts"
+dotfiles_root: "{{ playbook_dir }}/files/dotfiles"
+gnupg_key_dir: "{{ playbook_dir }}/files/support/.ssh/gnupg-keys"
+ssh_key_dir: "{{ playbook_dir }}/files/support/.ssh"
+pipewire_dir: "{{ home_dir }}/.config/pipewire"
+
+# Kernel Arguments
+kernel_args: "split_lock_detect=off amdgpu.ppfeaturemask=0xfffd7fff amdgpu.dcdebugmask=0x410"
+
+# Program Checks
+program_checks:
+  hyprland: "hypr"
+  mangohud: "MangoHud"
+  openrgb: "OpenRGB"
+  topgrade: "topgrade.d"
+
+# Script Links ($HOME/.local/bin/scripts/ exposed globally via /usr/local/bin/)
+script_links:
+  - src: "fish.sh"
+    dest: "/usr/local/bin/fish.sh"
+  - src: "nscb.pyz"
+    dest: "/usr/local/bin/nscb"
+  - src: "protonfetcher.pyz"
+    dest: "/usr/local/bin/protonfetcher"
+  - src: "urh.pyz"
+    dest: "/usr/local/bin/urh"
+  - src: "squish.pyz"
+    dest: "/usr/local/bin/squish"
+  - src: "khalreminder.sh"
+    dest: "/usr/local/bin/khalreminder"
+  - src: "niri-watcher.sh"
+    dest: "/usr/local/bin/niri-watcher"
+
+# Program Handlers (run after dotfiles are processed)
+program_handlers:
+  bat:
+    - command: "bat cache --build"
+      creates: "{{ home_dir }}/.cache/bat"
+
+# Feature Flags
+enable_lazyvim: true
+enable_flatpak: true
+remove_existing_flatpaks: true
+install_brave: true
+install_firefox: false
+install_peazip: true
+install_arpc_fix: false
+enable_fix_wakeups: true

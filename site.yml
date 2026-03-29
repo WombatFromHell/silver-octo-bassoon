@@ -1,0 +1,13 @@
+#!/usr/bin/env ansible-playbook
+---
+- name: Preflight checks
+  import_playbook: plays/preflight.yml
+
+- name: Bootstrap systems
+  import_playbook: plays/bootstrap.yml
+
+- name: Configure systems
+  import_playbook: plays/system-setup.yml
+
+- name: Teardown
+  import_playbook: plays/teardown.yml

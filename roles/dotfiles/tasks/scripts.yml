@@ -4,7 +4,7 @@
   block:
     - name: Ensure local bin exists
       ansible.builtin.file:
-        path: "{{ home_dir }}/.local/bin"
+        path: "{{ home_realpath }}/.local/bin"
         state: directory
         mode: "0755"
       when: script_links is defined and script_links | length > 0

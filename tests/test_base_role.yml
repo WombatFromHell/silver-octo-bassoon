@@ -1,0 +1,37 @@
+#!/usr/bin/env ansible-playbook
+---
+# Test the base role independently
+# Usage: ansible-playbook tests/test_base_role.yml --check
+
+- name: Test base role
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars:
+    # Test-specific variables
+    test_mode: true
+    home_realpath: "{{ ansible_facts['env']['HOME'] | realpath }}"
+    base_packages:
+      - bat
+      - eza
+      - fd
+    aur_packages: []
+    enable_zram: false
+    enable_brew: false
+    enable_appimages: false
+    program_checks: {}
+
+  pre_tasks:
+    - name: Run system facts gathering
+      ansible.builtin.include_role:
+        name: system_facts
+      tags: [always]
+
+  roles:
+    - base
+
+  post_tasks:
+    - name: Test summary
+      ansible.builtin.debug:
+        msg: "Base role test completed successfully"

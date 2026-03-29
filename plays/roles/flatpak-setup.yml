@@ -1,0 +1,15 @@
+#!/usr/bin/env ansible-playbook
+---
+# Run with: ansible-playbook plays/roles/flatpak-setup.yml
+- name: Flatpak setup
+  hosts: methyl-cachyos methyl-bazzite
+  gather_facts: true
+
+  pre_tasks:
+    - name: Run system facts gathering
+      ansible.builtin.include_role:
+        name: system_facts
+      tags: [always]
+
+  roles:
+    - flatpak

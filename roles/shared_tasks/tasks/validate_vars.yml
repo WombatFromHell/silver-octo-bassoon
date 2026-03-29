@@ -1,0 +1,16 @@
+---
+# Validate required variables are defined
+#
+# Usage:
+#   ansible.builtin.include_tasks: validate_vars.yml
+#   vars:
+#     required_vars:
+#       - my_var
+#       - another_var
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - item is defined
+    fail_msg: "Required variable '{{ item }}' is not defined"
+  loop: "{{ required_vars }}"

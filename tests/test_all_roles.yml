@@ -1,0 +1,61 @@
+#!/usr/bin/env ansible-playbook
+---
+# Test all roles in sequence (smoke test)
+# Usage: ansible-playbook tests/test_all_roles.yml --check
+
+- name: Smoke test all roles
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars:
+    test_mode: true
+    home_realpath: "{{ ansible_facts['env']['HOME'] | realpath }}"
+    # Point to actual files directory (playbook_dir is tests/ when running this play)
+    dotfiles_root: "{{ playbook_dir | dirname }}/files/dotfiles"
+    vault_file: "{{ playbook_dir | dirname }}/files/support/gpg_vault.yml"
+    gnupg_key_dir: "{{ playbook_dir | dirname }}/files/support/.ssh/gnupg-keys"
+    ssh_key_dir: "{{ playbook_dir | dirname }}/files/support/.ssh"
+    scripts_dir: "{{ ansible_facts['env']['HOME'] | realpath }}/.local/bin/scripts"
+    pipewire_dir: "{{ ansible_facts['env']['HOME'] | realpath }}/.config/pipewire"
+
+    # Empty program checks to avoid dotfiles processing errors
+    program_checks: {}
+
+    # Minimal config for smoke testing
+    base_packages: []
+    aur_packages: []
+    enable_flatpak: false
+    enable_btrfs_snapper: false
+    enable_nix: false
+    enable_vfio: false
+    enable_distrobox: false
+    enable_lazyvim: false
+
+  pre_tasks:
+    - name: Run system facts gathering
+      ansible.builtin.include_role:
+        name: system_facts
+      tags: [always]
+
+    - name: Test preflight
+      ansible.builtin.debug:
+        msg: "Running smoke test for all roles"
+
+  roles:
+    - base
+    - dotfiles
+    - mounts
+    - flatpak
+    - distrobox
+    - vfio
+    - arpcbridge
+    - nix
+    - btrfs
+
+  post_tasks:
+    - name: Test summary
+      ansible.builtin.debug:
+        msg: |
+          Smoke test completed successfully!
+          All roles executed without errors.

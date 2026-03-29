@@ -1,16 +1,23 @@
 ---
+# Role: dotfiles
+# Description: Manage and symlink dotfiles configuration
+# check_mode: Supported
+#   - Symlinks: Reports changes but doesn't create links
+#   - Config files: Reports changes but doesn't write
+#   - Post-processing: Reports commands but doesn't execute
+# Safe to run with --check for preview
 - name: Dotfiles symlinking and post-processing
   tags: [extra, dotfiles]
   block:
     - name: Ensure dotfiles symlink exists
       ansible.builtin.file:
-        path: "{{ home_dir }}/.config/dotfiles"
+        path: "{{ home_realpath }}/.config/dotfiles"
         src: "{{ playbook_dir }}/files/dotfiles"
         state: link
         force: true
 
     - name: Preinstall Tuckr for dotfiles management
-      ansible.builtin.include_tasks: tuckr.yml
+      ansible.builtin.import_tasks: tuckr.yml
       tags: [extra, dotfiles, dotfiles_tuckr]
 
     - name: Process dotfiles directories
@@ -33,40 +40,40 @@
           vars:
             force_tuckr_overwrite: true
             program_name: "{{ program_item.path | basename }}"
-            binary_name: "{{ program_checks.get(program_name, program_name) }}"
+            binary_name: "{{ (program_checks | default({})).get(program_name, program_name) }}"
 
     - name: Include home task
-      ansible.builtin.include_tasks: home.yml
+      ansible.builtin.import_tasks: home.yml
       tags: [extra, dotfiles, dotfiles_home]
 
     - name: Include scripts task
-      ansible.builtin.include_tasks: scripts.yml
+      ansible.builtin.import_tasks: scripts.yml
       tags: [extra, dotfiles, dotfiles_scripts]
 
     - name: Include systemd task
-      ansible.builtin.include_tasks: systemd.yml
+      ansible.builtin.import_tasks: systemd.yml
       tags: [extra, dotfiles, dotfiles_systemd]
 
     - name: Include systemd env.d task
-      ansible.builtin.include_tasks: sysdenv.yml
+      ansible.builtin.import_tasks: sysdenv.yml
       tags: [extra, dotfiles, dotfiles_env]
 
     - name: Include tmux task
-      ansible.builtin.include_tasks: tmux.yml
+      ansible.builtin.import_tasks: tmux.yml
       tags: [extra, dotfiles, dotfiles_tmux]
 
     # - name: Include niri task
-    #   ansible.builtin.include_tasks: niri.yml
+    #   ansible.builtin.import_tasks: niri.yml
     #   tags: [extra, dotfiles, dotfiles_niri]
 
     # - name: Include pipewire task
-    #   ansible.builtin.include_tasks: pipewire.yml
+    #   ansible.builtin.import_tasks: pipewire.yml
     #   tags: [extra, dotfiles, dotfiles_pipewire]
 
     - name: Include GPG task
-      ansible.builtin.include_tasks: gpg.yml
+      ansible.builtin.import_tasks: gpg.yml
       tags: [extra, dotfiles, dotfiles_gpg]
 
     - name: Include nvim task
-      ansible.builtin.include_tasks: lazyvim.yml
+      ansible.builtin.import_tasks: lazyvim.yml
       tags: [extra, dotfiles, dotfiles_lazyvim]

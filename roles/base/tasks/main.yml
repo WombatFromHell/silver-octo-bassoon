@@ -1,63 +1,70 @@
 ---
+# Role: base
+# Description: Base system configuration for Arch Linux systems
+# check_mode: Supported
+#   - Package installation: Reports changes but doesn't install
+#   - Configuration files: Reports changes but doesn't write
+#   - Service management: Reports changes but doesn't restart
+# Safe to run with --check for preview
 - name: Include package management task
-  when: ansible_facts['distribution'] == "Archlinux"
-  ansible.builtin.include_tasks: pacman.yml
+  ansible.builtin.import_tasks: pacman.yml
+  when: os_release_id == "archlinux"
   tags: [core, pacman]
 
 - name: Include AUR management task
-  when: ansible_facts['distribution'] == "Archlinux"
-  ansible.builtin.include_tasks: aur.yml
+  ansible.builtin.import_tasks: aur.yml
+  when: os_release_id == "archlinux"
   tags: [core, aur]
 
 - name: Include zram enablement task
-  when: ansible_facts['distribution'] == "Archlinux"
-  ansible.builtin.include_tasks: zram.yml
+  ansible.builtin.import_tasks: zram.yml
+  when: os_release_id == "archlinux"
   tags: [core, zram]
 
 - name: Include global binaries task
-  ansible.builtin.include_tasks: globalbin.yml
+  ansible.builtin.import_tasks: globalbin.yml
   tags: [extra, globalbin]
 
 - name: Include global systemd units task
-  ansible.builtin.include_tasks: globalunits.yml
+  ansible.builtin.import_tasks: globalunits.yml
   tags: [extra, globalunits]
 
 - name: Include etc configs task
-  ansible.builtin.include_tasks: etc.yml
+  ansible.builtin.import_tasks: etc.yml
   tags: [extra, etc]
 
 - name: Include sudoers configs task
-  ansible.builtin.include_tasks: sudoers.yml
+  ansible.builtin.import_tasks: sudoers.yml
   tags: [extra, sudoers]
 
 - name: Include polkit rules task
-  ansible.builtin.include_tasks: polkit.yml
+  ansible.builtin.import_tasks: polkit.yml
   tags: [extra, polkit]
 
 - name: Include limitsd configs task
-  ansible.builtin.include_tasks: limits.yml
+  ansible.builtin.import_tasks: limits.yml
   tags: [extra, limitsd]
 
 - name: Include udev-rules.d task
-  ansible.builtin.include_tasks: udev.yml
+  ansible.builtin.import_tasks: udev.yml
   tags: [extra, udev]
 
 - name: Include bootloader task
-  ansible.builtin.include_tasks: bootloader.yml
+  ansible.builtin.import_tasks: bootloader.yml
   tags: [extra, bootloader]
 
 - name: Include fonts task
-  ansible.builtin.include_tasks: fonts.yml
+  ansible.builtin.import_tasks: fonts.yml
   tags: [extra, fonts]
 
 - name: Include appimages task
-  ansible.builtin.include_tasks: appimages.yml
+  ansible.builtin.import_tasks: appimages.yml
   tags: [extra, appimages]
 
 - name: Include brew install task
-  ansible.builtin.include_tasks: brew.yml
+  ansible.builtin.import_tasks: brew.yml
   tags: [extra, brew]
 
 - name: Include shortcuts install task
-  ansible.builtin.include_tasks: shortcuts.yml
+  ansible.builtin.import_tasks: shortcuts.yml
   tags: [extra, shortcuts]

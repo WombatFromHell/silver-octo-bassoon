@@ -18,8 +18,8 @@
 
         - name: Create tmux.conf symlink
           ansible.builtin.file:
-            src: "{{ home_dir }}/.config/tmux/tmux.conf"
-            dest: "{{ home_dir }}/.tmux.conf"
+            src: "{{ home_realpath }}/.config/tmux/tmux.conf"
+            dest: "{{ home_realpath }}/.tmux.conf"
             state: link
             force: true
 
@@ -29,18 +29,18 @@
             state: directory
             mode: "0755"
           loop:
-            - "{{ home_dir }}/.config/tmux/plugins"
-            - "{{ home_dir }}/.config/tmux/plugins/tpm"
+            - "{{ home_realpath }}/.config/tmux/plugins"
+            - "{{ home_realpath }}/.config/tmux/plugins/tpm"
 
         - name: Check TPM repository status
           ansible.builtin.stat:
-            path: "{{ home_dir }}/.config/tmux/plugins/tpm/.git"
+            path: "{{ home_realpath }}/.config/tmux/plugins/tpm/.git"
           register: dotfiles_tpm_repo
 
         - name: Clone TPM if needed
           ansible.builtin.git:
             repo: "https://github.com/tmux-plugins/tpm"
-            dest: "{{ home_dir }}/.config/tmux/plugins/tpm"
+            dest: "{{ home_realpath }}/.config/tmux/plugins/tpm"
             version: main
             update: true
           when: not dotfiles_tpm_repo.stat.exists
@@ -50,9 +50,9 @@
             path: "{{ item.path }}"
             mode: "0755"
           loop:
-            - { path: "{{ home_dir }}/.config/tmux/plugins/tpm/tpm" }
-            - { path: "{{ home_dir }}/.config/tmux/plugins/tpm/bindings" }
-            - { path: "{{ home_dir }}/.config/tmux/plugins/tpm/scripts/install_plugins.sh" }
-            - { path: "{{ home_dir }}/.config/tmux/plugins/tpm/scripts/update_plugin.sh" }
-            - { path: "{{ home_dir }}/.config/tmux/plugins/tpm/scripts/clean_plugins.sh" }
+            - { path: "{{ home_realpath }}/.config/tmux/plugins/tpm/tpm" }
+            - { path: "{{ home_realpath }}/.config/tmux/plugins/tpm/bindings" }
+            - { path: "{{ home_realpath }}/.config/tmux/plugins/tpm/scripts/install_plugins.sh" }
+            - { path: "{{ home_realpath }}/.config/tmux/plugins/tpm/scripts/update_plugin.sh" }
+            - { path: "{{ home_realpath }}/.config/tmux/plugins/tpm/scripts/clean_plugins.sh" }
           when: dotfiles_tpm_repo.stat.exists

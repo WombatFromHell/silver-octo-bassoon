@@ -1,0 +1,25 @@
+---
+# Default values for base role
+# Override in host_vars or group_vars
+
+# Package management
+base_packages: []
+aur_packages: []
+aur_helper: yay
+aur_helper_pkg: yay-bin
+aur_builder_user: aurbuilder
+
+# Feature toggles
+enable_zram: false
+enable_brew: false
+enable_appimages: false
+
+# Configuration paths
+etc_config_dir: /etc
+local_bin_dir: /usr/local/bin
+
+# Bootloader
+kernel_args: ""
+
+# VAAPI fix for flatpak apps
+chrome_vaapi_fix: false

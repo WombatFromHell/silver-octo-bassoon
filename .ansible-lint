@@ -4,3 +4,10 @@ exclude_paths:
   - files/support/
   - roles/**/files/
   - library/
+
+# system_facts role intentionally sets global facts without prefix
+skip_list:
+  - var-naming[no-role-prefix]
+
+# Use production profile for comprehensive checks
+profile: production

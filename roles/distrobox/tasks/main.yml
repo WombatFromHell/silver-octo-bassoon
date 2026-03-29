@@ -1,4 +1,10 @@
 ---
+# Role: distrobox
+# Description: Setup Distrobox containers for development
+# check_mode: Partially supported
+#   - Container checks: Always run (check_mode: false)
+#   - Container creation: Reports but doesn't create in check mode
+# Safe to run with --check for preview
 - name: Setup Distrobox and common containers
   tags: [extra, distrobox]
   when: enable_distrobox | default(false)

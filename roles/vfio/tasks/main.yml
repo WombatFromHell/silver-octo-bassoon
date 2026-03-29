@@ -1,4 +1,12 @@
 ---
+# Role: vfio
+# Description: Configure KVM/QEMU GPU passthrough with VFIO
+# check_mode: Partially supported
+#   - Package installation: Reports changes but doesn't install
+#   - Kernel args: Reports changes but doesn't modify bootloader
+#   - Libvirt hooks: Reports changes but doesn't deploy
+# WARNING: This role modifies kernel boot parameters and libvirt configuration
+# Always run with --check first to review planned changes
 - name: Configure system for KVM/QEMU passthrough
   become: true
   vars:
@@ -7,7 +15,7 @@
 
   tags: [extra, vfio]
   when:
-    - ansible_facts['distribution'] == "Archlinux"
+    - os_release_id == "archlinux"
     - enable_vfio | default(false)
   block:
     - name: Install required packages

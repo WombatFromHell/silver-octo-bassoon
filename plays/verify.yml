@@ -1,0 +1,130 @@
+#!/usr/bin/env ansible-playbook
+---
+- name: Verify system state
+  hosts: methyl-cachyos methyl-bazzite
+  gather_facts: true
+  tags: [always, verify]
+
+  pre_tasks:
+    - name: Run system facts gathering
+      ansible.builtin.include_role:
+        name: system_facts
+      tags: [always]
+
+  tasks:
+    - name: Verify hostname
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['nodename'] == system_hostname
+        fail_msg: "Hostname mismatch: expected {{ system_hostname }}, got {{ ansible_facts['nodename'] }}"
+        success_msg: "Hostname is correct: {{ system_hostname }}"
+
+    - name: Verify timezone
+      ansible.builtin.stat:
+        path: "/usr/share/zoneinfo/{{ timezone }}"
+      register: timezone_check
+      failed_when: false
+      changed_when: false
+
+    - name: Verify base packages (Archlinux)
+      when: ansible_facts['distribution'] == "Archlinux" and base_packages is defined
+      block:
+        - name: Check installed packages
+          ansible.builtin.command: pacman -Q {{ item }}
+          loop: "{{ base_packages | default([]) }}"
+          register: package_check
+          failed_when: false
+          changed_when: false
+          check_mode: false
+
+        - name: Report missing packages
+          ansible.builtin.debug:
+            msg: "MISSING: Package '{{ item.item }}' is not installed"
+          loop: "{{ package_check.results }}"
+          when: item.rc != 0
+
+    - name: Verify Flatpak installation
+      when: enable_flatpak | default(false)
+      block:
+        - name: Check flatpak command exists
+          ansible.builtin.command: which flatpak
+          register: flatpak_bin
+          changed_when: false
+          failed_when: false
+
+        - name: Report flatpak status
+          ansible.builtin.assert:
+            that: flatpak_bin.rc == 0
+            fail_msg: "Flatpak is enabled but not installed"
+            success_msg: "Flatpak is installed"
+
+    - name: Verify Nix installation
+      when: enable_nix | default(false)
+      block:
+        - name: Check nix command exists
+          ansible.builtin.command: which nix
+          register: nix_bin
+          changed_when: false
+          failed_when: false
+
+        - name: Report nix status
+          ansible.builtin.assert:
+            that: nix_bin.rc == 0
+            fail_msg: "Nix is enabled but not installed"
+            success_msg: "Nix is installed"
+
+    - name: Verify BTRFS snapper configuration
+      when: enable_btrfs_snapper | default(false)
+      block:
+        - name: Check snapper command exists
+          ansible.builtin.command: which snapper
+          register: snapper_bin
+          changed_when: false
+          failed_when: false
+
+        - name: Check snapper configs
+          ansible.builtin.command: snapper list-configs
+          register: snapper_configs
+          changed_when: false
+          failed_when: false
+
+        - name: Report snapper status
+          ansible.builtin.assert:
+            that: snapper_bin.rc == 0
+            fail_msg: "BTRFS snapper is enabled but snapper is not installed"
+            success_msg: "Snapper is installed and configured"
+
+    - name: Verify bootloader configuration
+      block:
+        - name: Report detected bootloader
+          ansible.builtin.debug:
+            msg: >
+              Bootloader detected: {{
+                'GRUB' if is_grub_boot | default(false) else
+                'Limine' if is_limine_boot | default(false) else
+                'systemd-boot' if is_systemd_boot | default(false) else
+                'rEFInd' if is_refind_boot | default(false) else
+                'Unknown'
+              }}
+
+    - name: Verify GPU drivers
+      block:
+        - name: Report NVIDIA status
+          ansible.builtin.debug:
+            msg: "NVIDIA driver: {{ 'present' if nvidia_exists | default(false) else 'not detected' }}"
+          when: graphics_card | default('') == 'nvidia'
+
+        - name: Report AMD status
+          ansible.builtin.debug:
+            msg: "AMD GPU: {{ 'present' if amd_exists | default(false) else 'not detected' }}"
+          when: graphics_card | default('') == 'amd'
+
+    - name: Verification summary
+      ansible.builtin.debug:
+        msg: |
+          Verification complete for {{ system_hostname }}
+          - Hostname: {{ 'PASS' if ansible_facts['nodename'] == system_hostname else 'FAIL' }}
+          - Distribution: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}
+          - Flatpak: {{ 'PASS' if (not enable_flatpak | default(false)) or (flatpak_bin is defined and flatpak_bin.rc == 0) else 'FAIL' }}
+          - Nix: {{ 'PASS' if (not enable_nix | default(false)) or (nix_bin is defined and nix_bin.rc == 0) else 'FAIL' }}
+          - Snapper: {{ 'PASS' if (not enable_btrfs_snapper | default(false)) or (snapper_bin is defined and snapper_bin.rc == 0) else 'FAIL' }}
