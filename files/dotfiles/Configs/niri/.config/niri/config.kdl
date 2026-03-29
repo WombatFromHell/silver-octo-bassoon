@@ -30,8 +30,7 @@ input {
     // focus-follows-mouse max-scroll-amount="0%"
 }
 layout {
-    gaps 6
-    center-focused-column "never"
+    gaps 4
     // You can customize the widths that "switch-preset-column-width" (Mod+R) toggles between.
     preset-column-widths {
         proportion 0.33333
@@ -44,7 +43,7 @@ layout {
     // You can change how the focus ring looks.
     focus-ring {
         // off
-        width 4
+        width 2
         // Color of the ring on the active monitor.
         // active-color "#7fc8ff"
         // active-color "#87CEC3"
@@ -52,7 +51,7 @@ layout {
         inactive-color "#969EBE"
         urgent-color "#f5c2e7"
         // Teal dominant (top-right) with muted secondary accent (bottom-left)
-        active-gradient from="#5A607D" to="#87CEC3" angle=45
+        active-gradient from="#CBA6F7" to="#87CEC3" angle=45
     }
 }
 hotkey-overlay {
@@ -144,19 +143,16 @@ binds {
     Mod+Alt+F hotkey-overlay-title="Open Dolphin" {
         spawn "dolphin"
     }
+    Super+Shift+S hotkey-overlay-title="Screenshot Window" {
+        spawn-sh "niri msg action screenshot-window"
+    }
+    Super+Ctrl+Shift+S hotkey-overlay-title="Screenshot Screen" {
+        spawn-sh "niri msg action screenshot-screen"
+    }
+    Super+Ctrl+Shift+Alt+S hotkey-overlay-title="Screenshot Interactive" {
+        spawn-sh "niri msg action screenshot"
+    }
     //
-    Super+Shift+S hotkey-overlay-title="Grimshot Active Window" {
-        spawn "grimshot.sh" "--" "active"
-    }
-    Super+Ctrl+Shift+S hotkey-overlay-title="Grimshot Window" {
-        spawn "grimshot.sh" "--" "window"
-    }
-    Super+Ctrl+Shift+R hotkey-overlay-title="Grimshot Region" {
-        spawn "grimshot.sh" "--" "region"
-    }
-    Super+Ctrl+Shift+Alt+S hotkey-overlay-title="Grimshot Screen" {
-        spawn "grimshot.sh" "--" "screen"
-    }
     Super+Ctrl+Shift+P hotkey-overlay-title="Hyprpicker" {
         spawn "hyprpicker.sh"
     }

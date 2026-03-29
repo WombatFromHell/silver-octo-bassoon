@@ -111,13 +111,14 @@ if status is-interactive
     end
 end
 
-function yy
-    set tmp (mktemp -t "yazi-cwd.XXXXXX")
-    yazi $argv --cwd-file="$tmp"
-    if set cwd (cat -- "$tmp"); and [ -n "$cwd" ]; and [ "$cwd" != "$PWD" ]
+function yy -d "Yazi with cwd tracking on exit"
+    set -l tmp (mktemp -t "yazi-cwd.XXXXXX")
+    yazi $argv --cwd-file=$tmp
+    set cwd (cat -- $tmp)
+    if test -n "$cwd" -a "$cwd" != "$PWD"
         cd -- "$cwd"
     end
-    rm -f -- "$tmp"
+    rm -f -- $tmp
 end
 
 function to_clip
