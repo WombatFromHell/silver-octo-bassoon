@@ -200,6 +200,7 @@ main() {
     --ro-bind /etc/resolv.conf /etc/resolv.conf
     --ro-bind /etc/hosts /etc/hosts
     --ro-bind /etc/ssl /etc/ssl
+    --ro-bind-try /etc/pki /etc/pki
     --proc /proc
     --dev /dev
   )
@@ -243,6 +244,14 @@ main() {
     --setenv HOME "$SANDBOX_HOME"
     --setenv PATH "$path_env"
   )
+
+  # Set SSL certificate paths for Python/urllib (fixes CERTIFICATE_VERIFY_FAILED)
+  if [[ -f /etc/pki/tls/certs/ca-bundle.crt ]]; then
+    bwrap_args+=(--setenv SSL_CERT_FILE /etc/pki/tls/certs/ca-bundle.crt)
+  fi
+  if [[ -d /etc/pki/tls/certs ]]; then
+    bwrap_args+=(--setenv SSL_CERT_DIR /etc/pki/tls/certs)
+  fi
 
   # Set NODE_PATH for Homebrew Node modules if present
   if [[ -n "$homebrew_prefix" && -d "$homebrew_prefix/lib/node_modules" ]]; then
