@@ -1,5 +1,3 @@
-export PATH="$HOME/.local/bin:$HOME/.local/bin/scripts:$HOME/.nix-profile/bin:$HOME/.local/share/bob_bin:$HOME/.local/share/nvim/mason/bin:$HOME/.local/share/nvm/v23.6.1/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.cargo/bin:$PATH"
-
 function yy() {
   tmp=$(mktemp -t "yazi-cwd.XXXXXX")
   yazi "$@" --cwd-file="$tmp"
@@ -60,19 +58,19 @@ if [[ $- == *i* ]]; then
   alias nixopt='nix-store --gc && nix-store --optimize'
   #
   alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
-fi
 
-if which direnv >/dev/null 2>&1; then
-  export DIRENV_LOG_FORMAT=
-  eval "$(direnv hook bash)"
-fi
-if which starship >/dev/null 2>&1; then
-  eval "$(starship init bash)"
-fi
-if which zoxide >/dev/null 2>&1; then
-  eval "$(zoxide init bash)"
-  alias cd='z'
-fi
-if which atuin >/dev/null 2>&1; then
-  eval "$(atuin init bash --disable-up-arrow)"
+  if which direnv >/dev/null 2>&1; then
+    export DIRENV_LOG_FORMAT=
+    eval "$(direnv hook bash)"
+  fi
+  if which starship >/dev/null 2>&1; then
+    eval "$(starship init bash)"
+  fi
+  if which zoxide >/dev/null 2>&1; then
+    eval "$(zoxide init bash)"
+    alias cd='z'
+  fi
+  if which atuin >/dev/null 2>&1; then
+    eval "$(atuin init bash --disable-up-arrow)"
+  fi
 fi
