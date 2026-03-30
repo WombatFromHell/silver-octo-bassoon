@@ -1,0 +1,111 @@
+#!/usr/bin/env ansible-playbook
+---
+# Idempotency Test - Verify roles report 0 changes on second run
+# Usage: ansible-playbook tests/test_idempotency.yml
+#
+# This test runs all roles twice and verifies the second run reports
+# zero changes, which is a critical Ansible best practice.
+#
+# Note: Ansible's native output will show "changed=0" for the second play
+# if idempotency is working correctly.
+
+- name: Idempotency test - First run (apply changes)
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars_files:
+    - group_vars/all.yml
+
+  vars:
+    # Test-specific variables (overrides group_vars/all.yml)
+    program_checks: {}
+    base_packages: []
+    aur_packages: []
+    enable_flatpak: false
+    enable_btrfs_snapper: false
+    enable_nix: false
+    enable_vfio: false
+    enable_distrobox: false
+    enable_lazyvim: false
+
+  pre_tasks:
+    - name: Run system facts gathering
+      ansible.builtin.include_role:
+        name: system_facts
+      tags: [always]
+
+    - name: Mark first run start
+      ansible.builtin.debug:
+        msg: "=== IDEMPOTENCY TEST: FIRST RUN (will apply changes) ==="
+      tags: [always]
+
+  roles:
+    - base
+    - dotfiles
+    - mounts
+    - flatpak
+    - distrobox
+    - vfio
+    - arpcbridge
+    - nix
+    - btrfs
+
+  post_tasks:
+    - name: Mark first run complete
+      ansible.builtin.debug:
+        msg: "=== FIRST RUN COMPLETE ==="
+      tags: [always]
+
+
+- name: Idempotency test - Second run (verify no changes)
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars_files:
+    - group_vars/all.yml
+
+  vars:
+    # Test-specific variables (overrides group_vars/all.yml)
+    program_checks: {}
+    base_packages: []
+    aur_packages: []
+    enable_flatpak: false
+    enable_btrfs_snapper: false
+    enable_nix: false
+    enable_vfio: false
+    enable_distrobox: false
+    enable_lazyvim: false
+
+  pre_tasks:
+    - name: Run system facts gathering
+      ansible.builtin.include_role:
+        name: system_facts
+      tags: [always]
+
+    - name: Mark second run start
+      ansible.builtin.debug:
+        msg: "=== IDEMPOTENCY TEST: SECOND RUN (expect 0 changes) ==="
+      tags: [always]
+
+  roles:
+    - base
+    - dotfiles
+    - mounts
+    - flatpak
+    - distrobox
+    - vfio
+    - arpcbridge
+    - nix
+    - btrfs
+
+  post_tasks:
+    - name: Mark second run complete
+      ansible.builtin.debug:
+        msg:
+          - "=== IDEMPOTENCY TEST COMPLETE ==="
+          - "Check the play recap above:"
+          - "  Second run should show changed=0"
+          - "  If changed>0, review tasks with improper changed_when"
+      tags: [always]

@@ -60,7 +60,7 @@
 
     - name: Find all AppImages in source directory
       ansible.builtin.find:
-        paths: "{{ playbook_dir }}/files/support/appimages"
+        paths: "{{ support_dir | default(playbook_dir | dirname ~ '/files/support') }}/appimages"
         patterns: "*.AppImage"
         file_type: file
       register: base_appimages_to_copy
@@ -171,7 +171,7 @@
 
         - name: Ensure '.icons' source directory exists
           ansible.builtin.file:
-            path: "{{ playbook_dir }}/files/support/appimages/.icons"
+            path: "{{ support_dir | default(playbook_dir | dirname ~ '/files/support') }}/appimages/.icons"
             state: directory
             mode: "0755"
             force: true

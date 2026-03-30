@@ -9,6 +9,7 @@
 #
 # Options:
 #   --test, -t          Run test harness instead of deployment
+#   --idempotency       Run idempotency test (all roles twice)
 #   --check, -c         Dry-run mode (show what would change)
 #   --diff, -d          Show file content differences
 #   --verbose, -v       Verbose output (can be repeated: -vvv)
@@ -26,7 +27,8 @@
 #   ./run.sh --check --diff       # Dry-run with diffs
 #   ./run.sh -vvv                 # Verbose output
 #   ./run.sh --test               # Run test harness
-#   ./run.sh --test --role base   # Test base role only
+#   ./run.sh --test --role base   # Test base role
+#   ./run.sh --test --idempotency # Run idempotency test
 #   ./run.sh --preflight          # Run preflight checks
 #   ./run.sh --role btrfs --check # Test btrfs role dry-run
 #   ./run.sh --tags packages      # Run only package-related tasks
@@ -78,6 +80,7 @@ show_help() {
   echo "   --test                    Run all tests"
   echo "   --test --role base        Test specific role"
   echo "   --test --all              Run full smoke test"
+  echo "   --idempotency             Run idempotency test (all roles twice)"
   echo ""
   echo "Deployment Modes:"
   echo "   (no args)                 Deploy to current host (auto-limited)"
@@ -100,6 +103,7 @@ show_help() {
   echo "   ./run.sh --role base --check      # Test base role"
   echo "   ./run.sh --tags packages -vvv     # Debug package install"
   echo "   ./run.sh --test                   # Run test harness"
+  echo "   ./run.sh --idempotency            # Run idempotency test"
   echo "   ./run.sh --all-hosts              # Deploy to ALL hosts"
   exit 0
 }
@@ -113,6 +117,10 @@ while [[ $# -gt 0 ]]; do
     ;;
   --test | -t)
     MODE="test"
+    shift
+    ;;
+  --idempotency)
+    MODE="idempotency"
     shift
     ;;
   --check | -c)
@@ -140,6 +148,7 @@ while [[ $# -gt 0 ]]; do
     ;;
   --role)
     ROLE="$2"
+    MODE="role"
     shift 2
     ;;
   --tags)
@@ -177,6 +186,12 @@ if [[ "$LIMIT_EXPLICIT" == "false" && "$MODE" == "deploy" ]]; then
   echo ""
 fi
 
+# Also auto-limit for role mode
+if [[ "$LIMIT_EXPLICIT" == "false" && "$MODE" == "role" ]]; then
+  CURRENT_HOST=$(hostname)
+  ANSIBLE_ARGS+=("--limit" "$CURRENT_HOST")
+fi
+
 # Add verbosity
 if [[ -n "$VERBOSE" ]]; then
   ANSIBLE_ARGS+=("-$VERBOSE")
@@ -189,25 +204,30 @@ test)
 
   if [[ -n "$ROLE" ]]; then
     print_header "Testing role: $ROLE"
-    ./test.sh "$ROLE" "${ANSIBLE_ARGS[@]}"
+    exec ./test.sh "$ROLE" "${ANSIBLE_ARGS[@]}"
   else
     print_header "Running all tests"
-    ./test.sh all "${ANSIBLE_ARGS[@]}"
+    exec ./test.sh all "${ANSIBLE_ARGS[@]}"
   fi
+  ;;
 
-  print_success "Tests completed"
+idempotency)
+  print_header "Running Idempotency Test"
+  echo ""
+  echo "This test runs all roles twice to verify idempotency."
+  echo "The second run should report 0 changes."
+  echo ""
+  exec ./test.sh idempotency "${ANSIBLE_ARGS[@]}"
   ;;
 
 preflight)
   print_header "Running Preflight Checks"
-  ansible-playbook plays/preflight.yml "${ANSIBLE_ARGS[@]}"
-  print_success "Preflight checks passed"
+  exec ansible-playbook plays/preflight.yml "${ANSIBLE_ARGS[@]}"
   ;;
 
 verify)
   print_header "Verifying System State"
-  ansible-playbook plays/verify.yml "${ANSIBLE_ARGS[@]}"
-  print_success "Verification complete"
+  exec ansible-playbook plays/verify.yml "${ANSIBLE_ARGS[@]}"
   ;;
 
 role)
@@ -221,22 +241,14 @@ role)
   # Check if role-specific play exists
   ROLE_PLAY="plays/roles/${ROLE}-setup.yml"
   if [[ -f "$ROLE_PLAY" ]]; then
-    ansible-playbook "$ROLE_PLAY" "${ANSIBLE_ARGS[@]}"
+    exec ansible-playbook "$ROLE_PLAY" "${ANSIBLE_ARGS[@]}"
   else
     print_warning "No role-specific play found, running full site.yml with role tag"
-    ansible-playbook site.yml --tags "$ROLE" "${ANSIBLE_ARGS[@]}"
+    exec ansible-playbook site.yml --tags "$ROLE" "${ANSIBLE_ARGS[@]}"
   fi
-
-  print_success "Role execution complete"
   ;;
 
 deploy)
-  if [[ -n "$ROLE" ]]; then
-    # User specified --role but not --test mode
-    MODE="role"
-    exec "$0" --role "$ROLE" "${ANSIBLE_ARGS[@]}"
-  fi
-
   print_header "Ansible Deployment"
   echo ""
 

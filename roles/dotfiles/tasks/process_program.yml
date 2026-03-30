@@ -4,11 +4,9 @@
   register: dotfiles_check_program
   changed_when: false
   failed_when: false
+  check_mode: false
   args:
     executable: /bin/bash
-  vars:
-    ansible_verbose_output: true
-  no_log: false
 
 - name: Configure dotfiles using tuckr - '{{ program_name }}'
   tuckr_manage:
@@ -18,12 +16,9 @@
     backup: "{{ tuckr_backup_conflicts | default(true) }}"
   when: dotfiles_check_program.rc == 0
   register: dotfiles_tuckr_result
-  changed_when: dotfiles_tuckr_result is changed
   failed_when: >
-    (dotfiles_tuckr_result is failed and
-      not (force_tuckr_overwrite|default(false) and 'conflicts' in dotfiles_tuckr_result)) or
-    (dotfiles_tuckr_result.rc is defined and dotfiles_tuckr_result.rc != 0 and
-      not (force_tuckr_overwrite|default(false) and 'conflicts' in dotfiles_tuckr_result))
+    dotfiles_tuckr_result is failed and
+    not (force_tuckr_overwrite | default(false) and 'conflicts' in dotfiles_tuckr_result)
   notify: "{{ program_handlers[program_name] | default(omit) }}"
   vars:
     program_handlers:

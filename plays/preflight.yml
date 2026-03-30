@@ -55,7 +55,7 @@
     - name: Validate OS compatibility
       ansible.builtin.assert:
         that:
-          - ansible_facts['distribution'] in ['Archlinux', 'Fedora']
+          - ansible_facts['distribution'] in ['Archlinux', 'Fedora', 'Bazzite']
         fail_msg: "Unsupported distribution: {{ ansible_facts['distribution'] }}"
         success_msg: "Distribution {{ ansible_facts['distribution'] }} is supported"
 

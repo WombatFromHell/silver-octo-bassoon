@@ -16,12 +16,18 @@
             name: "tmux"
             state: present
 
+        - name: Check existing tmux.conf symlink
+          ansible.builtin.stat:
+            path: "{{ home_realpath }}/.tmux.conf"
+          register: dotfiles_tmux_conf_stat
+
         - name: Create tmux.conf symlink
           ansible.builtin.file:
             src: "{{ home_realpath }}/.config/tmux/tmux.conf"
             dest: "{{ home_realpath }}/.tmux.conf"
             state: link
             force: true
+          when: not (dotfiles_tmux_conf_stat.stat.islnk is defined and dotfiles_tmux_conf_stat.stat.lnk_source == home_realpath + '/.config/tmux/tmux.conf')
 
         - name: Ensure plugins directory structure exists
           ansible.builtin.file:

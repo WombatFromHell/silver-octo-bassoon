@@ -14,7 +14,6 @@
         path: "{{ scripts_dir }}"
         src: "{{ dotfiles_root }}/Configs/scripts"
         state: link
-        force: true
       when: dotfiles_root is defined
 
     - name: Check if niri is installed
@@ -37,12 +36,23 @@
           }}
       when: script_links is defined
 
+    - name: Check script source files exist
+      ansible.builtin.stat:
+        path: "{{ scripts_dir }}/{{ item.src }}"
+      register: dotfiles_script_src_stat
+      loop: "{{ dotfiles_script_links_filtered | default(script_links, true) }}"
+      loop_control:
+        loop_var: item
+        label: "Checking {{ item.src }}"
+      when:
+        - (script_links is defined or dotfiles_script_links_filtered is defined)
+        - (dotfiles_script_links_filtered | default(script_links, true)) | length > 0
+
     - name: Link global scripts
       ansible.builtin.file:
         path: "{{ script_item.dest }}"
         src: "{{ scripts_dir }}/{{ script_item.src }}"
         state: link
-        force: true
       loop: "{{ dotfiles_script_links_filtered | default(script_links, true) }}"
       loop_control:
         loop_var: script_item
@@ -50,6 +60,8 @@
       when:
         - (script_links is defined or dotfiles_script_links_filtered is defined)
         - (dotfiles_script_links_filtered | default(script_links, true)) | length > 0
+        - script_item.src is defined
+        - dotfiles_script_src_stat.results | selectattr('item.src', 'equalto', script_item.src) | map(attribute='stat.exists') | list | first | default(false)
       become: true
 
     - name: Remove stale niri-watcher link when niri not installed

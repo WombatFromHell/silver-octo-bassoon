@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -13,20 +14,122 @@ class TuckrManager:
     def __init__(self, module: AnsibleModule):
         self.module = module
         self.result: Dict[str, Any] = {"changed": False}
+        self.check_mode = module.check_mode
 
     def is_tuckr_available(self) -> bool:
         """Check if tuckr is in PATH and executable"""
-        try:
+        # Ensure /usr/local/bin is in PATH (where tuckr is installed)
+        env = os.environ.copy()
+        if "/usr/local/bin" not in env.get("PATH", ""):
+            env["PATH"] = "/usr/local/bin:" + env.get("PATH", "")
+
+        # Store PATH for debugging
+        self.result["_env_path"] = env.get("PATH", "")
+        self.result["_which_tuckr"] = (
             subprocess.run(
+                ["which", "tuckr"], capture_output=True, text=True
+            ).stdout.strip()
+            or "not found"
+        )
+
+        try:
+            proc = subprocess.run(
                 ["tuckr", "--version"],
-                check=True,
+                check=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                text=True,
+                env=env,
             )
-            return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
+            self.result["_tuckr_version_rc"] = proc.returncode
+            self.result["_tuckr_version_stdout"] = proc.stdout.strip()[:200]
+            self.result["_tuckr_version_stderr"] = proc.stderr.strip()[:200]
+
+            if proc.returncode == 0:
+                return True
+            else:
+                self.result["_tuckr_error"] = (
+                    f"tuckr --version failed with rc={proc.returncode}"
+                )
+                self.module.fail_json(msg="tuckr not found in PATH or not executable")
+                return False
+        except FileNotFoundError as e:
+            self.result["_tuckr_error"] = f"tuckr not found: {str(e)}"
             self.module.fail_json(msg="tuckr not found in PATH or not executable")
-            return False  # Unreachable, but satisfies type checker
+            return False
+
+    def config_exists(self, name: str) -> Tuple[bool, Optional[str]]:
+        """Check if tuckr config already exists for this program.
+
+        Uses 'tuckr status' to check if the program is already managed.
+        Returns (exists, location) tuple where location is 'symlinked',
+        'not_symlinked', or 'conflicting'.
+        """
+        dotfiles_root = os.path.expanduser("~/.config/dotfiles")
+        if not os.path.exists(dotfiles_root):
+            return False, None
+
+        env = os.environ.copy()
+        if "/usr/local/bin" not in env.get("PATH", ""):
+            env["PATH"] = "/usr/local/bin:" + env.get("PATH", "")
+
+        try:
+            proc = subprocess.run(
+                ["tuckr", "status"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+
+            self.result["_tuckr_status_rc"] = proc.returncode
+            self.result["_tuckr_status_stderr"] = proc.stderr[:500] if proc.stderr else "(empty)"
+
+            # tuckr status returns 0 normally, 1 when there are conflicting dotfiles
+            if proc.stdout and proc.returncode in (0, 1):
+                output = re.sub(r"\x1b\[[0-9;]*m", "", proc.stdout)
+
+                # Capture debug info after stripping so it's readable
+                self.result["_tuckr_status_raw"] = output[:500]
+
+                name_lower = name.lower()
+
+                table_section = (
+                    output.split("Conflicting Dotfiles")[0]
+                    if "Conflicting Dotfiles" in output
+                    else output
+                )
+
+                for line in table_section.splitlines():
+                    if any(c in line for c in ("╭", "┬", "├", "┼", "╰")):
+                        continue
+                    if "│" not in line:
+                        continue
+
+                    parts = [p.strip().lower() for p in line.split("│")]
+                    for i, part in enumerate(parts):
+                        if part == name_lower:
+                            if i == 1:
+                                return True, "symlinked"
+                            elif i == 2:
+                                return True, "not_symlinked"
+
+                if "Conflicting Dotfiles" in output:
+                    conflict_section = output.split("Conflicting Dotfiles")[1]
+                    for line in conflict_section.splitlines():
+                        if line.strip().lower() == name_lower:
+                            return True, "conflicting"
+
+        except (subprocess.SubprocessError, FileNotFoundError) as e:
+            self.result["_debug_error"] = str(e)
+
+        # Fallback: check for config file on disk
+        config_dir = os.path.expanduser("~/.config/tuckr")
+        config_file = os.path.join(config_dir, name)
+        if os.path.exists(config_file):
+            return True, "config_file"
+
+        return False, None
 
     def parse_conflicts(self, output: Optional[str]) -> List[str]:
         """Parse tuckr output for conflict information"""
@@ -65,38 +168,109 @@ class TuckrManager:
             self.module.warn(f"Backup failed: {str(e)}")
             return False
 
-    def run_command(self, cmd: List[str]) -> Tuple[int, str, str]:
+    def run_command(
+        self, cmd: List[str], check_mode: bool = False
+    ) -> Tuple[int, str, str]:
         """Run a tuckr command and return (rc, stdout, stderr)"""
+        if check_mode or self.check_mode:
+            # In check mode, just simulate - don't actually run
+            return (0, "[check mode] would execute: " + " ".join(cmd), "")
+
+        # Ensure /usr/local/bin is in PATH (where tuckr is installed)
+        env = os.environ.copy()
+        if "/usr/local/bin" not in env.get("PATH", ""):
+            env["PATH"] = "/usr/local/bin:" + env.get("PATH", "")
+
         proc = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env
         )
         return (proc.returncode, proc.stdout.strip(), proc.stderr.strip())
 
     def handle_add(self, name: str, force: bool, backup: bool) -> bool:
         """Handle the add command with retry logic"""
-        rc, stdout, stderr = self.run_command(["tuckr", "add", "-y", name])
+        dotfiles_root = os.path.expanduser("~/.config/dotfiles")
+        if not os.path.exists(dotfiles_root):
+            self.result["changed"] = False
+            self.result["msg"] = f"Dotfiles root not found, skipping '{name}'"
+            return True
+
+        exists, config_info = self.config_exists(name)
+
+        self.result["_debug"] = {
+            "name": name,
+            "exists": exists,
+            "config_info": config_info,
+            "dotfiles_root_exists": os.path.exists(dotfiles_root),
+        }
+
+        # Already fully symlinked — nothing to do
+        if exists and config_info == "symlinked":
+            self.result["changed"] = False
+            self.result["msg"] = f"Config for '{name}' already symlinked"
+            self.result["config"] = config_info
+            return True
+
+        # Determine base command (use --force only if user explicitly requested it)
+        add_cmd = ["tuckr", "add", "-y", name]
+        if force:
+            add_cmd.insert(2, "--force")
+
+        # Known to tuckr but not yet symlinked — real work pending
+        if exists and config_info == "not_symlinked":
+            if self.check_mode:
+                self.result["changed"] = True
+                self.result["msg"] = (
+                    f"Would symlink '{name}' (registered but not symlinked)"
+                )
+                return True
+            # fall through to tuckr add
+
+        # Known to tuckr but conflicting files present
+        if exists and config_info == "conflicting":
+            if self.check_mode:
+                self.result["changed"] = True
+                self.result["msg"] = (
+                    f"Would force-add '{name}' (conflicting dotfiles present)"
+                )
+                return True
+            # fall through to tuckr add
+
+        # Completely absent from tuckr
+        if not exists:
+            if self.check_mode:
+                self.result["changed"] = True
+                self.result["msg"] = f"Would add tuckr config for '{name}'"
+                return True
+            # fall through to tuckr add
+
+        rc, stdout, stderr = self.run_command(add_cmd)
 
         if rc == 0:
-            self.result["changed"] = True
+            # Re-query status — tuckr exits 0 on no-ops so rc alone is not
+            # a reliable changed signal
+            _, after = self.config_exists(name)
+            self.result["changed"] = config_info != after
+            self.result["msg"] = (
+                f"Successfully added tuckr config for '{name}'"
+                if self.result["changed"]
+                else f"No change after tuckr add for '{name}' (was: {config_info}, now: {after})"
+            )
             return True
 
         conflicts = self.parse_conflicts(stdout)
 
-        # Record conflicts in the result regardless of force setting
         self.result.update(
             {"conflicts": conflicts, "stdout": stdout, "stderr": stderr, "rc": rc}
         )
 
-        # If there are conflicts but force is enabled, try force operation
         if conflicts and force:
             if backup:
                 self.backup_files(conflicts)
 
             force_rc, force_stdout, force_stderr = self.run_command(
-                ["tuckr", "add", "-y", "--force", name]
+                ["tuckr", "add", "--force", "-y", name]
             )
 
-            # Update result with force command output
             self.result.update(
                 {
                     "force_stdout": force_stdout,
@@ -106,30 +280,46 @@ class TuckrManager:
             )
 
             if force_rc == 0:
-                self.result["changed"] = True
+                _, after = self.config_exists(name)
+                self.result["changed"] = config_info != after
+                self.result["msg"] = (
+                    f"Successfully added tuckr config for '{name}' (forced)"
+                    if self.result["changed"]
+                    else f"No change after forced tuckr add for '{name}'"
+                )
                 return True
             else:
-                # Even if force fails, don't consider it a module failure if conflicts were the issue
                 self.result["msg"] = (
                     f"Force operation failed: {force_stderr or force_stdout}"
                 )
-                # Return true to avoid failing in Ansible
                 return True
 
-        # If no conflicts or force is disabled, fail as usual
-        if not conflicts or not force:
-            self.result["msg"] = stderr or stdout or "Unknown error"
-            return False
-
-        # This should be unreachable, but just in case
+        self.result["msg"] = stderr or stdout or "Unknown error"
         return False
 
     def handle_rm(self, name: str) -> bool:
         """Handle the rm command"""
+        # Check if config exists - if not, no change needed
+        exists, config_info = self.config_exists(name)
+        if not exists:
+            self.result["changed"] = False
+            self.result["msg"] = f"Config for '{name}' does not exist"
+            return True
+
+        if self.check_mode:
+            self.result["changed"] = True
+            self.result["msg"] = f"Would remove tuckr config for '{name}'"
+            return True
+
         rc, stdout, stderr = self.run_command(["tuckr", "rm", name])
         if rc != 0:
             self.module.warn(f"tuckr rm reported: {stderr or stdout}")
         self.result["changed"] = rc == 0
+        self.result["msg"] = (
+            f"Removed tuckr config for '{name}'"
+            if rc == 0
+            else f"Failed to remove config for '{name}'"
+        )
         return rc == 0
 
     def execute(
@@ -161,7 +351,7 @@ def main():
             "force": {"type": "bool", "default": False},
             "backup": {"type": "bool", "default": True},
         },
-        supports_check_mode=False,
+        supports_check_mode=True,
     )
 
     manager = TuckrManager(module)

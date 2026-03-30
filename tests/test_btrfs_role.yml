@@ -8,9 +8,11 @@
   connection: local
   gather_facts: true
 
+  vars_files:
+    - group_vars/all.yml
+
   vars:
-    test_mode: true
-    home_realpath: "{{ ansible_facts['env']['HOME'] | realpath }}"
+    # Test-specific variables (overrides group_vars/all.yml)
     enable_btrfs_snapper: false  # Set true to test full btrfs setup
     program_checks: {}
 

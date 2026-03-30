@@ -4,7 +4,7 @@
   vars:
     systemd_env_path: "{{ home_realpath }}/.config/environment.d"
     lsfg_conf_path: "{{ home_realpath }}/.config/environment.d/99-lsfg.conf"
-    lossless_dll_src: "{{ playbook_dir }}/files/support/Lossless.dll"
+    lossless_dll_src: "{{ support_dir | default(playbook_dir | dirname ~ '/files/support') }}/Lossless.dll"
     lossless_dll_dest: "{{ home_realpath }}/.local/share/Lossless.dll"
   block:
     - name: Ensure environment.d directory exists

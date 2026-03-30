@@ -103,15 +103,21 @@
 
     - name: Manage SSH known_hosts file
       block:
+        - name: Check if known_hosts file exists
+          ansible.builtin.stat:
+            path: "{{ home_realpath }}/.ssh/known_hosts"
+          register: dotfiles_known_hosts_stat
+
         - name: Ensure known_hosts file exists with correct permissions
           ansible.builtin.file:
             path: "{{ home_realpath }}/.ssh/known_hosts"
-            state: touch # 'touch' creates the file if it's missing, or updates its timestamp if it exists.
+            state: touch
             mode: "0600"
             owner: "{{ ansible_facts.user_id }}"
             group: "{{ ansible_facts.user_id }}"
           become_user: "{{ ansible_facts.user_id }}"
           become: true
+          when: not dotfiles_known_hosts_stat.stat.exists
 
         - name: Check if host keys already exist
           ansible.builtin.command: ssh-keygen -F {{ item.name | quote }}

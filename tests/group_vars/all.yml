@@ -19,3 +19,14 @@ test_packages:
 # Empty lists for optional features
 test_flatpaks: []
 test_aur_packages: []
+
+# Path resolution for test plays (use inventory_dir for consistent path resolution)
+# inventory_dir always points to inventory/ directory, so dirname gives project root
+project_root: "{{ inventory_dir | dirname }}"
+support_dir: "{{ project_root }}/files/support"
+dotfiles_root: "{{ project_root }}/files/dotfiles"
+vault_file: "{{ support_dir }}/gpg_vault.yml"
+gnupg_key_dir: "{{ support_dir }}/.ssh/gnupg-keys"
+ssh_key_dir: "{{ support_dir }}/.ssh"
+scripts_dir: "{{ ansible_facts['env']['HOME'] | realpath }}/.local/bin/scripts"
+pipewire_dir: "{{ ansible_facts['env']['HOME'] | realpath }}/.config/pipewire"

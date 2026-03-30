@@ -12,13 +12,13 @@
         state: directory
         mode: "0755"
 
-    # Copy generic unit files (excludes NVIDIA conditionally)
+    # Copy generic unit files (excludes NVIDIA and fix-wakeups which are managed conditionally)
     - name: Find all unit files in role's files/units directory
       ansible.builtin.find:
         paths: "{{ role_path }}/files/units"
         file_type: file
         recurse: false
-        excludes: "{{ ['nvidia-tdp.*', 'veridian-controller.service'] if not base_nvidia_enabled else [] }}"
+        excludes: "{{ (['nvidia-tdp.*', 'veridian-controller.service'] if not base_nvidia_enabled else []) + ['fix-wakeups.service'] }}"
       register: base_unit_files
 
     - name: Copy unit files to /etc/systemd/system

@@ -32,7 +32,7 @@
         - not ansible_check_mode
         - not base_fonts_extracted.stat.exists
       ansible.builtin.unarchive:
-        src: "{{ playbook_dir }}/files/support/fonts.tar.gz"
+        src: "{{ support_dir | default(playbook_dir | dirname ~ '/files/support') }}/fonts.tar.gz"
         dest: "{{ home_realpath }}/.local/share/fonts"
         remote_src: false
         creates: "{{ home_realpath }}/.local/share/fonts/.fonts-extracted"

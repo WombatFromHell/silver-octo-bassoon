@@ -1,12 +1,16 @@
 ---
+- name: "Find existing mnt-* mount/automount/swap files"
+  ansible.builtin.find:
+    paths: /etc/systemd/system
+    patterns: "mnt-*.{mount,automount,swap}"
+    use_regex: true
+  register: mounts_existing_files
+  changed_when: false
+
 - name: "Remove existing mounts"
   systemd_mount:
     state: absent
     os_type: "{{ os_release_id }}"
   become: true
   register: mounts_mounts_removed
-
-- name: "Debug removed mounts"
-  ansible.builtin.debug:
-    var: mounts_mounts_removed
-    verbosity: 1
+  when: mounts_existing_files.matched > 0

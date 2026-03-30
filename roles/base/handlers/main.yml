@@ -33,7 +33,7 @@
   listen: reload_udev
 
 - name: Generate mimeinfo.cache (user)
-  when: base_desktop_db_check.rc is defined and desktop_db_check.rc == 0
+  when: base_desktop_db_check.rc is defined and base_desktop_db_check.rc == 0
   ansible.builtin.command: update-desktop-database "{{ home_realpath }}/.local/share/applications"
   args:
     creates: "{{ home_realpath }}/.local/share/applications/mimeinfo.cache"

@@ -6,8 +6,8 @@ enable_lazyvim: true
 enable_ghostty: false
 enable_alacritty: false
 
-# Paths
-dotfiles_root: "{{ playbook_dir }}/files/dotfiles"
+# Paths (support_dir is set by test group_vars or site.yml)
+dotfiles_root: "{{ dotfiles_root | default(support_dir | default(playbook_dir | dirname ~ '/files')) }}/dotfiles"
 scripts_dir: "{{ home_realpath }}/.local/bin/scripts"
 
 # Program handlers (run after dotfiles processed)

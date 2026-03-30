@@ -3,13 +3,19 @@
 timezone: America/Denver
 graphics_card: amd
 
+# Path Configuration
+# Use inventory_dir | dirname to get the project root regardless of which playbook is run
+# inventory_dir always points to the inventory/ directory
+project_root: "{{ inventory_dir | dirname }}"
+support_dir: "{{ project_root }}/files/support"
+dotfiles_root: "{{ project_root }}/files/dotfiles"
+
 # User Configuration
-vault_file: "{{ playbook_dir }}/files/support/gpg_vault.yml"
+vault_file: "{{ support_dir }}/gpg_vault.yml"
 home_dir: "{{ home_realpath }}"
 scripts_dir: "{{ home_dir }}/.local/bin/scripts"
-dotfiles_root: "{{ playbook_dir }}/files/dotfiles"
-gnupg_key_dir: "{{ playbook_dir }}/files/support/.ssh/gnupg-keys"
-ssh_key_dir: "{{ playbook_dir }}/files/support/.ssh"
+gnupg_key_dir: "{{ support_dir }}/.ssh/gnupg-keys"
+ssh_key_dir: "{{ support_dir }}/.ssh"
 pipewire_dir: "{{ home_dir }}/.config/pipewire"
 
 # Kernel Arguments
@@ -17,10 +23,10 @@ kernel_args: "split_lock_detect=off amdgpu.ppfeaturemask=0xfffd7fff amdgpu.dcdeb
 
 # Program Checks
 program_checks:
-  hyprland: "hypr"
-  mangohud: "MangoHud"
-  openrgb: "OpenRGB"
-  topgrade: "topgrade.d"
+  hypr: "hyprland"
+  MangoHud: "mangohud"
+  OpenRGB: "openrgb"
+  topgrade.d: "topgrade"
 
 # Script Links ($HOME/.local/bin/scripts/ exposed globally via /usr/local/bin/)
 script_links:
@@ -32,8 +38,10 @@ script_links:
     dest: "/usr/local/bin/protonfetcher"
   - src: "urh.pyz"
     dest: "/usr/local/bin/urh"
-  - src: "squish.pyz"
+  - src: "squish.sh"
     dest: "/usr/local/bin/squish"
+  - src: "unsquish.sh"
+    dest: "/usr/local/bin/unsquish"
   - src: "khalreminder.sh"
     dest: "/usr/local/bin/khalreminder"
   - src: "niri-watcher.sh"

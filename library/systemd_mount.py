@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import glob
+import hashlib
 import os
 import re
 import shutil
@@ -56,16 +57,52 @@ def manage_systemd_units(module, units, enable=True, start=True):
 
     for unit in units:
         if enable:
-            result = run_systemctl(module, "enable", unit, check_rc=False)
-            if result["changed"]:
-                changed = True
+            # Check if already enabled
+            rc, stdout, stderr = module.run_command(
+                ["systemctl", "is-enabled", unit], check_rc=False
+            )
+            if rc != 0 or "enabled" not in stdout:
+                result = run_systemctl(module, "enable", unit, check_rc=False)
+                if result["changed"]:
+                    changed = True
 
         if start and not unit.endswith(".automount"):
-            result = run_systemctl(module, "start", unit, check_rc=False)
-            if result["changed"]:
-                changed = True
+            # Check if already running (or will be at next boot)
+            # For mount units, check if the mount point exists instead
+            if unit.endswith(".mount"):
+                # Extract mount path from unit name
+                mount_path = "/" + unit.replace(".mount", "").replace("-", "/")
+                rc, stdout, stderr = module.run_command(
+                    ["findmnt", "--raw", "--noheadings", mount_path], check_rc=False
+                )
+                # If mount point doesn't exist, don't try to start (it's an automount scenario)
+                if rc != 0:
+                    continue
+            else:
+                rc, stdout, stderr = module.run_command(
+                    ["systemctl", "is-active", unit], check_rc=False
+                )
+                if rc != 0 or "active" not in stdout:
+                    result = run_systemctl(module, "start", unit, check_rc=False)
+                    if result["changed"]:
+                        changed = True
 
     return changed
+
+
+def files_are_identical(src, dst):
+    """Check if two files have identical content using SHA256"""
+    if not os.path.exists(src) or not os.path.exists(dst):
+        return False
+    
+    def file_hash(filepath):
+        sha256 = hashlib.sha256()
+        with open(filepath, 'rb') as f:
+            for block in iter(lambda: f.read(4096), b""):
+                sha256.update(block)
+        return sha256.hexdigest()
+    
+    return file_hash(src) == file_hash(dst)
 
 
 def check_mount_device(module, mount_file):
@@ -107,6 +144,7 @@ def unit_exists(module, unit_name):
 def remove_existing_mounts(module):
     dst = "/etc/systemd/system"
     changed = False
+    check_mode = module.check_mode
 
     # Process automounts first, then mounts, then swaps
     for unit_type in ["automount", "mount", "swap"]:
@@ -115,23 +153,29 @@ def remove_existing_mounts(module):
 
             try:
                 if unit_exists(module, unit_basename):
-                    if unit_type in ["automount", "swap"]:
-                        run_systemctl(
-                            module, "disable", f"--now {unit_basename}", check_rc=False
-                        )
-                    elif unit_type == "mount":
-                        run_systemctl(module, "stop", unit_basename, check_rc=False)
-                        run_systemctl(module, "disable", unit_basename, check_rc=False)
+                    if not check_mode:
+                        if unit_type in ["automount", "swap"]:
+                            run_systemctl(
+                                module, "disable", f"--now {unit_basename}", check_rc=False
+                            )
+                        elif unit_type == "mount":
+                            run_systemctl(module, "stop", unit_basename, check_rc=False)
+                            run_systemctl(module, "disable", unit_basename, check_rc=False)
+                    changed = True
             except Exception as e:
                 module.warn(f"Failed to stop/disable unit {unit_basename}: {e}")
 
-            try:
-                os.remove(unit)
+            if not check_mode:
+                try:
+                    os.remove(unit)
+                    changed = True
+                except Exception as e:
+                    module.fail_json(msg=f"Failed to remove unit file: {unit} - {e}")
+            else:
+                # In check mode, just report that we would remove it
                 changed = True
-            except Exception as e:
-                module.fail_json(msg=f"Failed to remove unit file: {unit} - {e}")
 
-    if changed:
+    if changed and not check_mode:
         run_systemctl(module, "daemon-reload", unit=None, check_rc=True)
 
     return changed
@@ -164,6 +208,7 @@ def setup_external_mounts(module):
     os_type = module.params["os_type"].lower()
     unit_files = []
     changed = False
+    check_mode = module.check_mode
 
     if remove_existing_mounts(module):
         changed = True
@@ -181,39 +226,61 @@ def setup_external_mounts(module):
 
                 if "bazzite" in os_type:
                     new_basename = f"var-{basename}"
-                    try:
-                        with (
-                            open(original_file, "r") as f_in,
-                            tempfile.NamedTemporaryFile("w", delete=False) as f_out,
-                        ):
-                            for line in f_in:
-                                # Only replace /mnt/ with /var/mnt/ if the path doesn't already start with /var/mnt/
-                                if "/var/mnt/" not in line:
-                                    f_out.write(line.replace("/mnt/", "/var/mnt/"))
-                                else:
-                                    f_out.write(line)
-                        dest_path = os.path.join(dst, new_basename)
-                        shutil.copy(f_out.name, dest_path)
-                        os.chmod(dest_path, 0o644)
-                        os.unlink(f_out.name)
+                    dest_path = os.path.join(dst, new_basename)
+                    
+                    # Check if file already exists with same content
+                    if os.path.exists(dest_path) and files_are_identical(original_file, dest_path):
+                        # File exists and is identical, no change needed
+                        unit_files.append(new_basename)
+                        continue
+                    
+                    if not check_mode:
+                        try:
+                            with (
+                                open(original_file, "r") as f_in,
+                                tempfile.NamedTemporaryFile("w", delete=False) as f_out,
+                            ):
+                                for line in f_in:
+                                    # Only replace /mnt/ with /var/mnt/ if the path doesn't already start with /var/mnt/
+                                    if "/var/mnt/" not in line:
+                                        f_out.write(line.replace("/mnt/", "/var/mnt/"))
+                                    else:
+                                        f_out.write(line)
+                            shutil.copy(f_out.name, dest_path)
+                            os.chmod(dest_path, 0o644)
+                            os.unlink(f_out.name)
+                            changed = True
+                            unit_files.append(new_basename)
+                        except Exception as e:
+                            module.fail_json(
+                                msg=f"Failed to process {original_file}: {str(e)}"
+                            )
+                    else:
                         changed = True
                         unit_files.append(new_basename)
-                    except Exception as e:
-                        module.fail_json(
-                            msg=f"Failed to process {original_file}: {str(e)}"
-                        )
                 elif "arch" in os_type or "cachyos" in os_type:
                     dest_path = os.path.join(dst, basename)
-                    shutil.copy(original_file, dest_path)
-                    changed = True
-                    unit_files.append(basename)
+                    
+                    # Check if file already exists with same content
+                    if os.path.exists(dest_path) and files_are_identical(original_file, dest_path):
+                        # File exists and is identical, no change needed
+                        unit_files.append(basename)
+                        continue
+                    
+                    if not check_mode:
+                        shutil.copy(original_file, dest_path)
+                        changed = True
+                        unit_files.append(basename)
+                    else:
+                        changed = True
+                        unit_files.append(basename)
                 else:
                     module.fail_json(
                         msg="Error: unsupported OS, skipping systemd mounts!"
                     )
                     return False
 
-    if unit_files:
+    if unit_files and not check_mode:
         run_systemctl(module, "daemon-reload", unit=None, check_rc=True)
         changed = manage_systemd_units(module, unit_files, enable=True, start=True)
 
@@ -226,6 +293,7 @@ def process_single_mount(module):
     os_type = module.params["os_type"].lower()
     mount_file = module.params["mount_file"]
     changed = False
+    check_mode = module.check_mode
     unit_files = []
 
     mount_path = os.path.join(src_dir, mount_file)
@@ -242,35 +310,57 @@ def process_single_mount(module):
 
         if "bazzite" in os_type:
             new_basename = f"var-{basename}"
-            try:
-                with (
-                    open(original_file, "r") as f_in,
-                    tempfile.NamedTemporaryFile("w", delete=False) as f_out,
-                ):
-                    for line in f_in:
-                        # Only replace /mnt/ with /var/mnt/ if the path doesn't already start with /var/mnt/
-                        if "/var/mnt/" not in line:
-                            f_out.write(line.replace("/mnt/", "/var/mnt/"))
-                        else:
-                            f_out.write(line)
-                dest_path = os.path.join(dst, new_basename)
-                shutil.copy(f_out.name, dest_path)
-                os.chmod(dest_path, 0o644)
-                os.unlink(f_out.name)
+            dest_path = os.path.join(dst, new_basename)
+            
+            # Check if file already exists with same content
+            if os.path.exists(dest_path) and files_are_identical(original_file, dest_path):
+                # File exists and is identical, no change needed
+                unit_files.append(new_basename)
+                continue
+            
+            if not check_mode:
+                try:
+                    with (
+                        open(original_file, "r") as f_in,
+                        tempfile.NamedTemporaryFile("w", delete=False) as f_out,
+                    ):
+                        for line in f_in:
+                            # Only replace /mnt/ with /var/mnt/ if the path doesn't already start with /var/mnt/
+                            if "/var/mnt/" not in line:
+                                f_out.write(line.replace("/mnt/", "/var/mnt/"))
+                            else:
+                                f_out.write(line)
+                    shutil.copy(f_out.name, dest_path)
+                    os.chmod(dest_path, 0o644)
+                    os.unlink(f_out.name)
+                    changed = True
+                    unit_files.append(new_basename)
+                except Exception as e:
+                    module.fail_json(msg=f"Failed to process {original_file}: {str(e)}")
+            else:
                 changed = True
                 unit_files.append(new_basename)
-            except Exception as e:
-                module.fail_json(msg=f"Failed to process {original_file}: {str(e)}")
         elif "arch" in os_type or "cachyos" in os_type:
             dest_path = os.path.join(dst, basename)
-            shutil.copy(original_file, dest_path)
-            changed = True
-            unit_files.append(basename)
+            
+            # Check if file already exists with same content
+            if os.path.exists(dest_path) and files_are_identical(original_file, dest_path):
+                # File exists and is identical, no change needed
+                unit_files.append(basename)
+                continue
+            
+            if not check_mode:
+                shutil.copy(original_file, dest_path)
+                changed = True
+                unit_files.append(basename)
+            else:
+                changed = True
+                unit_files.append(basename)
         else:
             module.fail_json(msg="Error: unsupported OS, skipping systemd mount!")
             return False
 
-    if unit_files:
+    if unit_files and not check_mode:
         run_systemctl(module, "daemon-reload", unit=None, check_rc=True)
         changed = manage_systemd_units(module, unit_files, enable=True, start=True)
 
@@ -287,6 +377,7 @@ def process_single_swap(module):
     os_type = module.params["os_type"].lower()
     swap_file = module.params["swap_file"]
     changed = False
+    check_mode = module.check_mode
 
     swap_path = os.path.join(src_dir, swap_file)
     enabled_units = filter_mount_unit(module, swap_path)
@@ -303,35 +394,53 @@ def process_single_swap(module):
 
     if "bazzite" in os_type:
         new_basename = f"var-{basename}"
-        try:
-            with (
-                open(original_file, "r") as f_in,
-                tempfile.NamedTemporaryFile("w", delete=False) as f_out,
-            ):
-                for line in f_in:
-                    # Only replace /mnt/ with /var/mnt/ if the path doesn't already start with /var/mnt/
-                    if "/var/mnt/" not in line:
-                        f_out.write(line.replace("/mnt/", "/var/mnt/"))
-                    else:
-                        f_out.write(line)
-            dest_path = os.path.join(dst, new_basename)
-            shutil.copy(f_out.name, dest_path)
-            os.chmod(dest_path, 0o644)
-            os.unlink(f_out.name)
+        dest_path = os.path.join(dst, new_basename)
+        
+        # Check if file already exists with same content
+        if os.path.exists(dest_path) and files_are_identical(original_file, dest_path):
+            # File exists and is identical, no change needed
+            unit_files.append(new_basename)
+        elif not check_mode:
+            try:
+                with (
+                    open(original_file, "r") as f_in,
+                    tempfile.NamedTemporaryFile("w", delete=False) as f_out,
+                ):
+                    for line in f_in:
+                        # Only replace /mnt/ with /var/mnt/ if the path doesn't already start with /var/mnt/
+                        if "/var/mnt/" not in line:
+                            f_out.write(line.replace("/mnt/", "/var/mnt/"))
+                        else:
+                            f_out.write(line)
+                shutil.copy(f_out.name, dest_path)
+                os.chmod(dest_path, 0o644)
+                os.unlink(f_out.name)
+                changed = True
+                unit_files.append(new_basename)
+            except Exception as e:
+                module.fail_json(msg=f"Failed to process {original_file}: {str(e)}")
+        else:
             changed = True
             unit_files.append(new_basename)
-        except Exception as e:
-            module.fail_json(msg=f"Failed to process {original_file}: {str(e)}")
     elif "arch" in os_type or "cachyos" in os_type:
         dest_path = os.path.join(dst, basename)
-        shutil.copy(original_file, dest_path)
-        changed = True
-        unit_files.append(basename)
+        
+        # Check if file already exists with same content
+        if os.path.exists(dest_path) and files_are_identical(original_file, dest_path):
+            # File exists and is identical, no change needed
+            unit_files.append(basename)
+        elif not check_mode:
+            shutil.copy(original_file, dest_path)
+            changed = True
+            unit_files.append(basename)
+        else:
+            changed = True
+            unit_files.append(basename)
     else:
         module.fail_json(msg="Error: unsupported OS, skipping systemd swap!")
         return False
 
-    if changed:
+    if unit_files and not check_mode:
         run_systemctl(module, "daemon-reload", unit=None, check_rc=True)
         changed = manage_systemd_units(module, [basename], enable=True, start=False)
 

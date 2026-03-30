@@ -9,12 +9,18 @@
 - name: Dotfiles symlinking and post-processing
   tags: [extra, dotfiles]
   block:
+    - name: Check existing dotfiles config symlink
+      ansible.builtin.stat:
+        path: "{{ home_realpath }}/.config/dotfiles"
+      register: dotfiles_config_symlink_stat
+
     - name: Ensure dotfiles symlink exists
       ansible.builtin.file:
         path: "{{ home_realpath }}/.config/dotfiles"
-        src: "{{ playbook_dir }}/files/dotfiles"
+        src: "{{ dotfiles_root }}"
         state: link
         force: true
+      when: not (dotfiles_config_symlink_stat.stat.islnk is defined and dotfiles_config_symlink_stat.stat.lnk_source == dotfiles_root)
 
     - name: Preinstall Tuckr for dotfiles management
       ansible.builtin.import_tasks: tuckr.yml

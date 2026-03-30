@@ -58,6 +58,31 @@ Check actual system state against expected configuration:
 ansible-playbook plays/verify.yml
 ```
 
+### 5. Idempotency Test (`tests/test_idempotency.yml`)
+
+Verify roles report 0 changes on second run (critical Ansible best practice):
+
+```bash
+# Run idempotency test (applies changes, then verifies second run is clean)
+ansible-playbook tests/test_idempotency.yml
+
+# Via test runner
+./test.sh idempotency
+
+# Via run.sh
+./run.sh --idempotency
+```
+
+**What it does:**
+1. First play: Runs all roles, applies any needed changes
+2. Second play: Runs all roles again
+3. Check play recap: `changed=0` means idempotent, `changed>0` means issues
+
+**How to verify results:**
+- Look at the "PLAY RECAP" line for the second run
+- `localhost : ok=XX  changed=0  unreachable=0  failed=0` = PASS
+- `localhost : ok=XX  changed=N  unreachable=0  failed=0` = FAIL (N changes detected)
+
 ## Test Runner
 
 Use the included test runner script:
@@ -112,16 +137,13 @@ ansible-playbook plays/verify.yml
 
 ## Test Coverage
 
-| Role | Test File | Status |
-|------|-----------|--------|
-| base | `tests/test_base_role.yml` | ✅ |
-| flatpak | `tests/test_flatpak_role.yml` | ✅ |
-| btrfs | `tests/test_btrfs_role.yml` | ✅ |
-| dotfiles | `tests/test_dotfiles_role.yml` | ✅ |
-| nix | (use smoke test) | ⚠️ |
-| vfio | (use smoke test) | ⚠️ |
-| distrobox | (use smoke test) | ⚠️ |
-| arpcbridge | (use smoke test) | ⚠️ |
+| Test Type | File | Status |
+|-----------|------|--------|
+| Role Tests | `tests/test_*_role.yml` | ✅ |
+| Smoke Test | `tests/test_all_roles.yml` | ✅ |
+| Idempotency | `tests/test_idempotency.yml` | ✅ |
+| Preflight | `plays/preflight.yml` | ✅ |
+| Verification | `plays/verify.yml` | ✅ |
 
 ## CI/CD Integration
 
@@ -160,6 +182,23 @@ The verify play may report issues for:
 - Optional features not enabled
 - Host-specific configurations
 - Expected drift (e.g., package updates)
+
+### Idempotency Test Failures
+
+If the idempotency test fails, look for:
+
+1. **Tasks without `changed_when`:** Commands that always report changed
+   ```yaml
+   - name: Bad example
+     ansible.builtin.command: /usr/bin/my-script
+     # Missing: changed_when: result.rc == 0
+   ```
+
+2. **Tasks that always run:** Missing `creates` or `creates_dir` for file operations
+
+3. **Improper state checking:** Not checking current state before making changes
+
+4. **Debug tasks with `changed_when: true`:** Should be `changed_when: false`
 
 ## Adding New Tests
 

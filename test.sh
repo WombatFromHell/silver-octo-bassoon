@@ -29,6 +29,7 @@ for arg in "$@"; do
             echo ""
             echo "Roles:"
             echo "  base, flatpak, btrfs, dotfiles, nix, vfio, distrobox, arpcbridge, all"
+            echo "  idempotency  - Run idempotency test (all roles twice)"
             echo ""
             echo "Options:"
             echo "  --check     Run in check mode (default)"
@@ -60,6 +61,9 @@ case $ROLE in
         ;;
     all)
         ansible-playbook tests/test_all_roles.yml $CHECK_MODE $VERBOSE
+        ;;
+    idempotency)
+        ansible-playbook tests/test_idempotency.yml $VERBOSE
         ;;
     *)
         echo "Unknown role: $ROLE"

@@ -8,21 +8,13 @@
   connection: local
   gather_facts: true
 
+  vars_files:
+    - group_vars/all.yml
+
   vars:
-    test_mode: true
-    home_realpath: "{{ ansible_facts['env']['HOME'] | realpath }}"
-    # Point to actual files directory (playbook_dir is tests/ when running this play)
-    dotfiles_root: "{{ playbook_dir | dirname }}/files/dotfiles"
-    vault_file: "{{ playbook_dir | dirname }}/files/support/gpg_vault.yml"
-    gnupg_key_dir: "{{ playbook_dir | dirname }}/files/support/.ssh/gnupg-keys"
-    ssh_key_dir: "{{ playbook_dir | dirname }}/files/support/.ssh"
-    scripts_dir: "{{ ansible_facts['env']['HOME'] | realpath }}/.local/bin/scripts"
-    pipewire_dir: "{{ ansible_facts['env']['HOME'] | realpath }}/.config/pipewire"
-
-    # Empty program checks to avoid processing errors
-    program_checks: {}
-
+    # Test-specific variables (overrides group_vars/all.yml)
     enable_lazyvim: false  # Disable to avoid nvim dependency
+    program_checks: {}
 
   pre_tasks:
     - name: Run system facts gathering

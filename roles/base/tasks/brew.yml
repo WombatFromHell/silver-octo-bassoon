@@ -11,7 +11,7 @@
       register: base_brew_installed
 
     - name: Install Homebrew
-      when: base_brew_installed is not defined
+      when: not base_brew_installed.stat.exists
       block:
         - name: Download Homebrew installation script
           ansible.builtin.get_url:
@@ -23,9 +23,8 @@
           ansible.builtin.command: /tmp/install_homebrew.sh
           environment:
             NONINTERACTIVE: "1"
-          when: not base_brew_installed.stat.exists
           register: base_homebrew_install_output
-          changed_when: base_homebrew_install_output.rc != 0 and "'already installed' not in base_homebrew_install_output.stderr"
+          changed_when: base_homebrew_install_output.rc == 0
 
         - name: Remove the installation script
           ansible.builtin.file:
@@ -64,7 +63,6 @@
             update_homebrew: true
             state: latest
           register: base_brew_update
-          changed_when: base_brew_update.changed
 
         - name: Install/update Homebrew packages
           community.general.homebrew:
@@ -76,4 +74,3 @@
           retries: 1
           delay: 3
           until: base_brew_package_results is not failed
-          changed_when: base_brew_package_results.changed

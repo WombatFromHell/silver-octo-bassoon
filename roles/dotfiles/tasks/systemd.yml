@@ -59,6 +59,13 @@
             dotfiles_vdirsyncer_installed: "{{ dotfiles_vdirsyncer_check.rc == 0 }}"
             dotfiles_vdirsyncer_real_path: "{{ dotfiles_vdirsyncer_check.stdout_lines[-1] | default('', true) }}"
 
+        - name: Check existing vdirsyncer symlink
+          become: true
+          ansible.builtin.stat:
+            path: /usr/local/bin/vdirsyncer
+          register: dotfiles_vdirsyncer_symlink_stat
+          when: dotfiles_vdirsyncer_installed
+
         - name: Manage vdirsyncer symlink
           become: true
           ansible.builtin.file:
@@ -66,7 +73,9 @@
             src: "{{ dotfiles_vdirsyncer_real_path }}"
             state: link
             force: true
-          when: dotfiles_vdirsyncer_installed
+          when:
+            - dotfiles_vdirsyncer_installed
+            - not (dotfiles_vdirsyncer_symlink_stat.stat.islnk is defined and dotfiles_vdirsyncer_symlink_stat.stat.lnk_source == dotfiles_vdirsyncer_real_path)
 
         - name: Remove stale vdirsyncer symlink when not installed
           become: true
@@ -78,13 +87,24 @@
         - name: Install vdirsyncer systemd units
           when: dotfiles_vdirsyncer_installed
           block:
+            - name: Check existing vdirsyncer service symlink
+              ansible.builtin.stat:
+                path: "{{ dotfiles_systemd_user_dir }}/vdirsyncer.service"
+              register: dotfiles_vdirsyncer_service_stat
+
             - name: Install vdirsyncer systemd service
               ansible.builtin.file:
                 path: "{{ dotfiles_systemd_user_dir }}/vdirsyncer.service"
                 src: "{{ dotfiles_root }}/Configs/systemd/.config/systemd/user/vdirsyncer.service"
                 state: link
                 force: true
+              when: not (dotfiles_vdirsyncer_service_stat.stat.islnk is defined and dotfiles_vdirsyncer_service_stat.stat.lnk_source == dotfiles_root + '/Configs/systemd/.config/systemd/user/vdirsyncer.service')
               notify: reload_user_systemd
+
+            - name: Check existing vdirsyncer timer symlink
+              ansible.builtin.stat:
+                path: "{{ dotfiles_systemd_user_dir }}/vdirsyncer.timer"
+              register: dotfiles_vdirsyncer_timer_stat
 
             - name: Install vdirsyncer systemd timer
               ansible.builtin.file:
@@ -92,6 +112,7 @@
                 src: "{{ dotfiles_root }}/Configs/systemd/.config/systemd/user/vdirsyncer.timer"
                 state: link
                 force: true
+              when: not (dotfiles_vdirsyncer_timer_stat.stat.islnk is defined and dotfiles_vdirsyncer_timer_stat.stat.lnk_source == dotfiles_root + '/Configs/systemd/.config/systemd/user/vdirsyncer.timer')
               notify: reload_user_systemd
 
     - name: Check if niri is installed
@@ -105,12 +126,18 @@
     - name: Manage niri-watcher systemd unit
       when: dotfiles_niri_in_path.rc == 0
       block:
+        - name: Check existing niri-watcher service symlink
+          ansible.builtin.stat:
+            path: "{{ dotfiles_systemd_user_dir }}/niri-watcher.service"
+          register: dotfiles_niri_watcher_stat
+
         - name: Install niri-watcher systemd service
           ansible.builtin.file:
             path: "{{ dotfiles_systemd_user_dir }}/niri-watcher.service"
             src: "{{ dotfiles_root }}/Configs/systemd/niri-watcher.service"
             state: link
             force: true
+          when: not (dotfiles_niri_watcher_stat.stat.islnk is defined and dotfiles_niri_watcher_stat.stat.lnk_source == dotfiles_root + '/Configs/systemd/niri-watcher.service')
           notify: reload_user_systemd
 
     - name: Remove stale niri-watcher service when niri not installed
