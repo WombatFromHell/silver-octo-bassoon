@@ -33,83 +33,6 @@ function ensure_fisher
     update_fisher &>/dev/null &
 end
 
-if status is-interactive
-    set -g fish_greeting # disable initial fish greeting
-
-    # --- Configuration ---
-    set -g ZELLIJ_ENABLED false
-    set -g TMUX_ENABLED true
-
-    # include our home-grown tmux helper
-    set TMUX_HELPER $HOME/.config/fish/tmux.fish
-    if test -f $TMUX_HELPER
-        source $TMUX_HELPER
-    end
-
-    # include our home-grown zellij helper
-    set ZELLIJ_HELPER $HOME/.config/fish/zellij.fish
-    if test -f $ZELLIJ_HELPER
-        source $ZELLIJ_HELPER
-    end
-
-    # include our archiver helper
-    set ARCHIVE_HELPER $HOME/.config/fish/archiver.fish
-    if test -f $ARCHIVE_HELPER
-        source $ARCHIVE_HELPER
-    end
-
-    set WORKTREES_HELPER $HOME/.config/fish/worktrees.fish
-    if test -f $WORKTREES_HELPER
-        source $WORKTREES_HELPER
-    end
-
-    set -gx nvm_default_version v25.7.0
-    set -x GPG_TTY (tty)
-    set -x XDG_DATA_HOME $HOME/.local/share
-    set -x XDG_CONFIG_HOME $HOME/.config
-
-    set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
-    set -x CARGO_HOME $HOME/.cargo
-
-    set -x LLAMA_API_KEY llama-cpp
-
-    set --erase fish_user_paths
-    fish_add_path ~/.local/bin ~/.local/bin/scripts ~/.rd/bin ~/.spicetify /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin
-
-    set pure_shorten_prompt_current_directory_length 1
-    set pure_truncate_prompt_current_directory_keeps 0
-    set fish_prompt_pwd_dir_length 3
-    # exclude some common cli tools from done notifications
-    set -U --erase __done_exclude
-    set -g __done_exclude '^git (?!push|pull|fetch)'
-    set -g --append __done_exclude '^(nvim|nano|bat|cat|less|lazygit|lg)'
-    set -g --append __done_exclude '^sudo (nvim|nano|bat|cat|less)'
-    set -g --append __done_exclude '^sedit'
-
-    # respect system file descriptor limits
-    ulimit -n (ulimit -Hn)
-
-    # Commands to run in interactive sessions can go here
-    function fish_title
-        # Get the current working directory
-        set current_dir (prompt_pwd --dir-length 2 --full-length-dirs=1)
-        # Get the username and hostname
-        set user_host (whoami)@(hostname)
-        # Combine them to form the desired title
-        echo "$user_host:$current_dir"
-    end
-
-    ensure_fisher # make sure fisher is installed
-
-    if command -q zoxide
-        zoxide init fish | source
-        alias cd='z'
-    end
-    if command -q direnv
-        direnv hook fish | source
-    end
-end
-
 function yy -d "Yazi with cwd tracking on exit"
     set -l tmp (mktemp -t "yazi-cwd.XXXXXX")
     yazi $argv --cwd-file=$tmp
@@ -216,151 +139,225 @@ function stop-llm
     lactd_uv
 end
 
-setup_podman_sock
-
-if command -q eza
-    set -g EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --color=auto -A
-    alias l="eza $EZA_STANDARD_OPTIONS"
-    alias la="eza $EZA_STANDARD_OPTIONS --all"
-    alias ll="eza $EZA_STANDARD_OPTIONS --long"
-    alias ls="eza $EZA_STANDARD_OPTIONS"
-    alias lt="eza $EZA_STANDARD_OPTIONS --tree"
-    alias llt="eza $EZA_STANDARD_OPTIONS --long --tree"
-    alias treed="eza $EZA_STANDARD_OPTIONS -DTA"
-    alias tree="eza $EZA_STANDARD_OPTIONS -TA"
-    alias treei="eza $EZA_STANDARD_OPTIONS -TA --git-ignore"
+function fish_title
+    # Get the current working directory
+    set current_dir (prompt_pwd --dir-length 2 --full-length-dirs=1)
+    # Get the username and hostname
+    set user_host (whoami)@(hostname)
+    # Combine them to form the desired title
+    echo "$user_host:$current_dir"
 end
-#
-alias vi='$EDITOR'
-alias vim='$EDITOR'
-alias lg='lazygit'
-alias lpod='lazydocker'
-alias yz='yazi'
-alias cat='bat'
-alias edit='$EDITOR'
-alias sedit='sudo -E $EDITOR'
-alias mkdir='mkdir -pv'
-alias sudoe='sudo -E env PATH=(string join ':' $PATH)'
-# rsync shortcuts
-alias _rsync='rsync -avL --partial --update'
-alias _rsyncd='_rsync --dry-run'
-#
-if command -q trash
-    alias rm='trash-put'
-    alias rmd='trash-put'
-    alias rmc='trash-empty'
-    alias rmr='trash-restore'
 
-    function rmls
-        if not command -q fzf
-            trash-list
-            return
-        end
+# only run in an interactive shell
+if status is-interactive
+    set -g fish_greeting # disable initial fish greeting
+    set -gx SHELL (command -v fish) # ensure fish can run inside multiplexers
+    ensure_fisher # make sure fisher is installed
 
-        set -l selected (
-            trash-list \
-            | sort -r \
-            | fzf --multi \
-                  --prompt='Restore> ' \
-                  --header='TAB to select, ENTER to restore, ESC to cancel' \
-                  --preview-window=hidden \
-            | awk '{print $3}'
-        )
+    # --- Configuration ---
+    set -g ZELLIJ_ENABLED false
+    set -g TMUX_ENABLED true
 
-        if test -z "$selected"
-            return
-        end
+    # include our home-grown tmux helper
+    set TMUX_HELPER $HOME/.config/fish/tmux.fish
+    if test -f $TMUX_HELPER
+        source $TMUX_HELPER
+    end
 
-        set -l paths (string split '\n' -- $selected)
-        set -l count (count $paths)
+    # include our home-grown zellij helper
+    set ZELLIJ_HELPER $HOME/.config/fish/zellij.fish
+    if test -f $ZELLIJ_HELPER
+        source $ZELLIJ_HELPER
+    end
 
-        echo "Restoring $count file(s):"
-        for p in $paths
-            echo "  $p"
-        end
+    # include our archiver helper
+    set ARCHIVE_HELPER $HOME/.config/fish/archiver.fish
+    if test -f $ARCHIVE_HELPER
+        source $ARCHIVE_HELPER
+    end
 
-        read -l -P "Confirm? [y/N] " confirm
-        if string match -qi y -- $confirm
-            for p in $paths
-                echo $p | trash-restore --overwrite
+    set WORKTREES_HELPER $HOME/.config/fish/worktrees.fish
+    if test -f $WORKTREES_HELPER
+        source $WORKTREES_HELPER
+    end
+
+    set -gx nvm_default_version v25.7.0
+    set -x GPG_TTY (tty)
+    set -x XDG_DATA_HOME $HOME/.local/share
+    set -x XDG_CONFIG_HOME $HOME/.config
+
+    set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
+    set -x CARGO_HOME $HOME/.cargo
+
+    set -x LLAMA_API_KEY llama-cpp
+
+    set --erase fish_user_paths
+    fish_add_path ~/.local/bin ~/.local/bin/scripts /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin
+
+    set pure_shorten_prompt_current_directory_length 1
+    set pure_truncate_prompt_current_directory_keeps 0
+    set fish_prompt_pwd_dir_length 3
+    # exclude some common cli tools from done notifications
+    set -U --erase __done_exclude
+    set -g __done_exclude '^git (?!push|pull|fetch)'
+    set -g --append __done_exclude '^(nvim|nano|bat|cat|less|lazygit|lg)'
+    set -g --append __done_exclude '^sudo (nvim|nano|bat|cat|less)'
+    set -g --append __done_exclude '^sedit'
+
+    # respect system file descriptor limits
+    ulimit -n (ulimit -Hn)
+
+    if command -q eza
+        set -g EZA_STANDARD_OPTIONS --group --header --group-directories-first --icons --color=auto -A
+        alias l="eza $EZA_STANDARD_OPTIONS"
+        alias la="eza $EZA_STANDARD_OPTIONS --all"
+        alias ll="eza $EZA_STANDARD_OPTIONS --long"
+        alias ls="eza $EZA_STANDARD_OPTIONS"
+        alias lt="eza $EZA_STANDARD_OPTIONS --tree"
+        alias llt="eza $EZA_STANDARD_OPTIONS --long --tree"
+        alias treed="eza $EZA_STANDARD_OPTIONS -DTA"
+        alias tree="eza $EZA_STANDARD_OPTIONS -TA"
+        alias treei="eza $EZA_STANDARD_OPTIONS -TA --git-ignore"
+    end
+    #
+    alias vi='$EDITOR'
+    alias vim='$EDITOR'
+    alias lg='lazygit'
+    alias lpod='lazydocker'
+    alias yz='yazi'
+    alias cat='bat'
+    alias edit='$EDITOR'
+    alias sedit='sudo -E $EDITOR'
+    alias mkdir='mkdir -pv'
+    alias sudoe='sudo -E env PATH=(string join ':' $PATH)'
+    # rsync shortcuts
+    alias _rsync='rsync -avL --partial --update'
+    alias _rsyncd='_rsync --dry-run'
+    #
+    if command -q trash
+        alias rm='trash-put'
+        alias rmd='trash-put'
+        alias rmc='trash-empty'
+        alias rmr='trash-restore'
+
+        function rmls
+            if not command -q fzf
+                trash-list
+                return
             end
-        else
-            echo "Aborted."
+
+            set -l selected (
+                trash-list \
+                | sort -r \
+                | fzf --multi \
+                      --prompt='Restore> ' \
+                      --header='TAB to select, ENTER to restore, ESC to cancel' \
+                      --preview-window=hidden \
+                | awk '{print $3}'
+            )
+
+            if test -z "$selected"
+                return
+            end
+
+            set -l paths (string split '\n' -- $selected)
+            set -l count (count $paths)
+
+            echo "Restoring $count file(s):"
+            for p in $paths
+                echo "  $p"
+            end
+
+            read -l -P "Confirm? [y/N] " confirm
+            if string match -qi y -- $confirm
+                for p in $paths
+                    echo $p | trash-restore --overwrite
+                end
+            else
+                echo "Aborted."
+            end
         end
     end
-end
-#
-alias rsud='_rsync --delete'
-alias rsud_d='_rsyncd --delete'
-alias rsu='_rsync'
-alias rsu_d='_rsyncd'
-alias rsfd='_rsync --delete --exclude="*/"'
-alias rsfd_d='_rsyncd --delete --exclude="*/"'
-alias rsf='_rsync --exclude="*/"'
-alias rsf_d='_rsyncd --exclude="*/"'
-#
-alias reflect='sudo cachyos-rate-mirrors --sync-check --country "US"'
-alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
-#
-set NIX_FLAKE_OS_ROOT $HOME/.nix
-alias nixconf='$EDITOR $NIX_FLAKE_OS_ROOT'
-#
-set _host (hostname)
-alias _nhos='nh os switch -H $_host'
-alias nhu='_nhos $NIX_FLAKE_OS_ROOT'
-alias nhb='nh os build -H $_host --dry $NIX_FLAKE_OS_ROOT'
-alias nhuu='_nh -u $NIX_FLAKE_OS_ROOT'
-alias nhc='nh_clean'
-alias nls='sudo nixos-rebuild list-generations'
-alias nrbb='sudo nixos-rebuild boot --flake $NIX_FLAKE_OS_ROOT#$_host'
-alias nrrb='sudo nixos-rebuild switch --rollback'
-alias ncg='sudo nix-collect-garbage'
-#
-set _hmpath (realpath $NIX_FLAKE_OS_ROOT)
-set _hmsuf --flake $_hmpath#$_host
-alias _hmnix='nix run home-manager/master -- init'
-alias hmb='home-manager build --dry-run $_hmsuf'
-alias hms='home-manager switch $_hmsuf'
-alias hmls='home-manager generations'
-alias hmrm='home-manager remove-generations'
-#
-alias drbu='sudo darwin-rebuild switch --flake $NIX_FLAKE_OS_ROOT#$_host'
-alias drbb='sudo darwin-rebuild build --dry-run --flake $NIX_FLAKE_OS_ROOT#$_host'
-alias drbls='sudo darwin-rebuild --list-generations'
-alias drbrm='sudo nix-env -p /nix/var/nix/profiles/system --delete-generations'
-#
-alias nix_hist='sudo nix profile history --profile /nix/var/nix/profiles/system'
-alias nix_rb='sudo nix profile rollback --profile /nix/var/nix/profile/system'
-alias nix_act='sudo /nix/var/nix/profile/system/bin/switch-to-configuration switch'
-alias nix_roots='nix-store --gc --print-roots'
-#
-alias nixosopt='sudo nix-store --gc && sudo nix-store --optimize'
-alias nixopt='nix-store --gc && nix-store --optimize'
-#
-alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
-#
-alias update_tmux='~/.config/tmux/plugins/tpm/bin/update_plugins all'
-#
-alias kclear="printf '\033[2J\033[3J\033[1;1H'"
+    #
+    alias rsud='_rsync --delete'
+    alias rsud_d='_rsyncd --delete'
+    alias rsu='_rsync'
+    alias rsu_d='_rsyncd'
+    alias rsfd='_rsync --delete --exclude="*/"'
+    alias rsfd_d='_rsyncd --delete --exclude="*/"'
+    alias rsf='_rsync --exclude="*/"'
+    alias rsf_d='_rsyncd --exclude="*/"'
+    #
+    alias reflect='sudo cachyos-rate-mirrors --sync-check --country "US"'
+    alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
+    #
+    set NIX_FLAKE_OS_ROOT $HOME/.nix
+    alias nixconf='$EDITOR $NIX_FLAKE_OS_ROOT'
+    #
+    set _host (hostname)
+    alias _nhos='nh os switch -H $_host'
+    alias nhu='_nhos $NIX_FLAKE_OS_ROOT'
+    alias nhb='nh os build -H $_host --dry $NIX_FLAKE_OS_ROOT'
+    alias nhuu='_nh -u $NIX_FLAKE_OS_ROOT'
+    alias nhc='nh_clean'
+    alias nls='sudo nixos-rebuild list-generations'
+    alias nrbb='sudo nixos-rebuild boot --flake $NIX_FLAKE_OS_ROOT#$_host'
+    alias nrrb='sudo nixos-rebuild switch --rollback'
+    alias ncg='sudo nix-collect-garbage'
+    #
+    set _hmpath (realpath $NIX_FLAKE_OS_ROOT)
+    set _hmsuf --flake $_hmpath#$_host
+    alias _hmnix='nix run home-manager/master -- init'
+    alias hmb='home-manager build --dry-run $_hmsuf'
+    alias hms='home-manager switch $_hmsuf'
+    alias hmls='home-manager generations'
+    alias hmrm='home-manager remove-generations'
+    #
+    alias drbu='sudo darwin-rebuild switch --flake $NIX_FLAKE_OS_ROOT#$_host'
+    alias drbb='sudo darwin-rebuild build --dry-run --flake $NIX_FLAKE_OS_ROOT#$_host'
+    alias drbls='sudo darwin-rebuild --list-generations'
+    alias drbrm='sudo nix-env -p /nix/var/nix/profiles/system --delete-generations'
+    #
+    alias nix_hist='sudo nix profile history --profile /nix/var/nix/profiles/system'
+    alias nix_rb='sudo nix profile rollback --profile /nix/var/nix/profile/system'
+    alias nix_act='sudo /nix/var/nix/profile/system/bin/switch-to-configuration switch'
+    alias nix_roots='nix-store --gc --print-roots'
+    #
+    alias nixosopt='sudo nix-store --gc && sudo nix-store --optimize'
+    alias nixopt='nix-store --gc && nix-store --optimize'
+    #
+    alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
+    #
+    alias update_tmux='~/.config/tmux/plugins/tpm/bin/update_plugins all'
+    #
+    alias kclear="printf '\033[2J\033[3J\033[1;1H'"
 
-set NIX_DAEMON_FISH_SRC /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
-if test -r "$NIX_DAEMON_FISH_SRC"
-    source "$NIX_DAEMON_FISH_SRC"
-end
+    set_editor
+    setup_podman_sock
 
-set NIX_SESSION_VARS $HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
-if test -r "$NIX_SESSION_VARS"
-    fenv source "$NIX_SESSION_VARS"
-end
+    set NIX_DAEMON_FISH_SRC /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
+    if test -r "$NIX_DAEMON_FISH_SRC"
+        source "$NIX_DAEMON_FISH_SRC"
+    end
+    set NIX_SESSION_VARS $HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
+    if test -r "$NIX_SESSION_VARS"
+        fenv source "$NIX_SESSION_VARS"
+    end
 
-source "$HOME/.config/fish/catppuccin-fzf-mocha.fish"
+    source "$HOME/.config/fish/catppuccin-fzf-mocha.fish"
+    if command -q atuin
+        atuin init fish --disable-up-arrow | source
+    end
+    if command -q zoxide
+        zoxide init fish | source
+        alias cd="z"
+    end
+    if command -q direnv
+        direnv hook fish | source
+    end
 
-# keep this at the bottom
-if command -q starship
-    starship init fish | source
+    # keep this at the bottom
+    if command -q starship
+        starship init fish | source
+    end
 end
-if command -q atuin
-    atuin init fish --disable-up-arrow | source
-end
-
-set_editor

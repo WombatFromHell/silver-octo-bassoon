@@ -7,16 +7,20 @@ function yy() {
   rm -f "$tmp"
 }
 
+# run only in interactive terminal mode
 if [[ $- == *i* ]]; then
   if command -v fish &>/dev/null; then
     # Check if the parent process is NOT fish
-    if [[ "$(ps -o comm= -p "$PPID")" != "fish" ]]; then
+    if [[ -z "$TMUX" &&
+      -z "$ZELLIJ" &&
+      "$(ps -o comm= -p "$PPID")" != "fish" ]]; then
       exec fish -l
     else
       export SHELL_INDICATOR="bash"
     fi
   fi
 
+  # only executed when not in a fish sub-shell
   if which eza >/dev/null 2>&1; then
     EZA_STANDARD_OPTIONS="--group --header --group-directories-first --icons --color=auto -A"
     alias l='eza $EZA_STANDARD_OPTIONS'
@@ -30,7 +34,7 @@ if [[ $- == *i* ]]; then
   fi
   #
   alias lg='lazygit'
-  alias yz='yy'
+  alias yz='yazi'
   if which bat >/dev/null; then
     alias cat='bat'
   fi
@@ -59,18 +63,19 @@ if [[ $- == *i* ]]; then
   #
   alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
 
-  if which direnv >/dev/null 2>&1; then
+  if command -v direnv >/dev/null 2>&1; then
     export DIRENV_LOG_FORMAT=
     eval "$(direnv hook bash)"
   fi
-  if which starship >/dev/null 2>&1; then
-    eval "$(starship init bash)"
-  fi
-  if which zoxide >/dev/null 2>&1; then
+  if command -v zoxide >/dev/null 2>&1; then
     eval "$(zoxide init bash)"
-    alias cd='z'
+    alias cd="z"
   fi
-  if which atuin >/dev/null 2>&1; then
+  if command -v atuin >/dev/null 2>&1; then
     eval "$(atuin init bash --disable-up-arrow)"
+  fi
+  # keep this on the bottom
+  if command -v starship >/dev/null 2>&1; then
+    eval "$(starship init bash)"
   fi
 fi
