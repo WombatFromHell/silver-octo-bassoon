@@ -8,8 +8,9 @@ set -euo pipefail
 # Configuration
 # ==============================================================================
 
-# Default sandbox home directory
-readonly SANDBOX_HOME="/tmp"
+# Sandbox home directory (can be overridden via JAILED_HOME environment variable)
+# Example: export JAILED_HOME="$HOME/.jail"
+readonly SANDBOX_HOME="${JAILED_HOME:-/tmp}"
 
 # Tool configuration directories to search for in $HOME and bind mount.
 # Formats: "source_dir_name" (e.g., ".qwen" binds $HOME/.qwen -> $SANDBOX_HOME/.qwen)
@@ -19,6 +20,13 @@ readonly TOOL_CONFIG_DIRS=(
   # Add other tools here as needed, e.g.:
   # ".config/claude"
 )
+
+# Environment variables for custom bind mounts:
+#   JAILED_BIND_MOUNTS_RO  - Read-only mounts (format: "src:dst" or "src:dst,src2:dst2")
+#   JAILED_BIND_MOUNTS_RW  - Read-write mounts (format: "src:dst" or "src:dst,src2:dst2")
+# Example:
+#   export JAILED_BIND_MOUNTS_RO="/etc/myconfig:/etc/myconfig,/usr/share/data:/data"
+#   export JAILED_BIND_MOUNTS_RW="$HOME/projects:/projects,/var/run/docker.sock:/var/run/docker.sock"
 
 # ==============================================================================
 # Utilities
@@ -168,6 +176,55 @@ build_tool_config_args() {
   printf '%s\n' "${args[@]}"
 }
 
+# Parses bind mount environment variable and adds to bwrap args
+# Args: $1 = env var value, $2 = mount type ("ro" or "rw")
+# Format: "src:dst,src2:dst2"
+build_custom_bind_args() {
+  local mounts="$1"
+  local mount_type="$2"
+  local args=()
+
+  if [[ -z "$mounts" ]]; then
+    printf '%s\n' "${args[@]}"
+    return
+  fi
+
+  # Split by comma
+  IFS=',' read -ra mount_pairs <<< "$mounts"
+  for pair in "${mount_pairs[@]}"; do
+    # Skip empty entries
+    [[ -z "$pair" ]] && continue
+
+    # Split by colon
+    IFS=':' read -r src dst <<< "$pair"
+
+    # Validate both source and destination are present
+    if [[ -z "$src" || -z "$dst" ]]; then
+      log_err "Invalid bind mount format: '$pair' (expected 'src:dst')"
+      continue
+    fi
+
+    # Expand tilde in source path
+    if [[ "$src" == ~* ]]; then
+      src="${src/#\~/$HOME}"
+    fi
+
+    # Check source exists (warn but continue if not)
+    if [[ ! -e "$src" ]]; then
+      log_err "Bind mount source does not exist: '$src'"
+      continue
+    fi
+
+    if [[ "$mount_type" == "ro" ]]; then
+      args+=(--ro-bind "$src" "$dst")
+    else
+      args+=(--bind "$src" "$dst")
+    fi
+  done
+
+  printf '%s\n' "${args[@]}"
+}
+
 # ==============================================================================
 # Main Execution
 # ==============================================================================
@@ -234,6 +291,15 @@ main() {
   # shellcheck disable=SC2207
   local tool_args=($(build_tool_config_args))
   bwrap_args+=("${tool_args[@]}")
+
+  # -- Custom Bind Mounts (from environment variables) --
+  # shellcheck disable=SC2207
+  local ro_mounts=($(build_custom_bind_args "${JAILED_BIND_MOUNTS_RO:-}" "ro"))
+  bwrap_args+=("${ro_mounts[@]}")
+
+  # shellcheck disable=SC2207
+  local rw_mounts=($(build_custom_bind_args "${JAILED_BIND_MOUNTS_RW:-}" "rw"))
+  bwrap_args+=("${rw_mounts[@]}")
 
   # -- Environment Variables --
   local path_env="/usr/bin:/bin"
