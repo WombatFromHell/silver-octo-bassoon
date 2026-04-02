@@ -48,6 +48,10 @@
   "modalElevationEnabled": true,
   "popoutElevationEnabled": true,
   "barElevationEnabled": true,
+  "blurEnabled": false,
+  "blurBorderColor": "outline",
+  "blurBorderCustomColor": "#ffffff",
+  "blurBorderOpacity": 1,
   "wallpaperFillMode": "Fill",
   "blurredWallpaperLayer": false,
   "blurWallpaperOnOverview": true,
@@ -120,6 +124,11 @@
       "id": "nightMode",
       "enabled": true,
       "width": 50
+    },
+    {
+      "id": "idleInhibitor",
+      "enabled": true,
+      "width": 50
     }
   ],
   "showWorkspaceIndex": true,
@@ -190,6 +199,7 @@
   "sortAppsAlphabetically": false,
   "appLauncherGridColumns": 4,
   "spotlightCloseNiriOverview": true,
+  "rememberLastQuery": false,
   "spotlightSectionViewModes": {},
   "appDrawerSectionViewModes": {},
   "niriOverviewOverlayEnabled": true,
@@ -309,6 +319,7 @@
       "harmony": 0.5
     }
   },
+  "matugenTemplateNeovimSetBackground": true,
   "showDock": false,
   "dockAutoHide": false,
   "dockSmartAutoHide": true,
@@ -472,10 +483,6 @@
           "id": "cpuUsage",
           "enabled": true,
           "minimumWidth": true
-        },
-        {
-          "id": "idleInhibitor",
-          "enabled": true
         },
         {
           "id": "controlCenterButton",
