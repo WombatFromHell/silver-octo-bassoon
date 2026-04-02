@@ -187,11 +187,12 @@ if status is-interactive
 
     set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
     set -x CARGO_HOME $HOME/.cargo
+    set -x MISE_SHIMS $HOME/.local/share/mise/shims
 
     set -x LLAMA_API_KEY llama-cpp
 
     set --erase fish_user_paths
-    fish_add_path ~/.local/bin ~/.local/bin/scripts /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin
+    fish_add_path ~/.local/bin ~/.local/bin/scripts /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MISE_SHIMS
 
     set pure_shorten_prompt_current_directory_length 1
     set pure_truncate_prompt_current_directory_keeps 0
