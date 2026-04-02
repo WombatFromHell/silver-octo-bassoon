@@ -1,6 +1,6 @@
 function yy() {
   tmp=$(mktemp -t "yazi-cwd.XXXXXX")
-  yazi "$@" --cwd-file="$tmp"
+  env YAZI_NO_SESSION=1 yazi "$@" --cwd-file="$tmp"
   if [[ $(cat "$tmp") =~ ([^\n]+) ]] && [ -n "${BASH_REMATCH[1]}" ] && [ "${BASH_REMATCH[1]}" != "$PWD" ]; then
     cd "${BASH_REMATCH[1]}" || exit 1
   fi

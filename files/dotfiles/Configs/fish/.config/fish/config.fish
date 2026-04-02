@@ -35,7 +35,7 @@ end
 
 function yy -d "Yazi with cwd tracking on exit"
     set -l tmp (mktemp -t "yazi-cwd.XXXXXX")
-    yazi $argv --cwd-file=$tmp
+    env YAZI_NO_SESSION=1 yazi $argv --cwd-file=$tmp
     set cwd (cat -- $tmp)
     if test -n "$cwd" -a "$cwd" != "$PWD"
         cd -- "$cwd"

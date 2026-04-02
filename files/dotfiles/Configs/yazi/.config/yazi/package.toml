@@ -1,0 +1,12 @@
+[[plugin.deps]]
+use = "boydaihungst/gvfs"
+rev = "3abc0a2"
+hash = "eed89e75671723c8f9390a2862af0e4e"
+
+[[plugin.deps]]
+use = "barbanevosa/autosession"
+rev = "7a12b20"
+hash = "f9b76184511c983db7c6f719eea1e14d"
+
+[flavor]
+deps = []
