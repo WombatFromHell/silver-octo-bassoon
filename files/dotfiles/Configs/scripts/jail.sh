@@ -1,331 +1,467 @@
 #!/usr/bin/env bash
-# agent – A generic wrapper to run AI agents in a sandboxed environment.
-# Usage: cd /your/project && agent [arguments passed to client]
-
 set -euo pipefail
 
-# ==============================================================================
-# Configuration
-# ==============================================================================
+#
+# This is a modified version of: https://github.com/entershdev/entersh
+#
+# Dev container launcher for AI coding agents
+#
+readonly SCRIPT_NAME=$(basename "$0")
 
-# Sandbox home directory (can be overridden via JAILED_HOME environment variable)
-# Example: export JAILED_HOME="$HOME/.jail"
-readonly SANDBOX_HOME="${JAILED_HOME:-/tmp}"
+usage() {
+  cat <<EOF
+Usage: $SCRIPT_NAME [OPTIONS]
 
-# Tool configuration directories to search for in $HOME and bind mount.
-# Formats: "source_dir_name" (e.g., ".qwen" binds $HOME/.qwen -> $SANDBOX_HOME/.qwen)
-readonly TOOL_CONFIG_DIRS=(
-  ".qwen"
-  ".gemini"
-  # Add other tools here as needed, e.g.:
-  # ".config/claude"
-)
+Create or attach to a rootless Podman development container.
 
-# Environment variables for custom bind mounts:
-#   JAILED_BIND_MOUNTS_RO  - Read-only mounts (format: "src:dst" or "src:dst,src2:dst2")
-#   JAILED_BIND_MOUNTS_RW  - Read-write mounts (format: "src:dst" or "src:dst,src2:dst2")
-# Example:
-#   export JAILED_BIND_MOUNTS_RO="/etc/myconfig:/etc/myconfig,/usr/share/data:/data"
-#   export JAILED_BIND_MOUNTS_RW="$HOME/projects:/projects,/var/run/docker.sock:/var/run/docker.sock"
+Options:
+  --force    Remove existing container before creating (keeps image)
+  --rebuild  Rebuild image from Containerfile.dev, then recreate container
+  --verbose  Show full podman output (no spinner)
+  --help     Show this help message
 
-# ==============================================================================
-# Utilities
-# ==============================================================================
+The script uses the current working directory as the project directory.
+Containerfile.dev and .container-home/ are created in the project directory.
+EOF
+  exit 0
+}
 
-log_info() { echo "[agent] $*"; }
-log_err() { echo "[agent] Error: $*" >&2; }
+run_with_spinner() {
+  local label="$1"
+  shift
 
-die() {
-  log_err "$@"
+  if [ "$VERBOSE" = true ]; then
+    echo "$label..."
+    "$@"
+    return
+  fi
+
+  local log pid spin last_step step i
+  log=$(mktemp)
+
+  "$@" >"$log" 2>&1 &
+  pid=$!
+  spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  last_step=""
+
+  while kill -0 "$pid" 2>/dev/null; do
+    step=$(grep -o 'STEP [0-9]*/[0-9]*:.*' "$log" 2>/dev/null | tail -1 || true)
+    if [ -n "${step:-}" ]; then
+      last_step="${step:0:60}"
+    fi
+
+    for ((i = 0; i < ${#spin}; i++)); do
+      if ! kill -0 "$pid" 2>/dev/null; then break; fi
+      if [ -n "${last_step:-}" ]; then
+        printf "\r  %s %s  " "${spin:$i:1}" "$last_step"
+      else
+        printf "\r  %s %s  " "${spin:$i:1}" "$label"
+      fi
+      sleep 0.1
+    done
+  done
+
+  if wait "$pid"; then
+    printf "\r  ✓ %-70s\n" "$label — done."
+    rm -f "$log"
+  else
+    printf "\r  ✗ %-70s\n" "$label — failed!"
+    echo ""
+    echo "Last 20 lines of output:"
+    tail -20 "$log"
+    rm -f "$log"
+    exit 1
+  fi
+}
+
+if ! command -v podman &>/dev/null; then
+  echo "Error: podman is not installed."
+  echo ""
+  echo "Install podman for your Linux distribution:"
+  echo "  Fedora:       sudo dnf install podman"
+  echo "  Ubuntu/Debian: sudo apt install podman"
+  echo "  Arch:          sudo pacman -S podman"
+  echo "  openSUSE:      sudo zypper install podman"
   exit 1
-}
+fi
 
-# Checks if a command exists
-command_exists() {
-  command -v "$1" &>/dev/null
-}
+OS="$(uname -s)"
+if [ "$OS" != "Linux" ]; then
+  echo "Warning: this script is designed for native Linux."
+  echo "You are running on $OS."
+  echo ""
+  echo "Use ./enter-machine.sh instead - it uses podman machine (VM) which"
+  echo "is required for macOS and Windows."
+  exit 1
+fi
 
-# ==============================================================================
-# Setup Functions
-# ==============================================================================
+PROJECT_DIR="$(pwd)"
+PROJECT_NAME="$(basename "$PROJECT_DIR")"
+IMAGE_NAME="${PROJECT_NAME}-dev"
+CONTAINER_NAME="$PROJECT_NAME"
 
-# Verify environment safety and dependencies
-check_prerequisites() {
-  if [[ "$PWD" == "$HOME" ]]; then
-    die "Refusing to run sandbox in \$HOME. 'cd' into a project directory first."
-  fi
+FORCE=false
+REBUILD=false
+VERBOSE=false
+for arg in "$@"; do
+  case "$arg" in
+  --force) FORCE=true ;;
+  --rebuild)
+    REBUILD=true
+    FORCE=true
+    ;;
+  --verbose) VERBOSE=true ;;
+  --help) usage ;;
+  esac
+done
 
-  if ! command_exists bwrap; then
-    die "'bwrap' (bubblewrap) not found. Install it to use the sandbox."
-  fi
-}
+generate_containerfile() {
+  echo "No Containerfile.dev found, generating default..."
+  cat >"$PROJECT_DIR/Containerfile.dev" <<'CONTAINERFILE'
+FROM fedora:latest
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+ARG USER_NAME=dev
+RUN dnf install -y \
+    git curl wget make gcc gcc-c++ findutils tar gzip unzip \
+    which procps-ng htop tmux bash-completion libatomic && \
+    dnf clean all
+RUN groupadd -g $GROUP_ID $USER_NAME 2>/dev/null || true && \
+    useradd -m -u $USER_ID -g $GROUP_ID -s /bin/bash $USER_NAME
 
-# Detects Linuxbrew installation and returns real path
-# Output: "real_path" (e.g., /home/linuxbrew/.linuxbrew)
-find_homebrew() {
-  local candidates=(
-    "/home/linuxbrew/.linuxbrew"
-    "/var/home/linuxbrew/.linuxbrew"
-    "/linuxbrew/.linuxbrew"
-  )
+# Setup direnv integration in bashrc (evaluated at runtime, not build time)
+RUN cat >> /home/$USER_NAME/.bashrc <<'BASHRC_EOF'
+# Direnv integration (if available from host nix store)
+if command -v direnv &>/dev/null; then
+    eval "$(direnv hook bash)"
+fi
 
-  for dir in "${candidates[@]}"; do
-    if [[ -d "$dir" ]]; then
-      realpath "$dir"
-      return 0
+# Fallback: auto-activate .venv if direnv is not available
+# (For direnv users, run 'venv-direnv.sh' to integrate .venv with direnv)
+if ! command -v direnv &>/dev/null && [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate
+fi
+BASHRC_EOF
+
+# Create a helper script to setup .envrc for uv/pip venv
+RUN mkdir -p /home/$USER_NAME/bin && cat > /home/$USER_NAME/bin/venv-direnv.sh <<'SCRIPT_EOF'
+#!/bin/bash
+# Helper to create/update .envrc for virtual environment
+if [ ! -d ".venv" ]; then
+    echo "Error: .venv directory not found. Run 'uv venv' first."
+    exit 1
+fi
+
+if [ ! -f ".envrc" ]; then
+    # Create new .envrc
+    echo "source .venv/bin/activate" > .envrc
+    if command -v direnv &>/dev/null; then
+        direnv allow
     fi
-  done
-}
-
-# Builds arguments for Homebrew (handling /home vs /var/home symlink issues)
-# Args: $1 = real_homebrew_path
-build_homebrew_args() {
-  local prefix="$1"
-  local args=()
-
-  if [[ -z "$prefix" ]]; then
-    echo ""
-    return
-  fi
-
-  # Always bind the real prefix path
-  args+=(--ro-bind "$prefix" "$prefix")
-
-  # Handle Fedora Silverblue /home -> /var/home symlink mapping
-  # This ensures binaries with hardcoded RPATHs work regardless of how they reference home
-  if [[ "$prefix" == /var/home/* ]]; then
-    local alt_path="/home${prefix#/var/home}"
-    args+=(--ro-bind "$prefix" "$alt_path")
-  elif [[ "$prefix" == /home/* ]]; then
-    # If real path is /home, bind to /var/home just in case
-    local alt_path="/var/home${prefix#/home}"
-    args+=(--ro-bind "$prefix" "$alt_path")
-  fi
-
-  printf '%s\n' "${args[@]}"
-}
-
-# Detects Nix profile path
-find_nix_profile() {
-  local candidates=(
-    "$HOME/.nix-profile"
-    "/home/$USER/.nix-profile"
-    "/var/home/$USER/.nix-profile"
-    "/nix/profile"
-  )
-
-  for dir in "${candidates[@]}"; do
-    if [[ -d "$dir" ]]; then
-      realpath "$dir"
-      return 0
-    fi
-  done
-}
-
-# Builds arguments for Nix profile
-# Args: $1 = nix_profile_path
-build_nix_args() {
-  local profile="$1"
-
-  if [[ -z "$profile" ]]; then
-    echo ""
-    return
-  fi
-
-  # Handle nested bwrap environments (/oldroot prefix)
-  if [[ "$profile" == /oldroot/* ]]; then
-    echo "--ro-bind /oldroot${profile#/oldroot} $profile"
-  else
-    echo "--ro-bind $profile $profile"
-  fi
-}
-
-# Resolves the current working directory source path for bind mounting
-# Returns: "source_path"
-resolve_pwd_source() {
-  if [[ "$PWD" == /oldroot/* ]]; then
-    # Nested bwrap: strip prefix, resolve, add back
-    local stripped="${PWD#/oldroot}"
-    realpath -m "$stripped" 2>/dev/null || echo "$stripped"
-  else
-    realpath -m "$PWD" 2>/dev/null || echo "$PWD"
-  fi
-}
-
-# Builds arguments for tool configuration directories (e.g., ~/.qwen, ~/.gemini)
-build_tool_config_args() {
-  local args=()
-  local src_path
-
-  for dir_name in "${TOOL_CONFIG_DIRS[@]}"; do
-    # Check standard location
-    if [[ -d "$HOME/$dir_name" ]]; then
-      src_path=$(realpath "$HOME/$dir_name")
-    # Check for nested bwrap /oldroot prefix
-    elif [[ "$HOME" == /oldroot/* && -d "${HOME#/oldroot}/$dir_name" ]]; then
-      src_path=$(realpath "${HOME#/oldroot}/$dir_name")
+    echo "Created .envrc for .venv"
+else
+    # Append to existing .envrc if not already present
+    if ! grep -q "source .venv/bin/activate" .envrc; then
+        echo "" >> .envrc
+        echo "# Activate uv/pip virtual environment" >> .envrc
+        echo "source .venv/bin/activate" >> .envrc
+        if command -v direnv &>/dev/null; then
+            direnv allow
+        fi
+        echo "Updated .envrc to include .venv activation"
     else
-      continue
+        echo ".envrc already includes .venv activation"
     fi
+fi
+SCRIPT_EOF
+RUN chmod +x /home/$USER_NAME/bin/venv-direnv.sh
 
-    # Mount config dir into the sandbox's HOME
-    # Note: This is applied AFTER --tmpfs /tmp in the final command
-    args+=(--bind-try "$src_path" "$SANDBOX_HOME/$dir_name")
-  done
+# ============================================================================
+# TODO: Add your project's environment and AI agent below.
+#
+# 1. Add your project's language/runtime and dependencies:
+#    RUN dnf install -y golang nodejs python3 rust cargo ...
+#
+# 2. Install your AI coding agent (pick one):
+#    RUN npm install -g @anthropic-ai/claude-code
+#    RUN curl -fsSL https://opencode.ai/install | bash
+#    RUN npm install -g @anthropic-ai/amp
+#    RUN pip install aider-chat
+#    RUN npm install -g @openai/codex
+#
+# 3. IMPORTANT: Also update this script to mount agent configs from host.
+#    Each agent needs its auth/config directory passed through.
+#
+#    Example — Claude Code:
+#      Containerfile.dev:
+#        RUN npm install -g @anthropic-ai/claude-code
+#      $SCRIPT_NAME (add to OPTIONAL_MOUNTS section):
+#        if [ -d "$HOME/.claude" ]; then
+#          OPTIONAL_MOUNTS+=(-v "$HOME/.claude:/home/$(whoami)/.claude")
+#        fi
+#      $SCRIPT_NAME (add to podman run -e flags):
+#        -e ANTHROPIC_API_KEY (if you use an API key instead of OAuth)
+#
+#    Example — Aider:
+#      Containerfile.dev:
+#        RUN pip install aider-chat
+#      edit this script (add to podman run -e flags):
+#        -e OPENAI_API_KEY
+#        -e ANTHROPIC_API_KEY
+#
+# 4. Rebuild the container: $SCRIPT_NAME --rebuild
+# ============================================================================
 
-  printf '%s\n' "${args[@]}"
+USER $USER_NAME
+WORKDIR /home/$USER_NAME
+
+# Python/uv tooling optimizations (set after USER so paths resolve correctly)
+# Prevents hardlink warnings when cache and project are on different mount points
+ENV UV_LINK_MODE=copy
+# Ensure uv cache is in a writable, persistent location
+ENV UV_CACHE_DIR=/home/$USER_NAME/.cache/uv
+
+CMD ["/bin/bash"]
+CONTAINERFILE
 }
 
-# Parses bind mount environment variable and adds to bwrap args
-# Args: $1 = env var value, $2 = mount type ("ro" or "rw")
-# Format: "src:dst,src2:dst2"
-build_custom_bind_args() {
-  local mounts="$1"
-  local mount_type="$2"
-  local args=()
+save_checksums() {
+  local checksums_file="$PROJECT_DIR/.container-home/.checksums"
+  {
+    if [ -f "$PROJECT_DIR/Containerfile.dev" ]; then
+      echo "containerfile=$(sha256sum "$PROJECT_DIR/Containerfile.dev" | cut -d' ' -f1)"
+    fi
+    echo "script=$(sha256sum "$0" | cut -d' ' -f1)"
+  } >"$checksums_file"
+}
 
-  if [[ -z "$mounts" ]]; then
-    printf '%s\n' "${args[@]}"
+check_for_changes() {
+  local checksums_file="$PROJECT_DIR/.container-home/.checksums"
+  if [ ! -f "$checksums_file" ]; then
     return
   fi
 
-  # Split by comma
-  IFS=',' read -ra mount_pairs <<< "$mounts"
-  for pair in "${mount_pairs[@]}"; do
-    # Skip empty entries
-    [[ -z "$pair" ]] && continue
+  local changed=false
+  local containerfile_changed=false
 
-    # Split by colon
-    IFS=':' read -r src dst <<< "$pair"
-
-    # Validate both source and destination are present
-    if [[ -z "$src" || -z "$dst" ]]; then
-      log_err "Invalid bind mount format: '$pair' (expected 'src:dst')"
-      continue
+  if [ -f "$PROJECT_DIR/Containerfile.dev" ]; then
+    local current_cf
+    current_cf="$(sha256sum "$PROJECT_DIR/Containerfile.dev" | cut -d' ' -f1)"
+    local saved_cf
+    saved_cf="$(grep '^containerfile=' "$checksums_file" 2>/dev/null | cut -d= -f2)"
+    if [ -n "$saved_cf" ] && [ "$current_cf" != "$saved_cf" ]; then
+      changed=true
+      containerfile_changed=true
     fi
+  fi
 
-    # Expand tilde in source path
-    if [[ "$src" == ~* ]]; then
-      src="${src/#\~/$HOME}"
-    fi
+  local current_script
+  current_script="$(sha256sum "$0" | cut -d' ' -f1)"
+  local saved_script
+  saved_script="$(grep '^script=' "$checksums_file" 2>/dev/null | cut -d= -f2)"
+  if [ -n "$saved_script" ] && [ "$current_script" != "$saved_script" ]; then
+    changed=true
+  fi
 
-    # Check source exists (warn but continue if not)
-    if [[ ! -e "$src" ]]; then
-      log_err "Bind mount source does not exist: '$src'"
-      continue
-    fi
-
-    if [[ "$mount_type" == "ro" ]]; then
-      args+=(--ro-bind "$src" "$dst")
+  if [ "$changed" = true ]; then
+    echo ""
+    echo "=== Changes detected since container was created ==="
+    if [ "$containerfile_changed" = true ]; then
+      echo "  Containerfile.dev has changed  -> run: ./$SCRIPT_NAME --rebuild"
     else
-      args+=(--bind "$src" "$dst")
+      echo "  $SCRIPT_NAME has changed           -> run: ./$SCRIPT_NAME --force"
     fi
-  done
-
-  printf '%s\n' "${args[@]}"
+    echo "==================================================="
+    echo ""
+  fi
 }
 
-# ==============================================================================
-# Main Execution
-# ==============================================================================
+if [ "$FORCE" = true ]; then
+  echo "Removing container..."
+  podman rm -f "$CONTAINER_NAME" 2>/dev/null || true
+  if [ "$REBUILD" = true ]; then
+    if [ ! -f "$PROJECT_DIR/Containerfile.dev" ]; then
+      generate_containerfile
+    fi
+    echo "Rebuilding image..."
+    podman build \
+      --build-arg USER_ID="$(id -u)" \
+      --build-arg GROUP_ID="$(id -g)" \
+      --build-arg USER_NAME="$(whoami)" \
+      -t "$IMAGE_NAME" \
+      -f "$PROJECT_DIR/Containerfile.dev" \
+      "$PROJECT_DIR"
+    podman image prune -f >/dev/null 2>&1 || true
+  fi
+fi
 
-main() {
-  check_prerequisites
+if podman container exists "$CONTAINER_NAME" 2>/dev/null; then
+  check_for_changes
+  if podman inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q true; then
+    echo "Container '$CONTAINER_NAME' is running, attaching..."
+    podman exec -it -w "/home/$(whoami)/$PROJECT_NAME" "$CONTAINER_NAME" /bin/bash
+  else
+    echo "Container '$CONTAINER_NAME' exists but stopped, starting..."
+    podman start "$CONTAINER_NAME"
+    podman exec -it -w "/home/$(whoami)/$PROJECT_NAME" "$CONTAINER_NAME" /bin/bash
+  fi
+else
+  if [ ! -f "$PROJECT_DIR/Containerfile.dev" ]; then
+    generate_containerfile
+  fi
 
-  # 1. Resolve Paths
-  local homebrew_prefix nix_profile pwd_source
-  homebrew_prefix=$(find_homebrew)
-  nix_profile=$(find_nix_profile)
-  pwd_source=$(resolve_pwd_source)
+  if ! podman image exists "$IMAGE_NAME" 2>/dev/null; then
+    run_with_spinner "Building image '$IMAGE_NAME'" \
+      podman build \
+      --build-arg USER_ID="$(id -u)" \
+      --build-arg GROUP_ID="$(id -g)" \
+      --build-arg USER_NAME="$(whoami)" \
+      -t "$IMAGE_NAME" \
+      -f "$PROJECT_DIR/Containerfile.dev" \
+      "$PROJECT_DIR"
+  fi
 
-  # 2. Build Bwrap Arguments
-  local bwrap_args=()
+  mkdir -p "$PROJECT_DIR/.container-home"/{bash,local,cache}
+  mkdir -p "$PROJECT_DIR/.container-home/local/share/direnv"
 
-  # -- Base System Sandbox --
-  bwrap_args+=(
-    --unshare-all
-    --share-net
-    --die-with-parent
-    --new-session
-    --ro-bind /usr/bin /usr/bin
-    --ro-bind /usr/lib /usr/lib
-    --ro-bind-try /usr/lib64 /usr/lib64
-    --ro-bind /lib64 /lib64
-    --symlink usr/lib /lib
-    --ro-bind /etc/passwd /etc/passwd
-    --ro-bind /etc/group /etc/group
-    --ro-bind /etc/resolv.conf /etc/resolv.conf
-    --ro-bind /etc/hosts /etc/hosts
-    --ro-bind /etc/ssl /etc/ssl
-    --ro-bind-try /etc/pki /etc/pki
-    --proc /proc
-    --dev /dev
-  )
+  PODMAN_SOCK="${XDG_RUNTIME_DIR}/podman/podman.sock"
+  if [ ! -S "$PODMAN_SOCK" ]; then
+    echo "Starting podman socket..."
+    systemctl --user start podman.socket
+  fi
 
-  # -- Project Directory --
-  bwrap_args+=(--bind-try "$pwd_source" "$PWD")
+  OPTIONAL_MOUNTS=()
+  PATH_ENTRIES=()
 
-  # -- Nix Store (Static) --
   if [[ -d /nix/store ]]; then
-    bwrap_args+=(--ro-bind /nix/store /nix/store)
+    OPTIONAL_MOUNTS+=(-v "/nix/store:/nix/store:ro")
   fi
 
-  # -- Homebrew (Dynamic) --
-  if [[ -n "$homebrew_prefix" ]]; then
-    # shellcheck disable=SC2207
-    local homebrew_args=($(build_homebrew_args "$homebrew_prefix"))
-    bwrap_args+=("${homebrew_args[@]}")
+  if [[ -d /nix/var/nix ]]; then
+    OPTIONAL_MOUNTS+=(-v "/nix/var/nix:/nix/var/nix")
   fi
 
-  # -- Nix Profile (Dynamic) --
-  if [[ -n "$nix_profile" ]]; then
-    # shellcheck disable=SC2207
-    local nix_args=($(build_nix_args "$nix_profile"))
-    bwrap_args+=("${nix_args[@]}")
+  USER_NIX_PROFILE=""
+  for candidate in "$HOME/.nix-profile" "$HOME/.local/state/nix/profiles/profile" "/home/$USER/.nix-profile" "/var/home/$USER/.nix-profile" "/nix/profile"; do
+    if [[ -d "$candidate" ]]; then
+      USER_NIX_PROFILE=$(realpath "$candidate")
+      break
+    fi
+  done
+
+  if [[ -n "$USER_NIX_PROFILE" ]]; then
+    OPTIONAL_MOUNTS+=(-v "$USER_NIX_PROFILE:$USER_NIX_PROFILE:ro")
+
+    if [[ "$USER_NIX_PROFILE" == /oldroot/* ]]; then
+      HOST_USER_NIX_PROFILE="${USER_NIX_PROFILE#/oldroot}"
+      OPTIONAL_MOUNTS+=(-v "$HOST_USER_NIX_PROFILE:$USER_NIX_PROFILE:ro")
+    fi
+
+    PATH_ENTRIES+=("$USER_NIX_PROFILE/bin")
+
+    if [[ "$USER_NIX_PROFILE" == /var/home/* ]]; then
+      alt_path="/home${USER_NIX_PROFILE#/var/home}"
+      OPTIONAL_MOUNTS+=(-v "$USER_NIX_PROFILE:$alt_path:ro")
+    elif [[ "$USER_NIX_PROFILE" == /home/* ]]; then
+      alt_path="/var/home${USER_NIX_PROFILE#/home}"
+      OPTIONAL_MOUNTS+=(-v "$USER_NIX_PROFILE:$alt_path:ro")
+    fi
+
+    if [[ "$USER_NIX_PROFILE" == /var/nix/* ]]; then
+      alt_nix="/nix${USER_NIX_PROFILE#/var/nix}"
+      OPTIONAL_MOUNTS+=(-v "$USER_NIX_PROFILE:$alt_nix:ro")
+    elif [[ "$USER_NIX_PROFILE" == /nix/* ]]; then
+      alt_nix="/var/nix${USER_NIX_PROFILE#/nix}"
+      OPTIONAL_MOUNTS+=(-v "$USER_NIX_PROFILE:$alt_nix:ro")
+    fi
   fi
 
-  # -- Sandbox Home & Tool Configs --
-  bwrap_args+=(--tmpfs "$SANDBOX_HOME")
-
-  # Mount tool configs (qwen, gemini, etc.)
-  # shellcheck disable=SC2207
-  local tool_args=($(build_tool_config_args))
-  bwrap_args+=("${tool_args[@]}")
-
-  # -- Custom Bind Mounts (from environment variables) --
-  # shellcheck disable=SC2207
-  local ro_mounts=($(build_custom_bind_args "${JAILED_BIND_MOUNTS_RO:-}" "ro"))
-  bwrap_args+=("${ro_mounts[@]}")
-
-  # shellcheck disable=SC2207
-  local rw_mounts=($(build_custom_bind_args "${JAILED_BIND_MOUNTS_RW:-}" "rw"))
-  bwrap_args+=("${rw_mounts[@]}")
-
-  # -- Environment Variables --
-  local path_env="/usr/bin:/bin"
-  [[ -n "$nix_profile" ]] && path_env="$nix_profile/bin:$path_env"
-  [[ -n "$homebrew_prefix" ]] && path_env="$homebrew_prefix/bin:$path_env"
-
-  bwrap_args+=(
-    --setenv HOME "$SANDBOX_HOME"
-    --setenv PATH "$path_env"
-  )
-
-  # Set SSL certificate paths for Python/urllib (fixes CERTIFICATE_VERIFY_FAILED)
-  if [[ -f /etc/pki/tls/certs/ca-bundle.crt ]]; then
-    bwrap_args+=(--setenv SSL_CERT_FILE /etc/pki/tls/certs/ca-bundle.crt)
-  fi
-  if [[ -d /etc/pki/tls/certs ]]; then
-    bwrap_args+=(--setenv SSL_CERT_DIR /etc/pki/tls/certs)
+  if [[ -d /nix/var/nix/profiles/default ]]; then
+    OPTIONAL_MOUNTS+=(-v "/nix/var/nix/profiles/default:/nix/profile:ro")
+    PATH_ENTRIES+=("/nix/profile/bin")
   fi
 
-  # Set NODE_PATH for Homebrew Node modules if present
-  if [[ -n "$homebrew_prefix" && -d "$homebrew_prefix/lib/node_modules" ]]; then
-    bwrap_args+=(--setenv NODE_PATH "$homebrew_prefix/lib/node_modules")
+  # mise (rtx) version manager support
+  # Mount the installs directory directly since shims point to host paths
+  MISE_INSTALLS_DIR="$HOME/.local/share/mise/installs"
+  if [[ -d "$MISE_INSTALLS_DIR" ]]; then
+    OPTIONAL_MOUNTS+=(-v "$MISE_INSTALLS_DIR:$MISE_INSTALLS_DIR:ro")
+    # Add all tool bin directories to PATH
+    for tool_bin in "$MISE_INSTALLS_DIR"/*//*/bin; do
+      if [[ -d "$tool_bin" ]]; then
+        PATH_ENTRIES+=("$tool_bin")
+      fi
+    done
   fi
 
-  # 3. Execute
-  exec bwrap "${bwrap_args[@]}" "$@"
-}
+  if [[ -f /etc/nix/nix.conf ]]; then
+    OPTIONAL_MOUNTS+=(-v "/etc/nix/nix.conf:/etc/nix/nix.conf:ro")
+  fi
 
-main "$@"
+  if [ -f "$HOME/.tmux.conf" ]; then
+    OPTIONAL_MOUNTS+=(-v "$HOME/.tmux.conf:/home/$(whoami)/.tmux.conf:ro")
+  fi
+  if [ -d "$HOME/.config" ]; then
+    OPTIONAL_MOUNTS+=(-v "$HOME/.config:/home/$(whoami)/.config:ro")
+  fi
+  if [ -d "$HOME/.claude" ]; then
+    OPTIONAL_MOUNTS+=(-v "$HOME/.claude:/home/$(whoami)/.claude")
+  fi
+  if [ -d "$HOME/.qwen" ]; then
+    OPTIONAL_MOUNTS+=(-v "$HOME/.qwen:/home/$(whoami)/.qwen")
+  fi
+  if [ -d "$HOME/.gnupg" ]; then
+    OPTIONAL_MOUNTS+=(-v "$HOME/.gnupg:/home/$(whoami)/.gnupg")
+  fi
+  if [ -f "$HOME/.gitconfig" ]; then
+    OPTIONAL_MOUNTS+=(-v "$HOME/.gitconfig:/home/$(whoami)/.gitconfig:ro")
+  fi
+
+  DEFAULT_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  if [ ${#PATH_ENTRIES[@]} -gt 0 ]; then
+    CUSTOM_PATH=$(
+      IFS=:
+      echo "${PATH_ENTRIES[*]}"
+    )
+    NIX_PATH="$CUSTOM_PATH:$DEFAULT_PATH"
+  fi
+
+  save_checksums
+
+  run_with_spinner "Creating container (first run may take 30-60s for UID remapping)" \
+    podman create \
+    --name "$CONTAINER_NAME" \
+    --hostname "$CONTAINER_NAME" \
+    --userns=keep-id \
+    --network=host \
+    --security-opt label=disable \
+    --security-opt no-new-privileges \
+    --cap-drop=all \
+    --read-only \
+    --tmpfs /tmp --tmpfs /var/tmp \
+    -v "$PODMAN_SOCK:$PODMAN_SOCK" \
+    -e DOCKER_HOST=unix://"$PODMAN_SOCK" \
+    -v "$PROJECT_DIR:/home/$(whoami)/$PROJECT_NAME" \
+    -v "$PROJECT_DIR/.container-home/bash:/home/$(whoami)/.bash_history_dir" \
+    -v "$PROJECT_DIR/.container-home/local:/home/$(whoami)/.local" \
+    -v "$PROJECT_DIR/.container-home/cache:/home/$(whoami)/.cache" \
+    -e HISTFILE="/home/$(whoami)/.bash_history_dir/.bash_history" \
+    ${NIX_PATH:+"-e" "PATH=$NIX_PATH"} \
+    "${OPTIONAL_MOUNTS[@]}" \
+    -w "/home/$(whoami)/$PROJECT_NAME" \
+    "$IMAGE_NAME" \
+    sleep infinity
+
+  podman start "$CONTAINER_NAME" >/dev/null
+  podman wait --condition=running "$CONTAINER_NAME" >/dev/null
+
+  # Fix .gnupg permissions if mounted
+  if [ -d "$HOME/.gnupg" ]; then
+    podman exec "$CONTAINER_NAME" chmod 0700 "/home/$(whoami)/.gnupg" 2>/dev/null || true
+  fi
+
+  # Fix direnv directory permissions
+  podman exec "$CONTAINER_NAME" chown "$(whoami):$(whoami)" "/home/$(whoami)/.local/share/direnv" 2>/dev/null || true
+
+  podman exec -it -w "/home/$(whoami)/$PROJECT_NAME" "$CONTAINER_NAME" /bin/bash
+fi
