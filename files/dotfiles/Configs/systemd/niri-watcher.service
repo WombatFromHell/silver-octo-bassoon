@@ -15,29 +15,9 @@ Type=simple
 ExecStart=/usr/local/bin/niri-watcher
 Restart=on-failure
 RestartSec=5
-# Clean up on stop
 KillMode=mixed
 TimeoutStopSec=10
-
-# Environment
-Environment=XDG_RUNTIME_DIR=%t
-Environment=WAYLAND_DISPLAY=%i
-
-# Security hardening (optional but recommended)
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=read-only
-PrivateTmp=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-RestrictRealtime=true
-RestrictSUIDSGID=true
-MemoryDenyWriteExecute=true
-LockPersonality=true
-
-# Allow access to niri socket and XDG_RUNTIME_DIR
-ReadWritePaths=%t
+Environment=WAYLAND_DISPLAY=%E{WAYLAND_DISPLAY}
 
 [Install]
 # Only wanted when niri.service is wanted
