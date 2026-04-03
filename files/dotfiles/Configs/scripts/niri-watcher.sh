@@ -15,8 +15,12 @@ readonly DEBUG_MODE="${NIRI_VRR_DEBUG:-0}"
 readonly RELAXED_MODE="${NIRI_VRR_RELAXED_MODE:-0}" # 1 = skip GPU/3D checks
 
 # Hook commands
-declare -a HOOK_ON=("$HOME/.local/bin/scripts/perfboost.sh on")
-declare -a HOOK_OFF=("$HOME/.local/bin/scripts/perfboost.sh off")
+declare -a HOOK_ON=(
+  "$HOME/.local/bin/scripts/perfboost.sh on"
+)
+declare -a HOOK_OFF=(
+  "$HOME/.local/bin/scripts/perfboost.sh off"
+)
 
 declare -a EXCLUDED_APPS=(
   "brave-browser"
@@ -42,7 +46,11 @@ declare -A OUTPUT_CURRENT_APP=()
 # ============================================================================
 log() { printf '%s [%s] %s: %s\n' "$(date '+%F %T')" "$1" "$SCRIPT_NAME" "${*:2}" >>"${LOG_FILE}"; }
 log_info() { log "INFO" "$@"; }
-log_debug() { ((DEBUG_MODE == 1)) && log "DEBUG" "$@" || true; }
+log_debug() {
+  if ((DEBUG_MODE == 1)); then
+    log "DEBUG" "$@"
+  fi
+}
 log_warn() { log "WARN" "$@"; }
 log_error() { log "ERROR" "$@"; }
 
@@ -74,19 +82,66 @@ fetch_niri_workspaces() { niri msg -j workspaces 2>/dev/null || echo '[]'; }
 fetch_gpu_pids() { nvtop -s 2>/dev/null | jq -r '.[].processes[]? | select(.kind == "graphic & compute") | .pid | select(. != null)' 2>/dev/null || true; }
 
 # ============================================================================
-# Batch Parser (Performance Critical)
+# Data Parsers (Pure — transform JSON → TSV streams)
 # ============================================================================
-parse_windows_tsv() {
+
+# Parse workspace → output mappings from workspaces JSON
+# Input:  workspaces JSON array
+# Output: TSV lines of "workspace_id\toutput_name"
+parse_workspace_outputs() {
   jq -r '
     .[] | [
+      (.id | tostring),
+      (.output // "")
+    ] | select(.[1] != "") | @tsv
+  ' <<<"$1" 2>/dev/null || true
+}
+
+# Parse output names and dimensions from outputs JSON
+# Input:  outputs JSON object (keyed by output name)
+# Output: TSV lines of "output_name\twidth\theight"
+parse_output_dimensions() {
+  jq -r '
+    to_entries[] | [
+      .key,
+      ((try .value.modes[.value.current_mode].width catch null) // .value.modes[0].width // ""),
+      ((try .value.modes[.value.current_mode].height catch null) // .value.modes[0].height // "")
+    ] | select(.[1] != "" and .[2] != "") | @tsv
+  ' <<<"$1" 2>/dev/null || true
+}
+
+# Parse a single window object into TSV fields
+# Input:  single window JSON object (via $1)
+# Output: TSV line of "app_id\tpid\tworkspace_id\ttile_w\ttile_h\twin_w\twin_h\tis_focused"
+parse_window_fields() {
+  jq -r '
+    [
       (.app_id // ""),
-      (.pid // ""),
-      (.workspace_id // ""),
+      (.pid // "" | tostring),
+      (.workspace_id // "" | tostring),
       (.layout.tile_size[0] // ""),
       (.layout.tile_size[1] // ""),
       (.layout.window_size[0] // ""),
       (.layout.window_size[1] // ""),
-      (.is_focused // false)
+      (.is_focused // false | tostring)
+    ] | @tsv
+  ' <<<"$1" 2>/dev/null || true
+}
+
+# Parse all windows into TSV (batch alternative to per-window parse_window_fields)
+# Input:  windows JSON array
+# Output: TSV lines (same fields as parse_window_fields)
+parse_all_windows_tsv() {
+  jq -r '
+    .[] | [
+      (.app_id // ""),
+      (.pid // "" | tostring),
+      (.workspace_id // "" | tostring),
+      (.layout.tile_size[0] // ""),
+      (.layout.tile_size[1] // ""),
+      (.layout.window_size[0] // ""),
+      (.layout.window_size[1] // ""),
+      (.is_focused // false | tostring)
     ] | @tsv
   ' <<<"$1" 2>/dev/null || true
 }
@@ -243,73 +298,98 @@ apply_vrr_state() {
 }
 
 # ============================================================================
-# Main Orchestrator
+# Main Orchestrator (Collect → Parse → Decide → Act)
 # ============================================================================
-evaluate_all_outputs() {
+
+# Module-level working arrays (populated by parse phase, consumed by decide phase)
+declare -A _WS_TO_OUTPUT=()
+declare -A _OUTPUT_DIMENSIONS=()
+declare -a _WINDOWS_TSV=()
+
+# Phase 1+2: Collect & Parse — gather JSON and transform into working arrays
+# (Combined to avoid serialization issues with null bytes in command substitution)
+collect_and_parse() {
   local outputs_json windows_json workspaces_json
-  outputs_json=$(fetch_niri_outputs)
-  windows_json=$(fetch_niri_windows)
-  workspaces_json=$(fetch_niri_workspaces)
 
-  # Use local -A for explicit function scope (clearer & lint-friendly)
-  local -A ws_to_output=()
-  local -A output_dimensions=()
-  local -A desired_vrr_state=()
+  outputs_json="$(fetch_niri_outputs)"
+  windows_json="$(fetch_niri_windows)"
+  workspaces_json="$(fetch_niri_workspaces)"
 
-  # Parse workspace -> output mappings
+  _WS_TO_OUTPUT=()
+  _OUTPUT_DIMENSIONS=()
+  _WINDOWS_TSV=()
+
   while IFS=$'\t' read -r ws_id output_name; do
-    [[ -n "$ws_id" && "$ws_id" != "null" && -n "$output_name" ]] || continue
-    # shellcheck disable=SC2034  # False positive: analyzers don't track dynamic array key assignment
-    ws_to_output["$ws_id"]="$output_name"
+    [[ -n "$ws_id" && -n "$output_name" && "$ws_id" != "null" ]] || continue
+    _WS_TO_OUTPUT["$ws_id"]="$output_name"
   done < <(parse_workspace_outputs "$workspaces_json")
 
-  # Parse output dimensions & init desired state
   while IFS=$'\t' read -r name width height; do
     [[ -n "$name" && -n "$width" && -n "$height" ]] || continue
-    # shellcheck disable=SC2034
-    output_dimensions["$name"]="${width%%.*}x${height%%.*}"
-    desired_vrr_state["$name"]="off"
+    _OUTPUT_DIMENSIONS["$name"]="${width%%.*}x${height%%.*}"
   done < <(parse_output_dimensions "$outputs_json")
 
-  # Evaluate each window (batch processed via single jq stream)
-  while IFS= read -r window_json; do
-    [[ -z "$window_json" || "$window_json" == "null" ]] && continue
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    _WINDOWS_TSV+=("$line")
+  done < <(parse_all_windows_tsv "$windows_json")
 
-    local fields
-    fields=$(parse_window_fields "$window_json")
-    [[ -z "$fields" ]] && continue
+  log_debug "Parsed: ${#_WS_TO_OUTPUT[@]} ws, ${#_OUTPUT_DIMENSIONS[@]} outs, ${#_WINDOWS_TSV[@]} wins"
+}
 
-    IFS=$'\t' read -r app_id pid ws_id tile_w tile_h win_w win_h is_focused <<<"$fields"
+# Phase 3: Decide — evaluate which outputs need VRR on
+# Writes results into DESIRED_VRR (declared in evaluate_all_outputs scope)
+decide_vrr_state() {
+  local output
+  for output in "${!_OUTPUT_DIMENSIONS[@]}"; do
+    DESIRED_VRR["$output"]="off"
+  done
+
+  local tsv_line app_id pid ws_id tile_w tile_h win_w win_h is_focused target_output
+  for tsv_line in "${_WINDOWS_TSV[@]+"${_WINDOWS_TSV[@]}"}"; do
+    IFS=$'\t' read -r app_id pid ws_id tile_w tile_h win_w win_h is_focused <<<"$tsv_line"
     [[ -z "$app_id" && -z "$pid" ]] && continue
 
-    local target_output
     if target_output=$(evaluate_window_for_vrr \
       "$app_id" "$pid" "$ws_id" \
       "$tile_w" "$tile_h" "$win_w" "$win_h" "$is_focused" \
-      ws_to_output output_dimensions); then
+      _WS_TO_OUTPUT _OUTPUT_DIMENSIONS); then
 
-      desired_vrr_state["$target_output"]="on"
+      DESIRED_VRR["$target_output"]="on"
       local app_key="$app_id:$pid"
       if [[ "${OUTPUT_CURRENT_APP[$target_output]:-}" != "$app_key" ]]; then
         log_info "🎮 Fullscreen: $app_id (PID $pid) on $target_output"
         OUTPUT_CURRENT_APP["$target_output"]="$app_key"
       fi
     fi
-  done < <(jq -c '.[]?' <<<"$windows_json" 2>/dev/null || true)
+  done
+}
 
-  # Apply state changes
+# Phase 4: Act — apply VRR state changes to niri
+# Reads results from DESIRED_VRR (declared in evaluate_all_outputs scope)
+apply_vrr_decisions() {
   local output
-  for output in "${!desired_vrr_state[@]}"; do
-    apply_vrr_state "$output" "${desired_vrr_state[$output]}" || true
+
+  for output in "${!DESIRED_VRR[@]}"; do
+    apply_vrr_state "$output" "${DESIRED_VRR[$output]}" || true
   done
 
   # Cleanup disconnected outputs
   for output in "${!VRR_CURRENT_STATE[@]}"; do
-    if [[ -z "${desired_vrr_state[$output]:-}" ]]; then
+    if [[ -z "${DESIRED_VRR[$output]:-}" ]]; then
       log_info "Output $output disconnected, cleaning state"
       unset "VRR_CURRENT_STATE[$output]" "OUTPUT_CURRENT_APP[$output]" 2>/dev/null || true
     fi
   done
+}
+
+# Top-level orchestrator (delegates to phase functions)
+evaluate_all_outputs() {
+  collect_and_parse
+
+  local -A DESIRED_VRR=()
+  decide_vrr_state
+  apply_vrr_decisions
 }
 
 # ============================================================================
@@ -320,7 +400,11 @@ adaptive_sleep() {
   local target_ms=$((POLL_INTERVAL * 1000))
   local now_ms=$(($(date +%s%N) / 1000000))
   local sleep_ms=$((target_ms - (now_ms - cycle_start_ms)))
-  ((sleep_ms > 100)) && sleep "$(awk "BEGIN{printf \"%.3f\", $sleep_ms/1000}")" 2>/dev/null || sleep "$POLL_INTERVAL"
+  if ((sleep_ms > 100)); then
+    sleep "$(awk "BEGIN{printf \"%.3f\", $sleep_ms/1000}")" 2>/dev/null || sleep "$POLL_INTERVAL"
+  else
+    sleep "$POLL_INTERVAL"
+  fi
 }
 
 cleanup() {
