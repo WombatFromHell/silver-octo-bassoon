@@ -167,10 +167,10 @@ binds {
         spawn "hyprpicker.sh"
     }
     //
-    Mod+Shift+L hotkey-overlay-title="Lock Screen" {
+    Mod+Alt+L hotkey-overlay-title="Lock Screen" {
         spawn "dms" "ipc" "call" "lock" "lock"
     }
-    Mod+Shift+Q hotkey-overlay-title="Power Menu: Toggle" {
+    Mod+Alt+Q hotkey-overlay-title="Power Menu: Toggle" {
         spawn "dms" "ipc" "call" "powermenu" "toggle"
     }
     // The allow-when-locked=true property makes them work even when the session is locked.
