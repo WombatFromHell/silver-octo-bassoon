@@ -75,13 +75,15 @@ background_update() {
   local browser="$1"
   local out rc=0
 
+  echo "Checking in the background for package updates for ${browser}..."
   out=$(sudo dnf upgrade -y "$browser" 2>&1) || rc=$?
   if grep -qE "^(Upgrading|Installing|Removing): " <<<"$out"; then
     notify "Update Available" "$browser was upgraded. Restart the browser to apply updates."
   elif [[ $rc -ne 0 ]]; then
     notify "Upgrade Failed" "Failed to upgrade $browser." "critical"
+  else
+    echo "No updates found for the ${browser} package..."
   fi
-  # rc=2 (nothing to do) -> no notification
 }
 
 #------------------------------------------------------------------------------
@@ -98,22 +100,22 @@ main() {
     exec distrobox-enter -n "$CONTAINER_NAME" -- "$0" "$@"
   fi
 
-  # Inside container: find and launch browser
+  # Inside container: find browser
   local browser
   browser=$(find_browser) || {
     echo "Error: no brave browser found in PATH (tried: ${BROWSER_CANDIDATES[*]})" >&2
     exit 1
   }
 
-  # Launch browser in background
-  launch_direct "$browser" "$@" &
-  local browser_pid=$!
+  # Check for upgrades only if no browser processes are running
+  if ! pgrep -x "$browser" &>/dev/null; then
+    # Detach the background update so it survives the exec below
+    background_update "$browser" </dev/null &
+    disown
+  fi
 
-  # Run background update while browser is running
-  background_update "$browser" &
-
-  # Wait for browser to exit
-  wait "$browser_pid"
+  # Launch browser (exec replaces this shell)
+  launch_direct "$browser" "$@"
 }
 
 main "$@"
