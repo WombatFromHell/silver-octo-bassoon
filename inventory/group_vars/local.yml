@@ -44,7 +44,7 @@ script_links:
     dest: "/usr/local/bin/unsquish"
   - src: "khalreminder.sh"
     dest: "/usr/local/bin/khalreminder"
-  - src: "niri-watcher.sh"
+  - src: "niri_vrr_watcher.py"
     dest: "/usr/local/bin/niri-watcher"
 
 # Program Handlers (run after dotfiles are processed)

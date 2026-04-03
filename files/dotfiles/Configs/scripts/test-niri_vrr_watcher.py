@@ -1,0 +1,1569 @@
+#!/usr/bin/env -S pytest --tb=short -v
+"""
+tests/test_niri_vrr_watcher.py
+
+Unit tests for niri_vrr_watcher.py.
+
+Run with:
+    pytest tests/test-niri_vrr_watcher.py
+
+Rules followed:
+    1. Never mock the system-under-test — only external dependencies.
+    2. Test everything directly — pure functions unmocked, I/O mocked at boundaries.
+    3. Leverage fixtures to reduce repetition and maintenance burden.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import subprocess
+import sys
+from dataclasses import FrozenInstanceError
+from unittest.mock import MagicMock, patch
+
+import pytest  # ty: ignore[unresolved-import]
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from niri_vrr_watcher import (
+    Config,
+    OutputInfo,
+    VrrOrchestrator,
+    WatcherState,
+    WindowInfo,
+    build_gpu_ancestor_set,
+    compute_desired_vrr,
+    execute_hook,
+    is_app_excluded,
+    is_fullscreen,
+    niri_set_vrr,
+    parse_outputs,
+    parse_windows,
+    parse_workspaces,
+    resolve_output_for_window,
+    window_wants_vrr,
+)
+
+
+# ===========================================================================
+# Fixtures — shared test data via pytest.fixture
+# ===========================================================================
+
+
+@pytest.fixture
+def excluded_apps() -> frozenset[str]:
+    """Standard excluded-apps set for tests."""
+    return frozenset({"brave-browser", "mpv"})
+
+
+@pytest.fixture
+def single_output() -> dict[str, OutputInfo]:
+    """Single 1080p output, workspace 1 → DP-1."""
+    return {"DP-1": OutputInfo(name="DP-1", width=1920, height=1080)}
+
+
+@pytest.fixture
+def ws_to_output_single() -> dict[int, str]:
+    """Workspace 1 maps to DP-1."""
+    return {1: "DP-1"}
+
+
+@pytest.fixture
+def dual_outputs() -> dict[str, OutputInfo]:
+    """DP-1 (1080p) and DP-2 (1440p)."""
+    return {
+        "DP-1": OutputInfo(name="DP-1", width=1920, height=1080),
+        "DP-2": OutputInfo(name="DP-2", width=2560, height=1440),
+    }
+
+
+@pytest.fixture
+def ws_to_output_dual() -> dict[int, str]:
+    """Workspace 1 → DP-1, workspace 2 → DP-2."""
+    return {1: "DP-1", 2: "DP-2"}
+
+
+@pytest.fixture
+def three_outputs() -> dict[str, OutputInfo]:
+    """DP-1 (1080p), DP-2 (1440p), HDMI-1 (4K)."""
+    return {
+        "DP-1": OutputInfo(name="DP-1", width=1920, height=1080),
+        "DP-2": OutputInfo(name="DP-2", width=2560, height=1440),
+        "HDMI-1": OutputInfo(name="HDMI-1", width=3840, height=2160),
+    }
+
+
+@pytest.fixture
+def ws_to_output_three() -> dict[int, str]:
+    """Workspaces 1,2,3 → DP-1, DP-2, HDMI-1."""
+    return {1: "DP-1", 2: "DP-2", 3: "HDMI-1"}
+
+
+# -- Window factories via fixtures --
+
+
+@pytest.fixture
+def focused_fullscreen() -> WindowInfo:
+    """Focused fullscreen window on workspace 1, PID 1234."""
+    return WindowInfo(
+        app_id="com.example.Game",
+        pid=1234,
+        workspace_id=1,
+        tile_w=1920,
+        tile_h=1080,
+        win_w=None,
+        win_h=None,
+        is_focused=True,
+    )
+
+
+@pytest.fixture
+def unfocused_window() -> WindowInfo:
+    """Unfocused window."""
+    return WindowInfo(
+        app_id="com.example.App",
+        pid=9999,
+        workspace_id=1,
+        tile_w=800,
+        tile_h=600,
+        win_w=None,
+        win_h=None,
+        is_focused=False,
+    )
+
+
+def make_window(**overrides) -> WindowInfo:
+    """Convenience builder for WindowInfo (kept for parameterised tests)."""
+    return WindowInfo(
+        app_id=overrides.get("app_id", "com.example.Game"),
+        pid=overrides.get("pid", 1234),
+        workspace_id=overrides.get("workspace_id", 1),
+        tile_w=overrides.get("tile_w", 1920),
+        tile_h=overrides.get("tile_h", 1080),
+        win_w=overrides.get("win_w"),
+        win_h=overrides.get("win_h"),
+        is_focused=overrides.get("is_focused", True),
+    )
+
+
+def make_output(name="DP-1", w=1920, h=1080) -> OutputInfo:
+    """Convenience constructor for OutputInfo."""
+    return OutputInfo(name=name, width=w, height=h)
+
+
+# -- Orchestrator helpers (still the proper way to inject I/O) --
+
+
+def _default_outputs_json() -> str:
+    return json.dumps(
+        {"DP-1": {"modes": [{"width": 1920, "height": 1080}], "current_mode": 0}}
+    )
+
+
+def _default_windows_json() -> str:
+    return json.dumps(
+        [
+            {
+                "app_id": "com.example.Game",
+                "pid": 1234,
+                "workspace_id": 1,
+                "layout": {"tile_size": [1920, 1080], "window_size": []},
+                "is_focused": True,
+            }
+        ]
+    )
+
+
+def _default_workspaces_json() -> str:
+    return json.dumps([{"id": 1, "output": "DP-1"}])
+
+
+@pytest.fixture
+def orchestrator_factory():
+    """Return a callable that builds a VrrOrchestrator with mocked I/O.
+
+    Usage:
+        orch, mocks = factory(cfg, fetch_windows=...)
+    """
+
+    def _build(cfg=None, **io_overrides) -> tuple[VrrOrchestrator, dict]:
+        cfg = cfg or Config(relaxed_mode=True)
+        mocks: dict[str, MagicMock] = {
+            "fetch_outputs": MagicMock(return_value=_default_outputs_json()),
+            "fetch_windows": MagicMock(return_value=_default_windows_json()),
+            "fetch_workspaces": MagicMock(return_value=_default_workspaces_json()),
+            "fetch_gpu": MagicMock(return_value=[]),
+            "set_vrr": MagicMock(return_value=True),
+            "run_hook": MagicMock(),
+        }
+        mocks.update(io_overrides)
+        orch = VrrOrchestrator(cfg, **mocks)
+        return orch, mocks
+
+    return _build
+
+
+# ===========================================================================
+# Parsers — pure functions, never mocked
+# ===========================================================================
+
+
+class TestParseOutputs:
+    def test_happy_path(self):
+        data = {
+            "DP-1": {
+                "modes": [
+                    {"width": 1920, "height": 1080},
+                    {"width": 2560, "height": 1440},
+                ],
+                "current_mode": 1,
+            }
+        }
+        result = parse_outputs(json.dumps(data))
+        assert "DP-1" in result
+        assert result["DP-1"].width == 2560
+        assert result["DP-1"].height == 1440
+
+    def test_falls_back_to_first_mode_when_no_current(self):
+        data = {
+            "HDMI-1": {
+                "modes": [{"width": 3840, "height": 2160}],
+                "current_mode": None,
+            }
+        }
+        result = parse_outputs(json.dumps(data))
+        assert result["HDMI-1"].resolution == (3840, 2160)
+
+    def test_empty_object(self):
+        assert parse_outputs("{}") == {}
+
+    def test_invalid_json(self):
+        assert parse_outputs("not json") == {}
+
+    def test_multiple_outputs(self):
+        data = {
+            "DP-1": {"modes": [{"width": 1920, "height": 1080}], "current_mode": 0},
+            "HDMI-1": {"modes": [{"width": 2560, "height": 1440}], "current_mode": 0},
+        }
+        result = parse_outputs(json.dumps(data))
+        assert len(result) == 2
+
+    def test_output_without_valid_mode_skipped(self):
+        data = {"DP-2": {"modes": [], "current_mode": None}}
+        result = parse_outputs(json.dumps(data))
+        assert "DP-2" not in result
+
+
+class TestParseWorkspaces:
+    def test_happy_path(self):
+        data = [
+            {"id": 1, "output": "DP-1"},
+            {"id": 2, "output": "HDMI-1"},
+        ]
+        result = parse_workspaces(json.dumps(data))
+        assert result == {1: "DP-1", 2: "HDMI-1"}
+
+    def test_missing_output_key_skipped(self):
+        data = [{"id": 1}]
+        result = parse_workspaces(json.dumps(data))
+        assert result == {}
+
+    def test_empty_list(self):
+        assert parse_workspaces("[]") == {}
+
+    def test_invalid_json(self):
+        assert parse_workspaces("garbage") == {}
+
+
+class TestParseWindows:
+    def _make_raw_window(self, **overrides) -> dict:
+        base = {
+            "app_id": "com.example.App",
+            "pid": 9999,
+            "workspace_id": 1,
+            "layout": {
+                "tile_size": [1920, 1080],
+                "window_size": [800, 600],
+            },
+            "is_focused": True,
+        }
+        base.update(overrides)
+        return base
+
+    def test_happy_path(self):
+        raw = [self._make_raw_window()]
+        result = parse_windows(json.dumps(raw))
+        assert len(result) == 1
+        w = result[0]
+        assert w.app_id == "com.example.App"
+        assert w.pid == 9999
+        assert w.tile_w == 1920
+        assert w.tile_h == 1080
+        assert w.is_focused is True
+
+    def test_prefers_tile_size(self):
+        raw = [self._make_raw_window()]
+        w = parse_windows(json.dumps(raw))[0]
+        assert w.effective_size == (1920, 1080)
+
+    def test_falls_back_to_window_size(self):
+        raw = [
+            self._make_raw_window(layout={"tile_size": [], "window_size": [800, 600]})
+        ]
+        w = parse_windows(json.dumps(raw))[0]
+        assert w.effective_size == (800, 600)
+
+    def test_both_sizes_missing(self):
+        raw = [self._make_raw_window(layout={})]
+        w = parse_windows(json.dumps(raw))[0]
+        assert w.effective_size is None
+
+    def test_invalid_json_returns_empty(self):
+        assert parse_windows("not json") == []
+
+    def test_empty_array(self):
+        assert parse_windows("[]") == []
+
+    def test_float_dimensions_coerced(self):
+        raw = [
+            self._make_raw_window(
+                layout={"tile_size": [1920.0, 1080.0], "window_size": []}
+            )
+        ]
+        w = parse_windows(json.dumps(raw))[0]
+        assert w.tile_w == 1920
+        assert w.tile_h == 1080
+
+
+# ===========================================================================
+# Evaluators — pure functions, never mocked
+# ===========================================================================
+
+
+class TestIsAppExcluded:
+    def test_excluded(self, excluded_apps):
+        assert is_app_excluded("mpv", excluded_apps) is True
+
+    def test_not_excluded(self, excluded_apps):
+        assert is_app_excluded("com.example.Game", excluded_apps) is False
+
+    def test_empty_app_id(self, excluded_apps):
+        assert is_app_excluded("", excluded_apps) is False
+
+
+class TestIsFullscreen:
+    def test_fullscreen_via_tile(self):
+        w = make_window(tile_w=1920, tile_h=1080)
+        o = make_output(w=1920, h=1080)
+        assert is_fullscreen(w, o) is True
+
+    def test_not_fullscreen(self):
+        w = make_window(tile_w=1280, tile_h=720)
+        o = make_output(w=1920, h=1080)
+        assert is_fullscreen(w, o) is False
+
+    def test_no_size_info(self):
+        w = make_window(tile_w=None, tile_h=None, win_w=None, win_h=None)
+        o = make_output()
+        assert is_fullscreen(w, o) is False
+
+    def test_fullscreen_via_window_size(self):
+        w = make_window(tile_w=None, tile_h=None, win_w=1920, win_h=1080)
+        o = make_output(w=1920, h=1080)
+        assert is_fullscreen(w, o) is True
+
+
+class TestWindowWantsVrr:
+    """Tests for the central fullscreen-VRR predicate."""
+
+    def _call(
+        self,
+        window,
+        gpu_ancestors=None,
+        relaxed=False,
+        excluded=None,
+        outputs=None,
+        ws_to_output=None,
+    ):
+        outputs = outputs or {"DP-1": make_output()}
+        ws_to_output = ws_to_output or {1: "DP-1"}
+        return window_wants_vrr(
+            window,
+            ws_to_output,
+            outputs,
+            excluded or frozenset({"brave-browser", "mpv"}),
+            gpu_ancestors or set(),
+            relaxed_mode=relaxed,
+        )
+
+    def test_focused_fullscreen_gpu_direct(self):
+        w = make_window(pid=1234)
+        result = self._call(w, gpu_ancestors={1234})
+        assert result is not None
+        assert result.name == "DP-1"
+
+    def test_not_focused_returns_none(self):
+        w = make_window(is_focused=False)
+        assert self._call(w, gpu_ancestors={1234}) is None
+
+    def test_excluded_app_returns_none(self):
+        w = make_window(app_id="mpv", pid=1234)
+        assert self._call(w, gpu_ancestors={1234}) is None
+
+    def test_not_fullscreen_returns_none(self):
+        w = make_window(tile_w=1280, tile_h=720)
+        assert self._call(w, gpu_ancestors={1234}) is None
+
+    def test_no_gpu_pid_no_any_gpu_returns_none(self):
+        w = make_window(pid=9999)
+        assert self._call(w, gpu_ancestors=set()) is None
+
+    def test_gpu_fallback_when_pid_not_direct(self):
+        w = make_window(pid=9999)
+        result = self._call(w, gpu_ancestors={5555})
+        assert result is not None
+
+    def test_relaxed_mode_skips_gpu_check(self):
+        w = make_window(pid=9999)
+        result = self._call(w, gpu_ancestors=set(), relaxed=True)
+        assert result is not None
+
+    def test_unknown_workspace_returns_none(self):
+        w = make_window(workspace_id=99)
+        assert self._call(w, gpu_ancestors={1234}) is None
+
+    def test_none_pid_with_any_gpu_activity(self):
+        w = make_window(pid=None)
+        result = self._call(w, gpu_ancestors={5555})
+        assert result is not None
+
+    def test_none_pid_no_gpu_activity_returns_none(self):
+        w = make_window(pid=None)
+        assert self._call(w, gpu_ancestors=set()) is None
+
+
+class TestComputeDesiredVrr:
+    def test_single_fullscreen_window(
+        self, single_output, ws_to_output_single, focused_fullscreen, excluded_apps
+    ):
+        desired = compute_desired_vrr(
+            [focused_fullscreen],
+            ws_to_output_single,
+            single_output,
+            excluded_apps,
+            {1234},
+            relaxed_mode=False,
+        )
+        assert desired == {"DP-1": True}
+
+    def test_no_fullscreen_all_off(self, single_output, ws_to_output_single):
+        windows = [make_window(tile_w=800, tile_h=600, pid=1234)]
+        desired = compute_desired_vrr(
+            windows,
+            ws_to_output_single,
+            single_output,
+            frozenset({"brave-browser", "mpv"}),
+            {1234},
+            relaxed_mode=False,
+        )
+        assert desired == {"DP-1": False}
+
+    def test_multi_monitor_independent(self, dual_outputs, ws_to_output_dual):
+        windows = [
+            make_window(workspace_id=1, tile_w=1920, tile_h=1080, pid=1234),
+            make_window(
+                workspace_id=2, tile_w=800, tile_h=600, pid=5678, is_focused=False
+            ),
+        ]
+        desired = compute_desired_vrr(
+            windows,
+            ws_to_output_dual,
+            dual_outputs,
+            frozenset({"brave-browser", "mpv"}),
+            {1234, 5678},
+            relaxed_mode=False,
+        )
+        assert desired["DP-1"] is True
+        assert desired["DP-2"] is False
+
+    def test_excluded_app_does_not_enable_vrr(self, single_output, ws_to_output_single):
+        windows = [make_window(app_id="mpv", pid=1234)]
+        desired = compute_desired_vrr(
+            windows,
+            ws_to_output_single,
+            single_output,
+            frozenset({"brave-browser", "mpv"}),
+            {1234},
+            relaxed_mode=False,
+        )
+        assert desired["DP-1"] is False
+
+
+# ===========================================================================
+# GPU ancestor resolution — _get_ppid is external, mocked; SUT is not
+# ===========================================================================
+
+
+class TestBuildGpuAncestorSet:
+    @patch("niri_vrr_watcher._get_ppid")
+    def test_single_leaf(self, mock_ppid):
+        mock_ppid.side_effect = lambda p: {5000: 4000, 4000: 3000, 3000: 1}.get(p)
+        result = build_gpu_ancestor_set([5000])
+        assert {5000, 4000, 3000} <= result
+        assert 1 not in result
+
+    @patch("niri_vrr_watcher._get_ppid")
+    def test_shared_ancestor_not_duplicated(self, mock_ppid):
+        mock_ppid.side_effect = lambda p: {100: 50, 200: 50, 50: 1}.get(p)
+        result = build_gpu_ancestor_set([100, 200])
+        assert 50 in result
+        assert 100 in result
+        assert 200 in result
+
+    @patch("niri_vrr_watcher._get_ppid")
+    def test_empty_input(self, mock_ppid):
+        result = build_gpu_ancestor_set([])
+        assert result == set()
+        mock_ppid.assert_not_called()
+
+    @patch("niri_vrr_watcher._get_ppid")
+    def test_ppid_returns_none_stops_walk(self, mock_ppid):
+        mock_ppid.return_value = None
+        result = build_gpu_ancestor_set([9999])
+        assert 9999 in result
+
+
+# ===========================================================================
+# WatcherState — pure dataclass, never mocked
+# ===========================================================================
+
+
+class TestWatcherState:
+    def test_record_app_new(self):
+        state = WatcherState()
+        w = make_window(app_id="game", pid=1)
+        changed = state.record_app("DP-1", w)
+        assert changed is True
+
+    def test_record_app_same_no_change(self):
+        state = WatcherState()
+        w = make_window(app_id="game", pid=1)
+        state.record_app("DP-1", w)
+        changed = state.record_app("DP-1", w)
+        assert changed is False
+
+    def test_clear_output(self):
+        state = WatcherState(
+            vrr_enabled={"DP-1": True},
+            output_current_app={"DP-1": "game:1"},
+        )
+        state.clear_output("DP-1")
+        assert "DP-1" not in state.vrr_enabled
+        assert "DP-1" not in state.output_current_app
+
+
+# ===========================================================================
+# resolve_output_for_window — pure function, never mocked
+# ===========================================================================
+
+
+class TestResolveOutputForWindow:
+    def test_happy_path(self):
+        w = make_window(workspace_id=1)
+        ws_to_output = {1: "DP-1"}
+        outputs = {"DP-1": make_output()}
+        result = resolve_output_for_window(w, ws_to_output, outputs)
+        assert result is not None
+        assert result.name == "DP-1"
+
+    def test_none_workspace_id_returns_none(self):
+        w = make_window(workspace_id=None)
+        result = resolve_output_for_window(w, {}, {})
+        assert result is None
+
+    def test_unknown_workspace_returns_none(self):
+        w = make_window(workspace_id=99)
+        result = resolve_output_for_window(w, {1: "DP-1"}, {"DP-1": make_output()})
+        assert result is None
+
+    def test_output_not_in_outputs_dict_returns_none(self):
+        w = make_window(workspace_id=1)
+        result = resolve_output_for_window(w, {1: "HDMI-2"}, {})
+        assert result is None
+
+
+# ===========================================================================
+# Orchestrator integration — I/O injected, SUT exercised directly
+# ===========================================================================
+
+
+class TestVrrOrchestratorPollOnce:
+    def test_enables_vrr_for_fullscreen_app(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_called_once_with("DP-1", True)
+
+    def test_no_double_enable(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_called_once_with("DP-1", True)
+
+    def test_disables_vrr_when_window_leaves_fullscreen(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        assert orch._state.vrr_enabled.get("DP-1") is True
+
+        mocks["fetch_windows"].return_value = json.dumps(
+            [
+                {
+                    "app_id": "com.example.Game",
+                    "pid": 1234,
+                    "workspace_id": 1,
+                    "layout": {"tile_size": [1280, 720], "window_size": []},
+                    "is_focused": True,
+                }
+            ]
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_any_call("DP-1", False)
+
+    def test_hook_on_called_on_enable(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["run_hook"].assert_called_once()
+        hook_call = mocks["run_hook"].call_args
+        assert "on" in hook_call[0][0]
+
+    def test_hook_off_called_on_disable(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["run_hook"].reset_mock()
+
+        mocks["fetch_windows"].return_value = json.dumps([])
+        orch.poll_once(gpu_ancestors=set())
+        hook_call = mocks["run_hook"].call_args
+        assert "off" in hook_call[0][0]
+
+    def test_excluded_app_does_not_enable_vrr(self, orchestrator_factory):
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "mpv",
+                            "pid": 1234,
+                            "workspace_id": 1,
+                            "layout": {"tile_size": [1920, 1080], "window_size": []},
+                            "is_focused": True,
+                        }
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        for c in mocks["set_vrr"].call_args_list:
+            assert c[0][1] is False or c.args[1] is False
+
+    def test_disconnected_output_cleaned_up(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        assert "DP-1" in orch._state.vrr_enabled
+
+        mocks["fetch_outputs"].return_value = json.dumps({})
+        mocks["fetch_windows"].return_value = json.dumps([])
+        mocks["fetch_workspaces"].return_value = json.dumps([])
+        orch.poll_once(gpu_ancestors=set())
+        assert "DP-1" not in orch._state.vrr_enabled
+
+    def test_set_vrr_failure_leaves_state_unchanged(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory(set_vrr=MagicMock(return_value=False))
+        orch.poll_once(gpu_ancestors=set())
+        assert orch._state.vrr_enabled.get("DP-1") is None
+
+    def test_multi_monitor_vrr(self, orchestrator_factory):
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "DP-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                        },
+                        "HDMI-1": {
+                            "modes": [{"width": 2560, "height": 1440}],
+                            "current_mode": 0,
+                        },
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps(
+                    [{"id": 1, "output": "DP-1"}, {"id": 2, "output": "HDMI-1"}]
+                )
+            ),
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.example.Game",
+                            "pid": 1,
+                            "workspace_id": 1,
+                            "layout": {"tile_size": [1920, 1080], "window_size": []},
+                            "is_focused": True,
+                        },
+                        {
+                            "app_id": "com.example.Other",
+                            "pid": 2,
+                            "workspace_id": 2,
+                            "layout": {"tile_size": [2560, 1440], "window_size": []},
+                            "is_focused": False,
+                        },
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        calls = {c[0] for c in mocks["set_vrr"].call_args_list}
+        assert ("DP-1", True) in calls
+        assert ("HDMI-1", True) not in calls
+
+
+class TestVrrOrchestratorShutdown:
+    def test_shutdown_disables_all(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch._state.vrr_enabled = {"DP-1": True, "HDMI-1": True}
+        orch.shutdown()
+        calls = [c[0] for c in mocks["set_vrr"].call_args_list]
+        assert ("DP-1", False) in calls
+        assert ("HDMI-1", False) in calls
+
+
+# ===========================================================================
+# State Transition Coverage
+# ===========================================================================
+
+
+class TestStateTransitions:
+    """Comprehensive tests for VRR state machine transitions.
+
+    State diagram per output:
+        None ──want_on=True──> True ──want_on=False──> False
+          │                      │                       │
+          └──want_on=False──X───┘                       │
+                  (no-op)         ──want_on=True──> True
+    """
+
+    # --- None → True ---
+
+    def test_none_to_true_enables_vrr_and_calls_hook_on(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        assert orch._state.vrr_enabled["DP-1"] is True
+        mocks["set_vrr"].assert_called_once_with("DP-1", True)
+        mocks["run_hook"].assert_called_once()
+        assert "on" in mocks["run_hook"].call_args[0][0]
+
+    def test_none_to_true_passes_gpu_pid_to_hook(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors={4321})
+        hook_call = mocks["run_hook"].call_args
+        assert hook_call[0][2] == 4321
+
+    # --- None → False (THE BUG FIX) ---
+
+    def test_none_to_false_no_set_vrr_call(self, orchestrator_factory):
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg, fetch_windows=MagicMock(return_value=json.dumps([]))
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_not_called()
+
+    def test_none_to_false_no_hook_called(self, orchestrator_factory):
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg, fetch_windows=MagicMock(return_value=json.dumps([]))
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["run_hook"].assert_not_called()
+
+    def test_none_to_false_state_unchanged(self, orchestrator_factory):
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg, fetch_windows=MagicMock(return_value=json.dumps([]))
+        )
+        orch.poll_once(gpu_ancestors=set())
+        assert orch._state.vrr_enabled == {}
+
+    # --- True → True ---
+
+    def test_true_to_true_no_duplicate_set_vrr(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_called_once_with("DP-1", True)
+
+    def test_true_to_true_no_duplicate_hook(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["run_hook"].reset_mock()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["run_hook"].assert_not_called()
+
+    # --- True → False ---
+
+    def test_true_to_false_disables_vrr(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["fetch_windows"].return_value = json.dumps([])
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_any_call("DP-1", False)
+
+    def test_true_to_false_calls_hook_off(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["run_hook"].reset_mock()
+        mocks["fetch_windows"].return_value = json.dumps([])
+        orch.poll_once(gpu_ancestors=set())
+        mocks["run_hook"].assert_called_once()
+        assert "off" in mocks["run_hook"].call_args[0][0]
+
+    def test_true_to_false_clears_current_app(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        assert "DP-1" in orch._state.output_current_app
+        mocks["fetch_windows"].return_value = json.dumps([])
+        orch.poll_once(gpu_ancestors=set())
+        assert "DP-1" not in orch._state.output_current_app
+
+    # --- False → True ---
+
+    def test_false_to_true_enables_vrr(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["fetch_windows"].return_value = json.dumps([])
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].reset_mock()
+        mocks["fetch_windows"].return_value = _default_windows_json()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_called_with("DP-1", True)
+
+    def test_false_to_true_calls_hook_on(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["fetch_windows"].return_value = json.dumps([])
+        orch.poll_once(gpu_ancestors=set())
+        mocks["run_hook"].reset_mock()
+        mocks["fetch_windows"].return_value = _default_windows_json()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["run_hook"].assert_called_once()
+        assert "on" in mocks["run_hook"].call_args[0][0]
+
+    # --- False → False ---
+
+    def test_false_to_false_no_op(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["fetch_windows"].return_value = json.dumps([])
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].reset_mock()
+        mocks["run_hook"].reset_mock()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_not_called()
+        mocks["run_hook"].assert_not_called()
+
+    # --- Full transition ---
+
+    def test_full_transition_cycle(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+
+        orch.poll_once(gpu_ancestors=set())
+        assert orch._state.vrr_enabled["DP-1"] is True
+        assert mocks["set_vrr"].call_count == 1
+        assert mocks["run_hook"].call_count == 1
+
+        mocks["fetch_windows"].return_value = json.dumps([])
+        orch.poll_once(gpu_ancestors=set())
+        assert orch._state.vrr_enabled["DP-1"] is False
+        assert mocks["set_vrr"].call_count == 2
+        assert mocks["run_hook"].call_count == 2
+
+        mocks["fetch_windows"].return_value = _default_windows_json()
+        orch.poll_once(gpu_ancestors=set())
+        assert orch._state.vrr_enabled["DP-1"] is True
+        assert mocks["set_vrr"].call_count == 3
+        assert mocks["run_hook"].call_count == 3
+
+    # --- App switching ---
+
+    def test_app_switch_same_output_no_vrr_toggle(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].reset_mock()
+        mocks["run_hook"].reset_mock()
+
+        mocks["fetch_windows"].return_value = json.dumps(
+            [
+                {
+                    "app_id": "com.example.OtherGame",
+                    "pid": 5678,
+                    "workspace_id": 1,
+                    "layout": {"tile_size": [1920, 1080], "window_size": []},
+                    "is_focused": True,
+                }
+            ]
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_not_called()
+        mocks["run_hook"].assert_not_called()
+        assert "OtherGame" in orch._state.output_current_app.get("DP-1", "")
+
+
+# ===========================================================================
+# Relaxed Mode Coverage
+# ===========================================================================
+
+
+class TestRelaxedMode:
+    def test_relaxed_mode_fullscreen_no_gpu_check(
+        self, single_output, ws_to_output_single
+    ):
+        window = make_window(pid=None)
+        result = window_wants_vrr(
+            window, ws_to_output_single, single_output, frozenset(), set(), True
+        )
+        assert result is not None
+
+    def test_relaxed_mode_multiple_fullscreen_apps(self, orchestrator_factory):
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.game.One",
+                            "pid": 111,
+                            "workspace_id": 1,
+                            "layout": {"tile_size": [1920, 1080], "window_size": []},
+                            "is_focused": True,
+                        },
+                        {
+                            "app_id": "com.game.Two",
+                            "pid": 222,
+                            "workspace_id": 1,
+                            "layout": {"tile_size": [1920, 1080], "window_size": []},
+                            "is_focused": False,
+                        },
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        assert orch._state.vrr_enabled["DP-1"] is True
+
+    def test_relaxed_mode_skips_gpu_fetch(self, orchestrator_factory):
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(cfg=cfg)
+        orch.poll_once(gpu_ancestors=set())
+        mocks["fetch_gpu"].assert_not_called()
+
+    def test_relaxed_mode_hook_on_called_without_gpu_pids(self, orchestrator_factory):
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(cfg=cfg)
+        orch.poll_once(gpu_ancestors=set())
+        hook_call = mocks["run_hook"].call_args
+        assert hook_call[0][2] is None
+
+    def test_strict_mode_no_gpu_no_vrr(self, single_output, ws_to_output_single):
+        window = make_window(pid=9999)
+        result = window_wants_vrr(
+            window,
+            ws_to_output_single,
+            single_output,
+            frozenset({"brave-browser", "mpv"}),
+            set(),
+            False,
+        )
+        assert result is None
+
+    def test_strict_mode_gpu_fallback_logic(self, single_output, ws_to_output_single):
+        window = make_window(pid=9999)
+        result = window_wants_vrr(
+            window,
+            ws_to_output_single,
+            single_output,
+            frozenset({"brave-browser", "mpv"}),
+            {5555},
+            False,
+        )
+        assert result is not None
+
+    def test_strict_mode_excluded_skips_before_gpu_check(
+        self, single_output, ws_to_output_single
+    ):
+        window = make_window(app_id="mpv", pid=5555)
+        result = window_wants_vrr(
+            window,
+            ws_to_output_single,
+            single_output,
+            frozenset({"brave-browser", "mpv"}),
+            {5555},
+            False,
+        )
+        assert result is None
+
+    def test_relaxed_vs_strict_same_inputs_different_results(
+        self, single_output, ws_to_output_single
+    ):
+        window = make_window(pid=None)
+
+        result_relaxed = window_wants_vrr(
+            window, ws_to_output_single, single_output, frozenset(), set(), True
+        )
+        result_strict = window_wants_vrr(
+            window, ws_to_output_single, single_output, frozenset(), set(), False
+        )
+
+        assert result_relaxed is not None
+        assert result_strict is None
+
+
+# ===========================================================================
+# Per-Output VRR State Detection
+# ===========================================================================
+
+
+class TestPerOutputVrrState:
+    def test_dual_monitor_independent_vrr(self, orchestrator_factory):
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "DP-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                        },
+                        "DP-2": {
+                            "modes": [{"width": 2560, "height": 1440}],
+                            "current_mode": 0,
+                        },
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps(
+                    [{"id": 1, "output": "DP-1"}, {"id": 2, "output": "DP-2"}]
+                )
+            ),
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.game.One",
+                            "pid": 1,
+                            "workspace_id": 1,
+                            "layout": {
+                                "tile_size": [1920, 1080],
+                                "window_size": [],
+                            },
+                            "is_focused": True,
+                        },
+                        {
+                            "app_id": "com.game.Two",
+                            "pid": 2,
+                            "workspace_id": 2,
+                            "layout": {
+                                "tile_size": [2560, 1440],
+                                "window_size": [],
+                            },
+                            "is_focused": True,
+                        },
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        calls = {c[0] for c in mocks["set_vrr"].call_args_list}
+        assert ("DP-1", True) in calls
+        assert ("DP-2", True) in calls
+        assert orch._state.vrr_enabled["DP-1"] is True
+        assert orch._state.vrr_enabled["DP-2"] is True
+
+    def test_dual_monitor_one_fullscreen_one_not(self, orchestrator_factory):
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "DP-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                        },
+                        "DP-2": {
+                            "modes": [{"width": 2560, "height": 1440}],
+                            "current_mode": 0,
+                        },
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps(
+                    [{"id": 1, "output": "DP-1"}, {"id": 2, "output": "DP-2"}]
+                )
+            ),
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.game.One",
+                            "pid": 1,
+                            "workspace_id": 1,
+                            "layout": {
+                                "tile_size": [1920, 1080],
+                                "window_size": [],
+                            },
+                            "is_focused": True,
+                        },
+                        {
+                            "app_id": "com.desktop.App",
+                            "pid": 2,
+                            "workspace_id": 2,
+                            "layout": {
+                                "tile_size": [1280, 720],
+                                "window_size": [],
+                            },
+                            "is_focused": False,
+                        },
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_called_once_with("DP-1", True)
+
+    def test_output_specific_app_tracking(self):
+        state = WatcherState()
+        w1 = make_window(app_id="game", pid=1, workspace_id=1)
+        w2 = make_window(app_id="video", pid=2, workspace_id=2)
+        state.record_app("DP-1", w1)
+        state.record_app("DP-2", w2)
+        assert "game:1" == state.output_current_app["DP-1"]
+        assert "video:2" == state.output_current_app["DP-2"]
+
+    def test_one_output_leaves_fullscreen_other_stays(self, orchestrator_factory):
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "DP-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                        },
+                        "DP-2": {
+                            "modes": [{"width": 2560, "height": 1440}],
+                            "current_mode": 0,
+                        },
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps(
+                    [{"id": 1, "output": "DP-1"}, {"id": 2, "output": "DP-2"}]
+                )
+            ),
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.game.One",
+                            "pid": 1,
+                            "workspace_id": 1,
+                            "layout": {
+                                "tile_size": [1920, 1080],
+                                "window_size": [],
+                            },
+                            "is_focused": True,
+                        },
+                        {
+                            "app_id": "com.game.Two",
+                            "pid": 2,
+                            "workspace_id": 2,
+                            "layout": {
+                                "tile_size": [2560, 1440],
+                                "window_size": [],
+                            },
+                            "is_focused": True,
+                        },
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].reset_mock()
+        mocks["run_hook"].reset_mock()
+
+        mocks["fetch_windows"].return_value = json.dumps(
+            [
+                {
+                    "app_id": "com.game.One",
+                    "pid": 1,
+                    "workspace_id": 1,
+                    "layout": {"tile_size": [1280, 720], "window_size": []},
+                    "is_focused": True,
+                },
+                {
+                    "app_id": "com.game.Two",
+                    "pid": 2,
+                    "workspace_id": 2,
+                    "layout": {"tile_size": [2560, 1440], "window_size": []},
+                    "is_focused": True,
+                },
+            ]
+        )
+        orch.poll_once(gpu_ancestors=set())
+
+        mocks["set_vrr"].assert_called_once_with("DP-1", False)
+        mocks["run_hook"].assert_called_once()
+        assert "off" in mocks["run_hook"].call_args[0][0]
+        assert orch._state.vrr_enabled["DP-1"] is False
+        assert orch._state.vrr_enabled["DP-2"] is True
+
+    def test_output_reconnection_scenario(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        assert "DP-1" in orch._state.vrr_enabled
+
+        mocks["fetch_outputs"].return_value = json.dumps({})
+        mocks["fetch_windows"].return_value = json.dumps([])
+        mocks["fetch_workspaces"].return_value = json.dumps([])
+        orch.poll_once(gpu_ancestors=set())
+        assert "DP-1" not in orch._state.vrr_enabled
+        assert "DP-1" not in orch._state.output_current_app
+
+        mocks["fetch_outputs"].return_value = _default_outputs_json()
+        mocks["fetch_workspaces"].return_value = _default_workspaces_json()
+        mocks["fetch_windows"].return_value = _default_windows_json()
+        orch.poll_once(gpu_ancestors=set())
+        assert orch._state.vrr_enabled.get("DP-1") is True
+        mocks["set_vrr"].assert_called_with("DP-1", True)
+
+    def test_three_monitor_setup_independent_states(self, orchestrator_factory):
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "DP-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                        },
+                        "DP-2": {
+                            "modes": [{"width": 2560, "height": 1440}],
+                            "current_mode": 0,
+                        },
+                        "HDMI-1": {
+                            "modes": [{"width": 3840, "height": 2160}],
+                            "current_mode": 0,
+                        },
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {"id": 1, "output": "DP-1"},
+                        {"id": 2, "output": "DP-2"},
+                        {"id": 3, "output": "HDMI-1"},
+                    ]
+                )
+            ),
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.game.One",
+                            "pid": 1,
+                            "workspace_id": 1,
+                            "layout": {
+                                "tile_size": [1920, 1080],
+                                "window_size": [],
+                            },
+                            "is_focused": True,
+                        },
+                        {
+                            "app_id": "com.desk.One",
+                            "pid": 2,
+                            "workspace_id": 2,
+                            "layout": {
+                                "tile_size": [1280, 720],
+                                "window_size": [],
+                            },
+                            "is_focused": False,
+                        },
+                        {
+                            "app_id": "com.desk.Two",
+                            "pid": 3,
+                            "workspace_id": 3,
+                            "layout": {
+                                "tile_size": [1280, 720],
+                                "window_size": [],
+                            },
+                            "is_focused": False,
+                        },
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        assert orch._state.vrr_enabled == {"DP-1": True}
+        mocks["set_vrr"].assert_called_once_with("DP-1", True)
+
+
+# ===========================================================================
+# Hook Execution — external deps (subprocess, shutil) mocked, SUT exercised
+# ===========================================================================
+
+
+class TestHookExecution:
+    def test_hook_on_receives_output_name(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        hook_call = mocks["run_hook"].call_args
+        assert hook_call[0][1] == "DP-1"
+
+    def test_hook_off_receives_output_name(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["fetch_windows"].return_value = json.dumps([])
+        orch.poll_once(gpu_ancestors=set())
+        hook_call = mocks["run_hook"].call_args
+        assert hook_call[0][1] == "DP-1"
+
+    def test_execute_hook_with_env_vars(self):
+        mock_popen = MagicMock()
+        with patch("niri_vrr_watcher.subprocess.Popen", mock_popen):
+            with patch("niri_vrr_watcher.shutil.which", return_value="/bin/echo"):
+                execute_hook("/bin/echo test", "DP-1", app_pid=1234)
+        mock_popen.assert_called_once()
+        env = mock_popen.call_args[1]["env"]
+        assert env["NIRI_OUTPUT_NAME"] == "DP-1"
+        assert env["NIRI_APP_PID"] == "1234"
+
+    def test_execute_hook_without_pid(self):
+        mock_popen = MagicMock()
+        with patch("niri_vrr_watcher.subprocess.Popen", mock_popen):
+            with patch("niri_vrr_watcher.shutil.which", return_value="/bin/echo"):
+                execute_hook("/bin/echo test", "DP-1", app_pid=None)
+        env = mock_popen.call_args[1]["env"]
+        assert env["NIRI_APP_PID"] == ""
+
+    def test_execute_hook_command_not_found(self, caplog):
+        with patch("niri_vrr_watcher.shutil.which", return_value=None):
+            with patch("niri_vrr_watcher.Path.is_file", return_value=False):
+                execute_hook("/nonexistent/cmd", "DP-1")
+        assert any(
+            r.levelno == logging.WARNING for r in caplog.records if r.name == "niri_vrr"
+        )
+
+    def test_execute_hook_empty_spec(self):
+        with patch("niri_vrr_watcher.subprocess.Popen") as mock_popen:
+            execute_hook("", "DP-1")
+        mock_popen.assert_not_called()
+
+
+# ===========================================================================
+# niri_set_vrr — external subprocess mocked, SUT exercised directly
+# ===========================================================================
+
+
+class TestNiriSetVrr:
+    @patch("niri_vrr_watcher.subprocess.run")
+    def test_set_vrr_on(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+        result = niri_set_vrr("DP-1", True)
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["niri", "msg", "output", "DP-1", "vrr", "on"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+
+    @patch("niri_vrr_watcher.subprocess.run")
+    def test_set_vrr_off(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+        result = niri_set_vrr("DP-1", False)
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["niri", "msg", "output", "DP-1", "vrr", "off"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+
+    @patch("niri_vrr_watcher.subprocess.run")
+    def test_set_vrr_command_fails(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=1, stderr="error")
+        result = niri_set_vrr("DP-1", True)
+        assert result is False
+
+    @patch("niri_vrr_watcher.subprocess.run")
+    def test_set_vrr_niri_not_found(self, mock_run):
+        mock_run.side_effect = FileNotFoundError("niri not found")
+        result = niri_set_vrr("DP-1", True)
+        assert result is False
+
+    @patch("niri_vrr_watcher.subprocess.run")
+    def test_set_vrr_timeout(self, mock_run):
+        mock_run.side_effect = subprocess.TimeoutExpired(["niri"], 5)
+        result = niri_set_vrr("DP-1", True)
+        assert result is False
+
+
+# ===========================================================================
+# Edge Cases and Regression Guards
+# ===========================================================================
+
+
+class TestEdgeCases:
+    def test_empty_outputs_no_windows(self, orchestrator_factory):
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(return_value=json.dumps({})),
+            fetch_windows=MagicMock(return_value=json.dumps([])),
+            fetch_workspaces=MagicMock(return_value=json.dumps([])),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_not_called()
+        mocks["run_hook"].assert_not_called()
+
+    def test_window_with_empty_app_id(self, single_output, ws_to_output_single):
+        window = make_window(app_id="", pid=1234)
+        result = window_wants_vrr(
+            window,
+            ws_to_output_single,
+            single_output,
+            frozenset({"brave-browser", "mpv"}),
+            {1234},
+            False,
+        )
+        assert result is not None
+
+    def test_window_with_none_workspace_id(self):
+        w = make_window(workspace_id=None, pid=1234)
+        result = window_wants_vrr(
+            w,
+            {},
+            {"DP-1": make_output()},
+            frozenset({"brave-browser", "mpv"}),
+            {1234},
+            False,
+        )
+        assert result is None
+
+    def test_multiple_windows_same_output_mixed_focus(
+        self, single_output, ws_to_output_single
+    ):
+        windows = [
+            make_window(app_id="com.focused.Game", pid=1, is_focused=True),
+            make_window(app_id="com.unfocused.App", pid=2, is_focused=False),
+        ]
+        desired = compute_desired_vrr(
+            windows,
+            ws_to_output_single,
+            single_output,
+            frozenset({"brave-browser", "mpv"}),
+            {1, 2},
+            False,
+        )
+        assert desired["DP-1"] is True
+
+    def test_desktop_environment_no_gpu_activity(
+        self, single_output, ws_to_output_single
+    ):
+        windows = [
+            make_window(app_id="org.kde.dolphin", pid=1000, tile_w=800, tile_h=600),
+        ]
+        desired = compute_desired_vrr(
+            windows,
+            ws_to_output_single,
+            single_output,
+            frozenset({"brave-browser", "mpv"}),
+            set(),
+            False,
+        )
+        assert desired["DP-1"] is False
+
+    def test_config_frozen_immutability(self):
+        cfg = Config()
+        with pytest.raises(FrozenInstanceError):
+            cfg.poll_interval = 5.0  # ty: ignore[invalid-assignment]
+
+    def test_output_info_resolution_property(self):
+        output = make_output(w=3840, h=2160)
+        assert output.resolution == (3840, 2160)
+
+    def test_window_effective_size_tile_priority(self):
+        w = WindowInfo(
+            app_id="test",
+            pid=1,
+            workspace_id=1,
+            tile_w=1920,
+            tile_h=1080,
+            win_w=800,
+            win_h=600,
+            is_focused=True,
+        )
+        assert w.effective_size == (1920, 1080)
+
+    def test_window_effective_size_window_fallback(self):
+        w = WindowInfo(
+            app_id="test",
+            pid=1,
+            workspace_id=1,
+            tile_w=None,
+            tile_h=None,
+            win_w=800,
+            win_h=600,
+            is_focused=True,
+        )
+        assert w.effective_size == (800, 600)
+
+    def test_compute_desired_vrr_empty_windows(self):
+        outputs = {"DP-1": make_output(), "HDMI-1": make_output("HDMI-1")}
+        desired = compute_desired_vrr(
+            [],
+            {1: "DP-1", 2: "HDMI-1"},
+            outputs,
+            frozenset({"brave-browser", "mpv"}),
+            set(),
+            True,
+        )
+        assert desired == {"DP-1": False, "HDMI-1": False}
+
+    def test_shutdown_on_empty_state(self, orchestrator_factory):
+        orch, mocks = orchestrator_factory()
+        orch._state.vrr_enabled = {}
+        orch.shutdown()
+        mocks["set_vrr"].assert_not_called()
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(pytest.main(["-tb=short", "-v", "-p", "no:pytest-profiling", __file__]))

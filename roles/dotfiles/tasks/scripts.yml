@@ -29,7 +29,7 @@
         dotfiles_script_links_filtered: >-
           {{
             script_links
-            | rejectattr('src', 'equalto', 'niri-watcher.sh')
+            | rejectattr('src', 'equalto', 'niri_vrr_watcher.py')
             | list
             if dotfiles_niri_in_path.rc != 0
             else script_links
