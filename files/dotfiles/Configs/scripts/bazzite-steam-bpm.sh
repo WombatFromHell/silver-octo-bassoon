@@ -37,8 +37,8 @@ CMD+=(
 
 # include some optional wrappers conditionally
 OTHER_WRAPPERS=()
-add_if_exists "OTHER_WRAPPERS" "$HOME/mesa/mesa-run.sh"
-add_if_exists "OTHER_WRAPPERS" "$SCRIPTS/perfboost.sh"
+# add_if_exists "OTHER_WRAPPERS" "$HOME/mesa/mesa-run.sh"
+# add_if_exists "OTHER_WRAPPERS" "$SCRIPTS/perfboost.sh"
 
 # Add the rest of the command chain
 CMD+=(
