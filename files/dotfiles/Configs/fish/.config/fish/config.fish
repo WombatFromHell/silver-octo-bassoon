@@ -181,6 +181,12 @@ if status is-interactive
         source $WORKTREES_HELPER
     end
 
+    # include pwd abbreviation helper
+    set PWD_HELPER $HOME/.config/fish/pwd.fish
+    if test -f $PWD_HELPER
+        source $PWD_HELPER
+    end
+
     set -x GPG_TTY (tty)
     set -x XDG_DATA_HOME $HOME/.local/share
     set -x XDG_CONFIG_HOME $HOME/.config
@@ -354,6 +360,10 @@ if status is-interactive
     end
     if command -q direnv
         direnv hook fish | source
+    end
+
+    if command -q sysz
+        bind ctrl-alt-y 'sysz; commandline -f repaint'
     end
 
     # keep this at the bottom
