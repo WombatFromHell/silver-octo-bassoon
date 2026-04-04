@@ -157,10 +157,16 @@ class OutputInfo:
     name: str
     width: int
     height: int
+    vrr_supported: bool = True
 
     @property
     def resolution(self) -> tuple[int, int]:
         return (self.width, self.height)
+
+    @property
+    def is_vrr_capable(self) -> bool:
+        """Whether this output currently reports VRR support."""
+        return self.vrr_supported
 
 
 @dataclass(frozen=True)
@@ -261,7 +267,10 @@ def parse_outputs(outputs_json: str | None) -> dict[str, OutputInfo]:
         except (IndexError, KeyError, TypeError, ValueError):
             log.debug("Could not determine mode for output %s", name)
             continue
-        result[name] = OutputInfo(name=name, width=w, height=h)
+        vrr_supported = bool(info.get("vrr_supported", True))
+        result[name] = OutputInfo(
+            name=name, width=w, height=h, vrr_supported=vrr_supported
+        )
 
     return result
 
@@ -549,6 +558,7 @@ class VrrState:
     """Tracks which outputs currently have VRR enabled."""
 
     _vrr_enabled: dict[str, bool] = field(default_factory=dict)
+    _vrr_capable: dict[str, bool] = field(default_factory=dict)
 
     def get(self, output_name: str) -> bool | None:
         return self._vrr_enabled.get(output_name)
@@ -556,8 +566,15 @@ class VrrState:
     def mark(self, output_name: str, enabled: bool) -> None:
         self._vrr_enabled[output_name] = enabled
 
+    def set_capable(self, output_name: str, capable: bool) -> None:
+        self._vrr_capable[output_name] = capable
+
+    def is_capable(self, output_name: str) -> bool:
+        return self._vrr_capable.get(output_name, True)
+
     def clear(self, output_name: str) -> None:
         self._vrr_enabled.pop(output_name, None)
+        self._vrr_capable.pop(output_name, None)
 
     def all_tracked(self) -> set[str]:
         """Return names of all outputs with a recorded VRR state."""
@@ -686,27 +703,53 @@ class VrrOrchestrator:
     # ------------------------------------------------------------------
 
     def _apply_vrr_transitions(
-        self, desired: dict[str, bool]
+        self, desired: dict[str, bool], outputs: dict[str, OutputInfo]
     ) -> list[tuple[str, bool]]:
         """Compare desired vs current state, apply changes.
 
         Returns a list of ``(output_name, new_state)`` transitions that
-        were successfully applied to niri.
+        were logically applied.  For outputs that do not support VRR,
+        the niri toggle call is skipped but the state is still tracked
+        so that on/off hooks fire and internal bookkeeping stays correct.
         """
         transitions: list[tuple[str, bool]] = []
+
+        # Capture previous capability before updating, then record new capability
+        prev_capability: dict[str, bool] = {
+            name: self._vrr_state.is_capable(name) for name in desired
+        }
+        for output_name in desired:
+            output = outputs.get(output_name)
+            vrr_capable = output.vrr_supported if output else True
+            self._vrr_state.set_capable(output_name, vrr_capable)
+
         for output_name, want_on in desired.items():
             prev = self._vrr_state.get(output_name)
-            if prev == want_on:
-                continue  # no change
+            prev_capable = prev_capability[output_name]
+            vrr_capable = self._vrr_state.is_capable(output_name)
+
+            if prev == want_on and prev_capable == vrr_capable:
+                continue  # no change in state or capability
             if prev is None and not want_on:
                 continue  # never set VRR and it should be off — skip
 
-            if self._set_vrr(output_name, want_on):
+            if vrr_capable:
+                if self._set_vrr(output_name, want_on):
+                    self._vrr_state.mark(output_name, want_on)
+                    transitions.append((output_name, want_on))
+                    log.info(
+                        "%s VRR on %s",
+                        "Enabling" if want_on else "Disabling",
+                        output_name,
+                    )
+            else:
+                # Output does not report VRR support — skip the niri
+                # command but still record the state so hooks fire.
                 self._vrr_state.mark(output_name, want_on)
                 transitions.append((output_name, want_on))
                 log.info(
-                    "%s VRR on %s",
-                    "Enabling" if want_on else "Disabling",
+                    "%s VRR on %s (skipped: output does not support VRR)",
+                    "Would enable" if want_on else "Would disable",
                     output_name,
                 )
         return transitions
@@ -735,9 +778,10 @@ class VrrOrchestrator:
     def _act(
         self,
         desired: dict[str, bool],
+        outputs: dict[str, OutputInfo],
         gpu_ancestors: set[int],
     ) -> None:
-        transitions = self._apply_vrr_transitions(desired)
+        transitions = self._apply_vrr_transitions(desired, outputs)
         self._execute_transition_hooks(transitions, gpu_ancestors)
         self._cleanup_stale_outputs(set(desired))
 
@@ -751,7 +795,7 @@ class VrrOrchestrator:
             outputs_json, windows_json, workspaces_json
         )
         desired = self._decide(outputs, windows, ws_to_output, gpu_ancestors)
-        self._act(desired, gpu_ancestors)
+        self._act(desired, outputs, gpu_ancestors)
 
     # ------------------------------------------------------------------
     # Shutdown
@@ -762,11 +806,13 @@ class VrrOrchestrator:
         log.info("Shutting down, disabling all VRR states...")
         for output_name in list(self._vrr_state._vrr_enabled):
             was_on = self._vrr_state.get(output_name)
-            if was_on:
+            capable = self._vrr_state.is_capable(output_name)
+            if was_on and capable:
                 self._set_vrr(output_name, False)
+                log.info("Disabling VRR on %s (shutdown)", output_name)
+            if was_on:
                 for spec in self.config.hook_off:
                     self._run_hook(spec, output_name, None)
-                log.info("Disabling VRR on %s (shutdown)", output_name)
             self._vrr_state.clear(output_name)
             self._app_tracker.clear(output_name)
 

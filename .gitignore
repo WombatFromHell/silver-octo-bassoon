@@ -12,3 +12,4 @@ __pycache__
 **/.config/fish/fish_variables
 **/.config/environment.d/*
 **/vdirsyncer/.vdirsyncer/*
+gvfs.private

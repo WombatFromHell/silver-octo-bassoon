@@ -1735,6 +1735,520 @@ class TestEdgeCases:
         mocks["set_vrr"].assert_not_called()
 
 
+# ===========================================================================
+# VRR Support Detection — vrr_supported from niri outputs
+# ===========================================================================
+
+
+class TestOutputInfoVrrSupported:
+    """Tests for OutputInfo.vrr_supported and is_vrr_capable."""
+
+    def test_default_vrr_supported_is_true(self):
+        output = make_output("DP-1")
+        assert output.vrr_supported is True
+        assert output.is_vrr_capable is True
+
+    def test_vrr_supported_can_be_false(self):
+        output = OutputInfo(name="HDMI-1", width=1920, height=1080, vrr_supported=False)
+        assert output.vrr_supported is False
+        assert output.is_vrr_capable is False
+
+
+class TestParseOutputsVrrSupported:
+    """Tests for parse_outputs reading vrr_supported from JSON."""
+
+    def test_vrr_supported_true(self):
+        data = {
+            "DP-1": {
+                "modes": [{"width": 1920, "height": 1080}],
+                "current_mode": 0,
+                "vrr_supported": True,
+            }
+        }
+        result = parse_outputs(json.dumps(data))
+        assert result["DP-1"].vrr_supported is True
+
+    def test_vrr_supported_false(self):
+        data = {
+            "HDMI-1": {
+                "modes": [{"width": 1920, "height": 1080}],
+                "current_mode": 0,
+                "vrr_supported": False,
+            }
+        }
+        result = parse_outputs(json.dumps(data))
+        assert result["HDMI-1"].vrr_supported is False
+
+    def test_vrr_supported_defaults_to_true_when_missing(self):
+        data = {
+            "DP-1": {
+                "modes": [{"width": 1920, "height": 1080}],
+                "current_mode": 0,
+            }
+        }
+        result = parse_outputs(json.dumps(data))
+        assert result["DP-1"].vrr_supported is True
+
+
+class TestVrrStateCapability:
+    """Tests for VrrState capability tracking."""
+
+    def test_set_and_get_capable(self):
+        state = VrrState()
+        state.set_capable("DP-1", True)
+        assert state.is_capable("DP-1") is True
+
+    def test_set_capable_false(self):
+        state = VrrState()
+        state.set_capable("HDMI-1", False)
+        assert state.is_capable("HDMI-1") is False
+
+    def test_is_capable_defaults_to_true(self):
+        state = VrrState()
+        assert state.is_capable("DP-1") is True
+
+    def test_clear_removes_capability(self):
+        state = VrrState()
+        state.set_capable("DP-1", False)
+        state.clear("DP-1")
+        assert state.is_capable("DP-1") is True  # default after clear
+
+
+class TestVrrToggleShortCircuit:
+    """Tests that VRR toggle is short-circuited for unsupported outputs,
+    while hooks still fire and state tracking remains correct."""
+
+    def test_unsupported_output_skips_set_vrr(self, orchestrator_factory):
+        """When vrr_supported=False, set_vrr should not be called."""
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "HDMI-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                            "vrr_supported": False,
+                        }
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps([{"id": 1, "output": "HDMI-1"}])
+            ),
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.example.Game",
+                            "pid": 1234,
+                            "workspace_id": 1,
+                            "layout": {"tile_size": [1920, 1080], "window_size": []},
+                            "is_focused": True,
+                        }
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_not_called()
+
+    def test_unsupported_output_still_fires_hook_on(self, orchestrator_factory):
+        """Hooks should still fire for unsupported outputs."""
+        cfg = Config(relaxed_mode=True, hook_on=["/bin/hook on"], hook_off=["/bin/hook off"])
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "HDMI-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                            "vrr_supported": False,
+                        }
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps([{"id": 1, "output": "HDMI-1"}])
+            ),
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.example.Game",
+                            "pid": 1234,
+                            "workspace_id": 1,
+                            "layout": {"tile_size": [1920, 1080], "window_size": []},
+                            "is_focused": True,
+                        }
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["run_hook"].assert_called_once()
+        assert "on" in mocks["run_hook"].call_args[0][0]
+
+    def test_unsupported_output_tracks_vrr_state(self, orchestrator_factory):
+        """Internal VRR state should still be tracked for unsupported outputs."""
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "HDMI-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                            "vrr_supported": False,
+                        }
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps([{"id": 1, "output": "HDMI-1"}])
+            ),
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.example.Game",
+                            "pid": 1234,
+                            "workspace_id": 1,
+                            "layout": {"tile_size": [1920, 1080], "window_size": []},
+                            "is_focused": True,
+                        }
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        assert orch._vrr_state.get("HDMI-1") is True
+        assert orch._vrr_state.is_capable("HDMI-1") is False
+
+    def test_supported_output_still_calls_set_vrr(self, orchestrator_factory):
+        """When vrr_supported=True (default), set_vrr should be called normally."""
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_called_once_with("DP-1", True)
+
+
+class TestVrrSupportedDynamicChanges:
+    """Tests for dynamic vrr_supported changes (hardware changes)."""
+
+    def test_supported_to_unsupported_skips_future_set_vrr(self, orchestrator_factory):
+        """If an output loses VRR support, future set_vrr calls should be skipped."""
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_called_once_with("DP-1", True)
+        mocks["set_vrr"].reset_mock()
+
+        # Now output reports vrr_supported=False
+        mocks["fetch_outputs"].return_value = json.dumps(
+            {
+                "DP-1": {
+                    "modes": [{"width": 1920, "height": 1080}],
+                    "current_mode": 0,
+                    "vrr_supported": False,
+                }
+            }
+        )
+        orch.poll_once(gpu_ancestors=set())
+        # State should still be True but no set_vrr call
+        assert orch._vrr_state.get("DP-1") is True
+        assert orch._vrr_state.is_capable("DP-1") is False
+        mocks["set_vrr"].assert_not_called()
+
+    def test_unsupported_to_supported_enables_set_vrr(self, orchestrator_factory):
+        """If an output gains VRR support, set_vrr should be called."""
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "HDMI-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                            "vrr_supported": False,
+                        }
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps([{"id": 1, "output": "HDMI-1"}])
+            ),
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.example.Game",
+                            "pid": 1234,
+                            "workspace_id": 1,
+                            "layout": {"tile_size": [1920, 1080], "window_size": []},
+                            "is_focused": True,
+                        }
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_not_called()
+        assert orch._vrr_state.is_capable("HDMI-1") is False
+
+        # Now output reports vrr_supported=True
+        mocks["fetch_outputs"].return_value = json.dumps(
+            {
+                "HDMI-1": {
+                    "modes": [{"width": 1920, "height": 1080}],
+                    "current_mode": 0,
+                    "vrr_supported": True,
+                }
+            }
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_called_with("HDMI-1", True)
+        assert orch._vrr_state.is_capable("HDMI-1") is True
+
+    def test_unsupported_to_unsupported_no_window_no_toggle(self, orchestrator_factory):
+        """When unsupported and no fullscreen app, no set_vrr or hooks should fire."""
+        cfg = Config(relaxed_mode=True)
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "HDMI-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                            "vrr_supported": False,
+                        }
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps([{"id": 1, "output": "HDMI-1"}])
+            ),
+            fetch_windows=MagicMock(return_value=json.dumps([])),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].assert_not_called()
+        mocks["run_hook"].assert_not_called()
+
+
+class TestMixedVrrSupported:
+    """Tests for multi-monitor setups with mixed VRR support."""
+
+    def test_one_supported_one_unsupported(self, orchestrator_factory):
+        """Only the supported output should have set_vrr called; both should fire hooks."""
+        cfg = Config(relaxed_mode=True, hook_on=["/bin/hook on"], hook_off=["/bin/hook off"])
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "DP-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                            "vrr_supported": True,
+                        },
+                        "HDMI-1": {
+                            "modes": [{"width": 2560, "height": 1440}],
+                            "current_mode": 0,
+                            "vrr_supported": False,
+                        },
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps(
+                    [{"id": 1, "output": "DP-1"}, {"id": 2, "output": "HDMI-1"}]
+                )
+            ),
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.game.One",
+                            "pid": 1,
+                            "workspace_id": 1,
+                            "layout": {"tile_size": [1920, 1080], "window_size": []},
+                            "is_focused": True,
+                        },
+                        {
+                            "app_id": "com.game.Two",
+                            "pid": 2,
+                            "workspace_id": 2,
+                            "layout": {"tile_size": [2560, 1440], "window_size": []},
+                            "is_focused": True,
+                        },
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+
+        # Only DP-1 should have set_vrr called
+        set_vrr_calls = {c[0] for c in mocks["set_vrr"].call_args_list}
+        assert ("DP-1", True) in set_vrr_calls
+        assert ("HDMI-1", True) not in set_vrr_calls
+
+        # Both outputs should have hooks fired
+        assert mocks["run_hook"].call_count == 2
+
+        # State tracking
+        assert orch._vrr_state.get("DP-1") is True
+        assert orch._vrr_state.is_capable("DP-1") is True
+        assert orch._vrr_state.get("HDMI-1") is True
+        assert orch._vrr_state.is_capable("HDMI-1") is False
+
+    def test_unsupported_output_leaves_fullscreen(self, orchestrator_factory):
+        """When unsupported output goes from fullscreen to windowed, hooks should still fire."""
+        cfg = Config(relaxed_mode=True, hook_on=["/bin/hook on"], hook_off=["/bin/hook off"])
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "HDMI-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                            "vrr_supported": False,
+                        }
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps([{"id": 1, "output": "HDMI-1"}])
+            ),
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.example.Game",
+                            "pid": 1234,
+                            "workspace_id": 1,
+                            "layout": {"tile_size": [1920, 1080], "window_size": []},
+                            "is_focused": True,
+                        }
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        assert orch._vrr_state.get("HDMI-1") is True
+        mocks["run_hook"].reset_mock()
+
+        # Window leaves fullscreen
+        mocks["fetch_windows"].return_value = json.dumps(
+            [
+                {
+                    "app_id": "com.example.Game",
+                    "pid": 1234,
+                    "workspace_id": 1,
+                    "layout": {"tile_size": [1280, 720], "window_size": []},
+                    "is_focused": True,
+                }
+            ]
+        )
+        orch.poll_once(gpu_ancestors=set())
+        # Hooks should still fire (off-hook for unsupported output)
+        mocks["run_hook"].assert_called_once()
+        assert "off" in mocks["run_hook"].call_args[0][0]
+        mocks["set_vrr"].assert_not_called()
+
+
+class TestShutdownVrrSupported:
+    """Tests for shutdown behavior with vrr_supported tracking."""
+
+    def test_shutdown_skips_set_vrr_for_unsupported(self, orchestrator_factory):
+        """Shutdown should not call set_vrr for unsupported outputs."""
+        cfg = Config(relaxed_mode=True, hook_on=["/bin/hook on"], hook_off=["/bin/hook off"])
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "HDMI-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                            "vrr_supported": False,
+                        }
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps([{"id": 1, "output": "HDMI-1"}])
+            ),
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.example.Game",
+                            "pid": 1234,
+                            "workspace_id": 1,
+                            "layout": {"tile_size": [1920, 1080], "window_size": []},
+                            "is_focused": True,
+                        }
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["set_vrr"].reset_mock()
+        orch.shutdown()
+        mocks["set_vrr"].assert_not_called()
+
+    def test_shutdown_still_calls_hook_off_for_unsupported(self, orchestrator_factory):
+        """Shutdown should still call off-hooks for unsupported outputs."""
+        cfg = Config(relaxed_mode=True, hook_on=["/bin/hook on"], hook_off=["/bin/hook off"])
+        orch, mocks = orchestrator_factory(
+            cfg=cfg,
+            fetch_outputs=MagicMock(
+                return_value=json.dumps(
+                    {
+                        "HDMI-1": {
+                            "modes": [{"width": 1920, "height": 1080}],
+                            "current_mode": 0,
+                            "vrr_supported": False,
+                        }
+                    }
+                )
+            ),
+            fetch_workspaces=MagicMock(
+                return_value=json.dumps([{"id": 1, "output": "HDMI-1"}])
+            ),
+            fetch_windows=MagicMock(
+                return_value=json.dumps(
+                    [
+                        {
+                            "app_id": "com.example.Game",
+                            "pid": 1234,
+                            "workspace_id": 1,
+                            "layout": {"tile_size": [1920, 1080], "window_size": []},
+                            "is_focused": True,
+                        }
+                    ]
+                )
+            ),
+        )
+        orch.poll_once(gpu_ancestors=set())
+        mocks["run_hook"].reset_mock()
+        orch.shutdown()
+        mocks["run_hook"].assert_called_once()
+        assert "off" in mocks["run_hook"].call_args[0][0]
+
+    def test_shutdown_calls_set_vrr_for_supported_outputs(self, orchestrator_factory):
+        """Shutdown should still call set_vrr for supported outputs."""
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        orch.shutdown()
+        calls = {c[0] for c in mocks["set_vrr"].call_args_list}
+        assert ("DP-1", False) in calls
+
+
 if __name__ == "__main__":
     import sys
 
