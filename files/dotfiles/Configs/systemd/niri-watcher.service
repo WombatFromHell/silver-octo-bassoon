@@ -18,6 +18,8 @@ RestartSec=5
 KillMode=mixed
 TimeoutStopSec=10
 Environment=WAYLAND_DISPLAY=%E{WAYLAND_DISPLAY}
+Environment=NIRI_VRR_HOOK_ON="%h/.local/bin/scripts/perfboost.sh on"
+Environment=NIRI_VRR_HOOK_OFF="%h/.local/bin/scripts/perfboost.sh off"
 
 [Install]
 # Only wanted when niri.service is wanted

@@ -28,10 +28,12 @@ import pytest  # ty: ignore[unresolved-import]
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from niri_vrr_watcher import (
+    AppTracker,
     Config,
+    EvalContext,
     OutputInfo,
     VrrOrchestrator,
-    WatcherState,
+    VrrState,
     WindowInfo,
     build_gpu_ancestor_set,
     compute_desired_vrr,
@@ -101,6 +103,34 @@ def ws_to_output_three() -> dict[int, str]:
     return {1: "DP-1", 2: "DP-2", 3: "HDMI-1"}
 
 
+@pytest.fixture
+def eval_ctx_single(
+    single_output, ws_to_output_single, excluded_apps
+) -> EvalContext:
+    """EvalContext for single-output tests."""
+    return EvalContext(
+        ws_to_output=ws_to_output_single,
+        outputs=single_output,
+        excluded_apps=excluded_apps,
+        gpu_ancestor_pids=set(),
+        relaxed_mode=False,
+    )
+
+
+@pytest.fixture
+def eval_ctx_gpu(
+    single_output, ws_to_output_single, excluded_apps
+) -> EvalContext:
+    """EvalContext with GPU ancestor PIDs."""
+    return EvalContext(
+        ws_to_output=ws_to_output_single,
+        outputs=single_output,
+        excluded_apps=excluded_apps,
+        gpu_ancestor_pids={1234},
+        relaxed_mode=False,
+    )
+
+
 # -- Window factories via fixtures --
 
 
@@ -153,6 +183,23 @@ def make_output(name="DP-1", w=1920, h=1080) -> OutputInfo:
     return OutputInfo(name=name, width=w, height=h)
 
 
+def make_eval_ctx(
+    outputs=None,
+    ws_to_output=None,
+    excluded=None,
+    gpu_ancestors=None,
+    relaxed=False,
+) -> EvalContext:
+    """Convenience constructor for EvalContext."""
+    return EvalContext(
+        ws_to_output=ws_to_output or {1: "DP-1"},
+        outputs=outputs or {"DP-1": make_output()},
+        excluded_apps=excluded or frozenset(),
+        gpu_ancestor_pids=gpu_ancestors or set(),
+        relaxed_mode=relaxed,
+    )
+
+
 # -- Orchestrator helpers (still the proper way to inject I/O) --
 
 
@@ -189,7 +236,7 @@ def orchestrator_factory():
     """
 
     def _build(cfg=None, **io_overrides) -> tuple[VrrOrchestrator, dict]:
-        cfg = cfg or Config(relaxed_mode=True)
+        cfg = cfg or Config(relaxed_mode=True, hook_on=["/bin/hook on"], hook_off=["/bin/hook off"])
         mocks: dict[str, MagicMock] = {
             "fetch_outputs": MagicMock(return_value=_default_outputs_json()),
             "fetch_windows": MagicMock(return_value=_default_windows_json()),
@@ -375,28 +422,47 @@ class TestIsFullscreen:
         assert is_fullscreen(w, o) is True
 
 
+class TestEvalContext:
+    """Tests for the EvalContext value object."""
+
+    def test_frozen_dataclass(self):
+        ctx = make_eval_ctx()
+        with pytest.raises(FrozenInstanceError):
+            ctx.outputs = {}  # ty: ignore[invalid-assignment]
+
+    def test_defaults(self):
+        ctx = EvalContext(
+            ws_to_output={},
+            outputs={},
+            excluded_apps=frozenset(),
+            gpu_ancestor_pids=set(),
+            relaxed_mode=False,
+        )
+        assert ctx.relaxed_mode is False
+        assert ctx.gpu_ancestor_pids == set()
+        assert ctx.excluded_apps == frozenset()
+
+
 class TestWindowWantsVrr:
     """Tests for the central fullscreen-VRR predicate."""
 
     def _call(
         self,
         window,
-        gpu_ancestors=None,
-        relaxed=False,
-        excluded=None,
         outputs=None,
         ws_to_output=None,
-    ):
-        outputs = outputs or {"DP-1": make_output()}
-        ws_to_output = ws_to_output or {1: "DP-1"}
-        return window_wants_vrr(
-            window,
-            ws_to_output,
-            outputs,
-            excluded or frozenset({"brave-browser", "mpv"}),
-            gpu_ancestors or set(),
-            relaxed_mode=relaxed,
+        excluded=None,
+        gpu_ancestors=None,
+        relaxed=False,
+    ) -> OutputInfo | None:
+        ctx = make_eval_ctx(
+            outputs=outputs,
+            ws_to_output=ws_to_output,
+            excluded=excluded or frozenset({"brave-browser", "mpv"}),
+            gpu_ancestors=gpu_ancestors,
+            relaxed=relaxed,
         )
+        return window_wants_vrr(window, ctx)
 
     def test_focused_fullscreen_gpu_direct(self):
         w = make_window(pid=1234)
@@ -445,29 +511,38 @@ class TestWindowWantsVrr:
 
 
 class TestComputeDesiredVrr:
+    def _ctx(self, outputs, ws_to_output, excluded, gpu_ancestors, relaxed=False):
+        return EvalContext(
+            ws_to_output=ws_to_output,
+            outputs=outputs,
+            excluded_apps=excluded,
+            gpu_ancestor_pids=gpu_ancestors,
+            relaxed_mode=relaxed,
+        )
+
     def test_single_fullscreen_window(
         self, single_output, ws_to_output_single, focused_fullscreen, excluded_apps
     ):
-        desired = compute_desired_vrr(
-            [focused_fullscreen],
-            ws_to_output_single,
-            single_output,
-            excluded_apps,
-            {1234},
-            relaxed_mode=False,
+        ctx = self._ctx(
+            outputs=single_output,
+            ws_to_output=ws_to_output_single,
+            excluded=excluded_apps,
+            gpu_ancestors={1234},
+            relaxed=False,
         )
+        desired = compute_desired_vrr([focused_fullscreen], ctx)
         assert desired == {"DP-1": True}
 
     def test_no_fullscreen_all_off(self, single_output, ws_to_output_single):
         windows = [make_window(tile_w=800, tile_h=600, pid=1234)]
-        desired = compute_desired_vrr(
-            windows,
-            ws_to_output_single,
-            single_output,
-            frozenset({"brave-browser", "mpv"}),
-            {1234},
-            relaxed_mode=False,
+        ctx = self._ctx(
+            outputs=single_output,
+            ws_to_output=ws_to_output_single,
+            excluded=frozenset({"brave-browser", "mpv"}),
+            gpu_ancestors={1234},
+            relaxed=False,
         )
+        desired = compute_desired_vrr(windows, ctx)
         assert desired == {"DP-1": False}
 
     def test_multi_monitor_independent(self, dual_outputs, ws_to_output_dual):
@@ -477,27 +552,27 @@ class TestComputeDesiredVrr:
                 workspace_id=2, tile_w=800, tile_h=600, pid=5678, is_focused=False
             ),
         ]
-        desired = compute_desired_vrr(
-            windows,
-            ws_to_output_dual,
-            dual_outputs,
-            frozenset({"brave-browser", "mpv"}),
-            {1234, 5678},
-            relaxed_mode=False,
+        ctx = self._ctx(
+            outputs=dual_outputs,
+            ws_to_output=ws_to_output_dual,
+            excluded=frozenset({"brave-browser", "mpv"}),
+            gpu_ancestors={1234, 5678},
+            relaxed=False,
         )
+        desired = compute_desired_vrr(windows, ctx)
         assert desired["DP-1"] is True
         assert desired["DP-2"] is False
 
     def test_excluded_app_does_not_enable_vrr(self, single_output, ws_to_output_single):
         windows = [make_window(app_id="mpv", pid=1234)]
-        desired = compute_desired_vrr(
-            windows,
-            ws_to_output_single,
-            single_output,
-            frozenset({"brave-browser", "mpv"}),
-            {1234},
-            relaxed_mode=False,
+        ctx = self._ctx(
+            outputs=single_output,
+            ws_to_output=ws_to_output_single,
+            excluded=frozenset({"brave-browser", "mpv"}),
+            gpu_ancestors={1234},
+            relaxed=False,
         )
+        desired = compute_desired_vrr(windows, ctx)
         assert desired["DP-1"] is False
 
 
@@ -536,32 +611,86 @@ class TestBuildGpuAncestorSet:
 
 
 # ===========================================================================
-# WatcherState — pure dataclass, never mocked
+# VrrState — mutable state container, never mocked
 # ===========================================================================
 
 
-class TestWatcherState:
+class TestVrrState:
+    def test_get_returns_none_for_unknown(self):
+        state = VrrState()
+        assert state.get("DP-1") is None
+
+    def test_mark_and_get(self):
+        state = VrrState()
+        state.mark("DP-1", True)
+        assert state.get("DP-1") is True
+
+    def test_mark_overwrites(self):
+        state = VrrState()
+        state.mark("DP-1", True)
+        state.mark("DP-1", False)
+        assert state.get("DP-1") is False
+
+    def test_clear_removes_entry(self):
+        state = VrrState()
+        state.mark("DP-1", True)
+        state.clear("DP-1")
+        assert state.get("DP-1") is None
+
+    def test_clear_unknown_is_noop(self):
+        state = VrrState()
+        state.clear("DP-1")  # should not raise
+        assert state.get("DP-1") is None
+
+    def test_all_tracked(self):
+        state = VrrState()
+        state.mark("DP-1", True)
+        state.mark("HDMI-1", False)
+        assert state.all_tracked() == {"DP-1", "HDMI-1"}
+
+    def test_all_tracked_empty(self):
+        state = VrrState()
+        assert state.all_tracked() == set()
+
+
+# ===========================================================================
+# AppTracker — mutable state container, never mocked
+# ===========================================================================
+
+
+class TestAppTracker:
     def test_record_app_new(self):
-        state = WatcherState()
+        tracker = AppTracker()
         w = make_window(app_id="game", pid=1)
-        changed = state.record_app("DP-1", w)
+        changed = tracker.record_app("DP-1", w)
         assert changed is True
 
     def test_record_app_same_no_change(self):
-        state = WatcherState()
+        tracker = AppTracker()
         w = make_window(app_id="game", pid=1)
-        state.record_app("DP-1", w)
-        changed = state.record_app("DP-1", w)
+        tracker.record_app("DP-1", w)
+        changed = tracker.record_app("DP-1", w)
         assert changed is False
 
-    def test_clear_output(self):
-        state = WatcherState(
-            vrr_enabled={"DP-1": True},
-            output_current_app={"DP-1": "game:1"},
-        )
-        state.clear_output("DP-1")
-        assert "DP-1" not in state.vrr_enabled
-        assert "DP-1" not in state.output_current_app
+    def test_record_app_different_pid(self):
+        tracker = AppTracker()
+        w1 = make_window(app_id="game", pid=1)
+        w2 = make_window(app_id="game", pid=2)
+        tracker.record_app("DP-1", w1)
+        changed = tracker.record_app("DP-1", w2)
+        assert changed is True
+
+    def test_clear_removes_entry(self):
+        tracker = AppTracker()
+        w = make_window(app_id="game", pid=1)
+        tracker.record_app("DP-1", w)
+        tracker.clear("DP-1")
+        # Re-recording should be "new" again
+        assert tracker.record_app("DP-1", w) is True
+
+    def test_clear_unknown_is_noop(self):
+        tracker = AppTracker()
+        tracker.clear("DP-1")  # should not raise
 
 
 # ===========================================================================
@@ -570,27 +699,32 @@ class TestWatcherState:
 
 
 class TestResolveOutputForWindow:
+    def _call(self, window, outputs=None, ws_to_output=None):
+        ctx = make_eval_ctx(
+            outputs=outputs,
+            ws_to_output=ws_to_output,
+        )
+        return resolve_output_for_window(window, ctx)
+
     def test_happy_path(self):
         w = make_window(workspace_id=1)
-        ws_to_output = {1: "DP-1"}
-        outputs = {"DP-1": make_output()}
-        result = resolve_output_for_window(w, ws_to_output, outputs)
+        result = self._call(w, ws_to_output={1: "DP-1"}, outputs={"DP-1": make_output()})
         assert result is not None
         assert result.name == "DP-1"
 
     def test_none_workspace_id_returns_none(self):
         w = make_window(workspace_id=None)
-        result = resolve_output_for_window(w, {}, {})
+        result = self._call(w)
         assert result is None
 
     def test_unknown_workspace_returns_none(self):
         w = make_window(workspace_id=99)
-        result = resolve_output_for_window(w, {1: "DP-1"}, {"DP-1": make_output()})
+        result = self._call(w, ws_to_output={1: "DP-1"}, outputs={"DP-1": make_output()})
         assert result is None
 
     def test_output_not_in_outputs_dict_returns_none(self):
         w = make_window(workspace_id=1)
-        result = resolve_output_for_window(w, {1: "HDMI-2"}, {})
+        result = self._call(w, ws_to_output={1: "HDMI-2"}, outputs={})
         assert result is None
 
 
@@ -614,7 +748,7 @@ class TestVrrOrchestratorPollOnce:
     def test_disables_vrr_when_window_leaves_fullscreen(self, orchestrator_factory):
         orch, mocks = orchestrator_factory()
         orch.poll_once(gpu_ancestors=set())
-        assert orch._state.vrr_enabled.get("DP-1") is True
+        assert orch._vrr_state.get("DP-1") is True
 
         mocks["fetch_windows"].return_value = json.dumps(
             [
@@ -648,7 +782,12 @@ class TestVrrOrchestratorPollOnce:
         assert "off" in hook_call[0][0]
 
     def test_excluded_app_does_not_enable_vrr(self, orchestrator_factory):
-        cfg = Config(relaxed_mode=True)
+        cfg = Config(
+            relaxed_mode=True,
+            hook_on=["/bin/hook on"],
+            hook_off=["/bin/hook off"],
+            excluded_apps=frozenset({"mpv"}),
+        )
         orch, mocks = orchestrator_factory(
             cfg=cfg,
             fetch_windows=MagicMock(
@@ -666,24 +805,25 @@ class TestVrrOrchestratorPollOnce:
             ),
         )
         orch.poll_once(gpu_ancestors=set())
-        for c in mocks["set_vrr"].call_args_list:
-            assert c[0][1] is False or c.args[1] is False
+        # Excluded app should never trigger VRR enable
+        for call in mocks["set_vrr"].call_args_list:
+            assert call[0] != ("DP-1", True)
 
     def test_disconnected_output_cleaned_up(self, orchestrator_factory):
         orch, mocks = orchestrator_factory()
         orch.poll_once(gpu_ancestors=set())
-        assert "DP-1" in orch._state.vrr_enabled
+        assert "DP-1" in orch._vrr_state.all_tracked()
 
         mocks["fetch_outputs"].return_value = json.dumps({})
         mocks["fetch_windows"].return_value = json.dumps([])
         mocks["fetch_workspaces"].return_value = json.dumps([])
         orch.poll_once(gpu_ancestors=set())
-        assert "DP-1" not in orch._state.vrr_enabled
+        assert "DP-1" not in orch._vrr_state.all_tracked()
 
     def test_set_vrr_failure_leaves_state_unchanged(self, orchestrator_factory):
         orch, mocks = orchestrator_factory(set_vrr=MagicMock(return_value=False))
         orch.poll_once(gpu_ancestors=set())
-        assert orch._state.vrr_enabled.get("DP-1") is None
+        assert orch._vrr_state.get("DP-1") is None
 
     def test_multi_monitor_vrr(self, orchestrator_factory):
         cfg = Config(relaxed_mode=True)
@@ -734,15 +874,30 @@ class TestVrrOrchestratorPollOnce:
         assert ("DP-1", True) in calls
         assert ("HDMI-1", True) not in calls
 
+    def test_app_tracker_uses_vrr_state(self, orchestrator_factory):
+        """App tracker records apps only when VRR is enabled."""
+        orch, mocks = orchestrator_factory()
+        orch.poll_once(gpu_ancestors=set())
+        assert "DP-1" in orch._vrr_state.all_tracked()
+        # App tracker should have recorded the app
+        assert "com.example.Game" in orch._app_tracker._output_current_app.get("DP-1", "")
+
 
 class TestVrrOrchestratorShutdown:
     def test_shutdown_disables_all(self, orchestrator_factory):
         orch, mocks = orchestrator_factory()
-        orch._state.vrr_enabled = {"DP-1": True, "HDMI-1": True}
+        orch._vrr_state.mark("DP-1", True)
+        orch._vrr_state.mark("HDMI-1", True)
         orch.shutdown()
         calls = [c[0] for c in mocks["set_vrr"].call_args_list]
         assert ("DP-1", False) in calls
         assert ("HDMI-1", False) in calls
+
+    def test_shutdown_clears_state(self, orchestrator_factory):
+        orch, _ = orchestrator_factory()
+        orch._vrr_state.mark("DP-1", True)
+        orch.shutdown()
+        assert "DP-1" not in orch._vrr_state.all_tracked()
 
 
 # ===========================================================================
@@ -765,7 +920,7 @@ class TestStateTransitions:
     def test_none_to_true_enables_vrr_and_calls_hook_on(self, orchestrator_factory):
         orch, mocks = orchestrator_factory()
         orch.poll_once(gpu_ancestors=set())
-        assert orch._state.vrr_enabled["DP-1"] is True
+        assert orch._vrr_state.get("DP-1") is True
         mocks["set_vrr"].assert_called_once_with("DP-1", True)
         mocks["run_hook"].assert_called_once()
         assert "on" in mocks["run_hook"].call_args[0][0]
@@ -800,7 +955,7 @@ class TestStateTransitions:
             cfg=cfg, fetch_windows=MagicMock(return_value=json.dumps([]))
         )
         orch.poll_once(gpu_ancestors=set())
-        assert orch._state.vrr_enabled == {}
+        assert orch._vrr_state.get("DP-1") is None
 
     # --- True → True ---
 
@@ -838,10 +993,10 @@ class TestStateTransitions:
     def test_true_to_false_clears_current_app(self, orchestrator_factory):
         orch, mocks = orchestrator_factory()
         orch.poll_once(gpu_ancestors=set())
-        assert "DP-1" in orch._state.output_current_app
+        assert "DP-1" in orch._app_tracker._output_current_app
         mocks["fetch_windows"].return_value = json.dumps([])
         orch.poll_once(gpu_ancestors=set())
-        assert "DP-1" not in orch._state.output_current_app
+        assert "DP-1" not in orch._app_tracker._output_current_app
 
     # --- False → True ---
 
@@ -885,19 +1040,19 @@ class TestStateTransitions:
         orch, mocks = orchestrator_factory()
 
         orch.poll_once(gpu_ancestors=set())
-        assert orch._state.vrr_enabled["DP-1"] is True
+        assert orch._vrr_state.get("DP-1") is True
         assert mocks["set_vrr"].call_count == 1
         assert mocks["run_hook"].call_count == 1
 
         mocks["fetch_windows"].return_value = json.dumps([])
         orch.poll_once(gpu_ancestors=set())
-        assert orch._state.vrr_enabled["DP-1"] is False
+        assert orch._vrr_state.get("DP-1") is False
         assert mocks["set_vrr"].call_count == 2
         assert mocks["run_hook"].call_count == 2
 
         mocks["fetch_windows"].return_value = _default_windows_json()
         orch.poll_once(gpu_ancestors=set())
-        assert orch._state.vrr_enabled["DP-1"] is True
+        assert orch._vrr_state.get("DP-1") is True
         assert mocks["set_vrr"].call_count == 3
         assert mocks["run_hook"].call_count == 3
 
@@ -923,7 +1078,7 @@ class TestStateTransitions:
         orch.poll_once(gpu_ancestors=set())
         mocks["set_vrr"].assert_not_called()
         mocks["run_hook"].assert_not_called()
-        assert "OtherGame" in orch._state.output_current_app.get("DP-1", "")
+        assert "OtherGame" in orch._app_tracker._output_current_app.get("DP-1", "")
 
 
 # ===========================================================================
@@ -936,9 +1091,14 @@ class TestRelaxedMode:
         self, single_output, ws_to_output_single
     ):
         window = make_window(pid=None)
-        result = window_wants_vrr(
-            window, ws_to_output_single, single_output, frozenset(), set(), True
+        ctx = EvalContext(
+            ws_to_output=ws_to_output_single,
+            outputs=single_output,
+            excluded_apps=frozenset(),
+            gpu_ancestor_pids=set(),
+            relaxed_mode=True,
         )
+        result = window_wants_vrr(window, ctx)
         assert result is not None
 
     def test_relaxed_mode_multiple_fullscreen_apps(self, orchestrator_factory):
@@ -967,7 +1127,7 @@ class TestRelaxedMode:
             ),
         )
         orch.poll_once(gpu_ancestors=set())
-        assert orch._state.vrr_enabled["DP-1"] is True
+        assert orch._vrr_state.get("DP-1") is True
 
     def test_relaxed_mode_skips_gpu_fetch(self, orchestrator_factory):
         cfg = Config(relaxed_mode=True)
@@ -976,7 +1136,7 @@ class TestRelaxedMode:
         mocks["fetch_gpu"].assert_not_called()
 
     def test_relaxed_mode_hook_on_called_without_gpu_pids(self, orchestrator_factory):
-        cfg = Config(relaxed_mode=True)
+        cfg = Config(relaxed_mode=True, hook_on=["/bin/hook on"], hook_off=["/bin/hook off"])
         orch, mocks = orchestrator_factory(cfg=cfg)
         orch.poll_once(gpu_ancestors=set())
         hook_call = mocks["run_hook"].call_args
@@ -984,40 +1144,40 @@ class TestRelaxedMode:
 
     def test_strict_mode_no_gpu_no_vrr(self, single_output, ws_to_output_single):
         window = make_window(pid=9999)
-        result = window_wants_vrr(
-            window,
-            ws_to_output_single,
-            single_output,
-            frozenset({"brave-browser", "mpv"}),
-            set(),
-            False,
+        ctx = EvalContext(
+            ws_to_output=ws_to_output_single,
+            outputs=single_output,
+            excluded_apps=frozenset({"brave-browser", "mpv"}),
+            gpu_ancestor_pids=set(),
+            relaxed_mode=False,
         )
+        result = window_wants_vrr(window, ctx)
         assert result is None
 
     def test_strict_mode_gpu_fallback_logic(self, single_output, ws_to_output_single):
         window = make_window(pid=9999)
-        result = window_wants_vrr(
-            window,
-            ws_to_output_single,
-            single_output,
-            frozenset({"brave-browser", "mpv"}),
-            {5555},
-            False,
+        ctx = EvalContext(
+            ws_to_output=ws_to_output_single,
+            outputs=single_output,
+            excluded_apps=frozenset({"brave-browser", "mpv"}),
+            gpu_ancestor_pids={5555},
+            relaxed_mode=False,
         )
+        result = window_wants_vrr(window, ctx)
         assert result is not None
 
     def test_strict_mode_excluded_skips_before_gpu_check(
         self, single_output, ws_to_output_single
     ):
         window = make_window(app_id="mpv", pid=5555)
-        result = window_wants_vrr(
-            window,
-            ws_to_output_single,
-            single_output,
-            frozenset({"brave-browser", "mpv"}),
-            {5555},
-            False,
+        ctx = EvalContext(
+            ws_to_output=ws_to_output_single,
+            outputs=single_output,
+            excluded_apps=frozenset({"brave-browser", "mpv"}),
+            gpu_ancestor_pids={5555},
+            relaxed_mode=False,
         )
+        result = window_wants_vrr(window, ctx)
         assert result is None
 
     def test_relaxed_vs_strict_same_inputs_different_results(
@@ -1025,12 +1185,23 @@ class TestRelaxedMode:
     ):
         window = make_window(pid=None)
 
-        result_relaxed = window_wants_vrr(
-            window, ws_to_output_single, single_output, frozenset(), set(), True
+        ctx_relaxed = EvalContext(
+            ws_to_output=ws_to_output_single,
+            outputs=single_output,
+            excluded_apps=frozenset(),
+            gpu_ancestor_pids=set(),
+            relaxed_mode=True,
         )
-        result_strict = window_wants_vrr(
-            window, ws_to_output_single, single_output, frozenset(), set(), False
+        ctx_strict = EvalContext(
+            ws_to_output=ws_to_output_single,
+            outputs=single_output,
+            excluded_apps=frozenset(),
+            gpu_ancestor_pids=set(),
+            relaxed_mode=False,
         )
+
+        result_relaxed = window_wants_vrr(window, ctx_relaxed)
+        result_strict = window_wants_vrr(window, ctx_strict)
 
         assert result_relaxed is not None
         assert result_strict is None
@@ -1096,8 +1267,8 @@ class TestPerOutputVrrState:
         calls = {c[0] for c in mocks["set_vrr"].call_args_list}
         assert ("DP-1", True) in calls
         assert ("DP-2", True) in calls
-        assert orch._state.vrr_enabled["DP-1"] is True
-        assert orch._state.vrr_enabled["DP-2"] is True
+        assert orch._vrr_state.get("DP-1") is True
+        assert orch._vrr_state.get("DP-2") is True
 
     def test_dual_monitor_one_fullscreen_one_not(self, orchestrator_factory):
         cfg = Config(relaxed_mode=True)
@@ -1153,16 +1324,16 @@ class TestPerOutputVrrState:
         mocks["set_vrr"].assert_called_once_with("DP-1", True)
 
     def test_output_specific_app_tracking(self):
-        state = WatcherState()
+        tracker = AppTracker()
         w1 = make_window(app_id="game", pid=1, workspace_id=1)
         w2 = make_window(app_id="video", pid=2, workspace_id=2)
-        state.record_app("DP-1", w1)
-        state.record_app("DP-2", w2)
-        assert "game:1" == state.output_current_app["DP-1"]
-        assert "video:2" == state.output_current_app["DP-2"]
+        tracker.record_app("DP-1", w1)
+        tracker.record_app("DP-2", w2)
+        assert "game:1" == tracker._output_current_app["DP-1"]
+        assert "video:2" == tracker._output_current_app["DP-2"]
 
     def test_one_output_leaves_fullscreen_other_stays(self, orchestrator_factory):
-        cfg = Config(relaxed_mode=True)
+        cfg = Config(relaxed_mode=True, hook_on=["/bin/hook on"], hook_off=["/bin/hook off"])
         orch, mocks = orchestrator_factory(
             cfg=cfg,
             fetch_outputs=MagicMock(
@@ -1238,26 +1409,26 @@ class TestPerOutputVrrState:
         mocks["set_vrr"].assert_called_once_with("DP-1", False)
         mocks["run_hook"].assert_called_once()
         assert "off" in mocks["run_hook"].call_args[0][0]
-        assert orch._state.vrr_enabled["DP-1"] is False
-        assert orch._state.vrr_enabled["DP-2"] is True
+        assert orch._vrr_state.get("DP-1") is False
+        assert orch._vrr_state.get("DP-2") is True
 
     def test_output_reconnection_scenario(self, orchestrator_factory):
         orch, mocks = orchestrator_factory()
         orch.poll_once(gpu_ancestors=set())
-        assert "DP-1" in orch._state.vrr_enabled
+        assert "DP-1" in orch._vrr_state.all_tracked()
 
         mocks["fetch_outputs"].return_value = json.dumps({})
         mocks["fetch_windows"].return_value = json.dumps([])
         mocks["fetch_workspaces"].return_value = json.dumps([])
         orch.poll_once(gpu_ancestors=set())
-        assert "DP-1" not in orch._state.vrr_enabled
-        assert "DP-1" not in orch._state.output_current_app
+        assert "DP-1" not in orch._vrr_state.all_tracked()
+        assert "DP-1" not in orch._app_tracker._output_current_app
 
         mocks["fetch_outputs"].return_value = _default_outputs_json()
         mocks["fetch_workspaces"].return_value = _default_workspaces_json()
         mocks["fetch_windows"].return_value = _default_windows_json()
         orch.poll_once(gpu_ancestors=set())
-        assert orch._state.vrr_enabled.get("DP-1") is True
+        assert orch._vrr_state.get("DP-1") is True
         mocks["set_vrr"].assert_called_with("DP-1", True)
 
     def test_three_monitor_setup_independent_states(self, orchestrator_factory):
@@ -1329,7 +1500,9 @@ class TestPerOutputVrrState:
             ),
         )
         orch.poll_once(gpu_ancestors=set())
-        assert orch._state.vrr_enabled == {"DP-1": True}
+        assert orch._vrr_state.get("DP-1") is True
+        assert orch._vrr_state.get("DP-2") is None
+        assert orch._vrr_state.get("HDMI-1") is None
         mocks["set_vrr"].assert_called_once_with("DP-1", True)
 
 
@@ -1454,26 +1627,26 @@ class TestEdgeCases:
 
     def test_window_with_empty_app_id(self, single_output, ws_to_output_single):
         window = make_window(app_id="", pid=1234)
-        result = window_wants_vrr(
-            window,
-            ws_to_output_single,
-            single_output,
-            frozenset({"brave-browser", "mpv"}),
-            {1234},
-            False,
+        ctx = EvalContext(
+            ws_to_output=ws_to_output_single,
+            outputs=single_output,
+            excluded_apps=frozenset({"brave-browser", "mpv"}),
+            gpu_ancestor_pids={1234},
+            relaxed_mode=False,
         )
+        result = window_wants_vrr(window, ctx)
         assert result is not None
 
     def test_window_with_none_workspace_id(self):
         w = make_window(workspace_id=None, pid=1234)
-        result = window_wants_vrr(
-            w,
-            {},
-            {"DP-1": make_output()},
-            frozenset({"brave-browser", "mpv"}),
-            {1234},
-            False,
+        ctx = EvalContext(
+            ws_to_output={},
+            outputs={"DP-1": make_output()},
+            excluded_apps=frozenset({"brave-browser", "mpv"}),
+            gpu_ancestor_pids={1234},
+            relaxed_mode=False,
         )
+        result = window_wants_vrr(w, ctx)
         assert result is None
 
     def test_multiple_windows_same_output_mixed_focus(
@@ -1483,14 +1656,14 @@ class TestEdgeCases:
             make_window(app_id="com.focused.Game", pid=1, is_focused=True),
             make_window(app_id="com.unfocused.App", pid=2, is_focused=False),
         ]
-        desired = compute_desired_vrr(
-            windows,
-            ws_to_output_single,
-            single_output,
-            frozenset({"brave-browser", "mpv"}),
-            {1, 2},
-            False,
+        ctx = EvalContext(
+            ws_to_output=ws_to_output_single,
+            outputs=single_output,
+            excluded_apps=frozenset({"brave-browser", "mpv"}),
+            gpu_ancestor_pids={1, 2},
+            relaxed_mode=False,
         )
+        desired = compute_desired_vrr(windows, ctx)
         assert desired["DP-1"] is True
 
     def test_desktop_environment_no_gpu_activity(
@@ -1499,14 +1672,14 @@ class TestEdgeCases:
         windows = [
             make_window(app_id="org.kde.dolphin", pid=1000, tile_w=800, tile_h=600),
         ]
-        desired = compute_desired_vrr(
-            windows,
-            ws_to_output_single,
-            single_output,
-            frozenset({"brave-browser", "mpv"}),
-            set(),
-            False,
+        ctx = EvalContext(
+            ws_to_output=ws_to_output_single,
+            outputs=single_output,
+            excluded_apps=frozenset({"brave-browser", "mpv"}),
+            gpu_ancestor_pids=set(),
+            relaxed_mode=False,
         )
+        desired = compute_desired_vrr(windows, ctx)
         assert desired["DP-1"] is False
 
     def test_config_frozen_immutability(self):
@@ -1546,19 +1719,18 @@ class TestEdgeCases:
 
     def test_compute_desired_vrr_empty_windows(self):
         outputs = {"DP-1": make_output(), "HDMI-1": make_output("HDMI-1")}
-        desired = compute_desired_vrr(
-            [],
-            {1: "DP-1", 2: "HDMI-1"},
-            outputs,
-            frozenset({"brave-browser", "mpv"}),
-            set(),
-            True,
+        ctx = EvalContext(
+            ws_to_output={1: "DP-1", 2: "HDMI-1"},
+            outputs=outputs,
+            excluded_apps=frozenset({"brave-browser", "mpv"}),
+            gpu_ancestor_pids=set(),
+            relaxed_mode=True,
         )
+        desired = compute_desired_vrr([], ctx)
         assert desired == {"DP-1": False, "HDMI-1": False}
 
     def test_shutdown_on_empty_state(self, orchestrator_factory):
         orch, mocks = orchestrator_factory()
-        orch._state.vrr_enabled = {}
         orch.shutdown()
         mocks["set_vrr"].assert_not_called()
 
