@@ -44,7 +44,9 @@
         remote_src: false
         backup: true
       when: base_fix_wakeups_enabled
-      notify: reload_global_systemd
+      notify:
+        - reload_global_systemd
+        - enable_fix_wakeups
 
     - name: Check if fix-wakeups.service exists
       ansible.builtin.stat:

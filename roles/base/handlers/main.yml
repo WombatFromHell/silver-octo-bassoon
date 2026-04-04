@@ -71,6 +71,14 @@
   when: base_scx_service_exists | default(false)
   listen: enable_scx_loader
 
+- name: Enable fix-wakeups service
+  become: true
+  ansible.builtin.systemd:
+    name: fix-wakeups.service
+    enabled: true
+    daemon_reload: true
+  listen: enable_fix_wakeups
+
 - name: Restart polkit service
   become: true
   ansible.builtin.systemd:
