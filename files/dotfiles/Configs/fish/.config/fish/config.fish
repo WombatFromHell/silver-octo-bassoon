@@ -351,6 +351,13 @@ if status is-interactive
     end
 
     source "$HOME/.config/fish/catppuccin-fzf-mocha.fish"
+
+    # include systemd fzf helpers (requires fzf)
+    set SYS_FZF_HELPER $HOME/.config/fish/sysz_fzf.fish
+    if test -f $SYS_FZF_HELPER; and command -q fzf
+        source $SYS_FZF_HELPER
+    end
+
     if command -q atuin
         atuin init fish --disable-up-arrow | source
     end
@@ -360,10 +367,6 @@ if status is-interactive
     end
     if command -q direnv
         direnv hook fish | source
-    end
-
-    if command -q sysz
-        bind ctrl-alt-y 'sysz; commandline -f repaint'
     end
 
     # keep this at the bottom
