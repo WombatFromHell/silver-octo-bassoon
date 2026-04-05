@@ -33,71 +33,81 @@ if not command -q fzf
     return 0
 end
 
-# Determine appropriate pager and its arguments to avoid flag errors (e.g. bat vs less)
-set -gx _SYSTEMD_FZF_PAGER_CMD ""
-set -gx _SYSTEMD_FZF_PAGER_ARGS ""
-
-if command -q less
-    set -gx _SYSTEMD_FZF_PAGER_CMD less
-    set -gx _SYSTEMD_FZF_PAGER_ARGS -R # -R preserves ANSI colors
-else if command -q bat
-    set -gx _SYSTEMD_FZF_PAGER_CMD bat
-    set -gx _SYSTEMD_FZF_PAGER_ARGS "--paging=always"
-else if command -q moar
-    set -gx _SYSTEMD_FZF_PAGER_CMD moar
-end
-
 # =============================================================================
 # Core Implementation
 # =============================================================================
 
 function __systemd_fzf_core -S -a user_flag query
-    # Sudo is required for system-level modifications, but NOT for user-level
     set -l sudo_prefix ""
     if test -z "$user_flag"
         set sudo_prefix "sudo "
     end
 
-    # Build base command safely, trimming to avoid double spaces
-    set -l base_cmd "systemctl $user_flag"
-    string trim $base_cmd | read -l base_cmd
+    set -l base_cmd systemctl
+    if test -n "$user_flag"
+        set base_cmd $base_cmd $user_flag
+    end
+    set -l base_cmd_str "$base_cmd"
 
-    # Default list: manageable types. Excludes noisy kernel mounts/slices.
-    set -l list_cmd "$base_cmd list-units --type=service,socket,target,timer,mount,swap --no-pager --no-legend"
+    set -l list_cmd_str "$base_cmd_str list-units --type=service,socket,target,timer,mount,swap --no-pager --no-legend"
+    set -l list_all_cmd_str "$base_cmd_str list-units --all --no-pager --no-legend"
 
-    # Full raw list for Ctrl-a toggle
-    set -l list_all_cmd "$base_cmd list-units --all --no-pager --no-legend"
+    set -l journal_cmd journalctl
+    if test -n "$user_flag"
+        set journal_cmd $journal_cmd $user_flag
+    end
+    set -l journal_cmd_str "$journal_cmd"
 
-    set -l journal_cmd "journalctl $user_flag"
+    set -l pager_cmd
+    if command -q less
+        set pager_cmd less -R
+    else if command -q bat
+        set pager_cmd bat "--paging=always"
+    else if command -q moar
+        set pager_cmd moar
+    else
+        set pager_cmd cat
+    end
+    set -l pager_str "$pager_cmd"
 
-    # Resolve pager command safely
-    set -l pager_str "$_SYSTEMD_FZF_PAGER_CMD $_SYSTEMD_FZF_PAGER_ARGS"
-    if test -z "$_SYSTEMD_FZF_PAGER_CMD"
-        set pager_str cat
+    # Use tmux new-window to isolate journalctl from fzf's terminal state,
+    # preventing tmux pane-switching bindings from breaking. Fall back to
+    # plain execute() outside of tmux.
+    set -l bind_logs
+    set -l bind_follow
+    if set -q TMUX
+        set bind_logs "ctrl-l:execute(tmux new-window '$journal_cmd_str -r -u {1} -n 200 --no-pager 2>/dev/null | $pager_str')"
+        set bind_follow "ctrl-f:execute(tmux new-window '$journal_cmd_str -u {1} -f 2>/dev/null')"
+    else
+        set bind_logs "ctrl-l:execute($journal_cmd_str -u {1} -r -n 200 --no-pager 2>/dev/null | $pager_str)"
+        set bind_follow "ctrl-f:execute($journal_cmd_str -u {1} -f 2>/dev/null)"
     end
 
-    # Run fzf
-    # Note: {1} is fzf's syntax to extract the first column (the unit name)
+    set -l border_label systemctl
+    if test -n "$user_flag"
+        set border_label "$border_label --user"
+    end
+
     set -l result (
-        eval $list_cmd | fzf \
+        eval $list_cmd_str | fzf \
             --ansi \
             --no-mouse \
-            --preview="$base_cmd status {1} 2>/dev/null" \
+            --preview="$base_cmd_str status {1} 2>/dev/null" \
             --preview-window='right:65%:wrap:border-left:hidden' \
             --bind='?:toggle-preview' \
-            --bind="enter:execute($base_cmd status {1} 2>/dev/null | $pager_str)+abort" \
-            --bind="ctrl-s:execute($sudo_prefix$base_cmd start {1} 2>&1 && echo '✓ Started {1}' || echo '✗ Failed: {1}'; sleep 0.5)+reload($list_cmd)" \
-            --bind="ctrl-x:execute($sudo_prefix$base_cmd stop {1} 2>&1 && echo '✓ Stopped {1}' || echo '✗ Failed: {1}'; sleep 0.5)+reload($list_cmd)" \
-            --bind="ctrl-r:execute($sudo_prefix$base_cmd restart {1} 2>&1 && echo '✓ Restarted {1}' || echo '✗ Failed: {1}'; sleep 0.5)+reload($list_cmd)" \
-            --bind="ctrl-e:execute($sudo_prefix$base_cmd enable {1} 2>&1 && echo '✓ Enabled {1}' || echo '✗ Failed: {1}'; sleep 0.5)+reload($list_cmd)" \
-            --bind="ctrl-d:execute($sudo_prefix$base_cmd disable {1} 2>&1 && echo '✓ Disabled {1}' || echo '✗ Failed: {1}'; sleep 0.5)+reload($list_cmd)" \
-            --bind="ctrl-l:execute($journal_cmd -u {1} -n 200 --no-pager 2>/dev/null | $pager_str)+abort" \
-            --bind="ctrl-f:execute($journal_cmd -u {1} -f 2>/dev/null)+abort" \
-            --bind="ctrl-t:reload($base_cmd list-timers --all --no-pager --no-legend)" \
-            --bind="ctrl-a:reload($list_all_cmd)" \
+            --bind="enter:execute($base_cmd_str status {1} 2>/dev/null | $pager_str)+abort" \
+            --bind="ctrl-s:execute($sudo_prefix$base_cmd_str start {1} 2>&1 && echo '✓ Started {1}' || echo '✗ Failed: {1}'; sleep 0.5)+reload($list_cmd_str)" \
+            --bind="ctrl-x:execute($sudo_prefix$base_cmd_str stop {1} 2>&1 && echo '✓ Stopped {1}' || echo '✗ Failed: {1}'; sleep 0.5)+reload($list_cmd_str)" \
+            --bind="ctrl-r:execute($sudo_prefix$base_cmd_str restart {1} 2>&1 && echo '✓ Restarted {1}' || echo '✗ Failed: {1}'; sleep 0.5)+reload($list_cmd_str)" \
+            --bind="ctrl-e:execute($sudo_prefix$base_cmd_str enable {1} 2>&1 && echo '✓ Enabled {1}' || echo '✗ Failed: {1}'; sleep 0.5)+reload($list_cmd_str)" \
+            --bind="ctrl-d:execute($sudo_prefix$base_cmd_str disable {1} 2>&1 && echo '✓ Disabled {1}' || echo '✗ Failed: {1}'; sleep 0.5)+reload($list_cmd_str)" \
+            --bind="$bind_logs" \
+            --bind="$bind_follow" \
+            --bind="ctrl-t:reload($base_cmd_str list-timers --all --no-pager --no-legend)" \
+            --bind="ctrl-a:reload($list_all_cmd_str)" \
             --header='Enter:status │ ?:preview │ s:start │ x:stop │ r:restart │ e:enable │ d:disable │ l:logs │ f:follow │ t:timers │ a:all units' \
             --border='rounded' \
-            --border-label='systemctl' \
+            --border-label="$border_label" \
             --cycle \
             --pointer='→' \
             --marker='✓' \
@@ -108,11 +118,10 @@ function __systemd_fzf_core -S -a user_flag query
             2>/dev/null
     )
 
-    # Fallback display if needed (normally caught by +abort on enter)
     if test -n "$result"
         set -l unit (string split -f1 ' ' -- $result | string trim)
         if test -n "$unit"
-            $base_cmd status "$unit" | $pager_str
+            $base_cmd status "$unit" | $pager_cmd
         end
     end
 end
