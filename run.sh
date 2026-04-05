@@ -17,9 +17,13 @@
 #   --verify            Run verification play only
 #   --role NAME         Run a specific role (e.g., --role base)
 #   --tags TAGS         Run tasks with specific tags
+#   --list, -l          List all available roles
 #   --limit HOST        Run on specific host(s)
 #   --all-hosts         Run on ALL hosts in inventory (overrides auto-limit)
 #   --help, -h          Show this help message
+#
+# Note: --ask-become-pass is automatically enabled for deployment modes.
+#       You will be prompted ONCE for the sudo password at the start.
 #
 # Examples:
 #   ./run.sh                      # Deploy to current host (auto-limited)
@@ -33,6 +37,7 @@
 #   ./run.sh --role btrfs --check # Test btrfs role dry-run
 #   ./run.sh --tags packages      # Run only package-related tasks
 #   ./run.sh --all-hosts          # Deploy to ALL hosts (careful!)
+#   ./run.sh --list               # List all available roles
 #
 
 set -e
@@ -89,6 +94,7 @@ show_help() {
   echo "   --preflight               Prerequisite checks only"
   echo "   --verify                  Verify system state"
   echo "   --role NAME               Run specific role"
+  echo "   --list                    List available roles"
   echo ""
   echo "Common Ansible Arguments:"
   echo "   -v, -vv, -vvv             Verbosity levels"
@@ -165,6 +171,10 @@ while [[ $# -gt 0 ]]; do
     LIMIT_EXPLICIT=true
     shift
     ;;
+  --list | -l)
+    MODE="list"
+    shift
+    ;;
   --ask-become-pass)
     ANSIBLE_ARGS+=("--ask-become-pass")
     shift
@@ -176,6 +186,14 @@ while [[ $# -gt 0 ]]; do
     ;;
   esac
 done
+
+# Auto-enable become password prompt for deployment modes
+if [[ "$MODE" == "deploy" || "$MODE" == "role" || "$MODE" == "preflight" || "$MODE" == "verify" ]]; then
+  # Only add if not already specified by user
+  if [[ ! " ${ANSIBLE_ARGS[*]} " =~ " --ask-become-pass " ]]; then
+    ANSIBLE_ARGS+=("--ask-become-pass")
+  fi
+fi
 
 # Auto-limit to current host if not explicitly specified
 if [[ "$LIMIT_EXPLICIT" == "false" && "$MODE" == "deploy" ]]; then
@@ -258,34 +276,72 @@ deploy)
   fi
   echo ""
 
-  # Run preflight first (unless check mode)
-  if [[ ! " ${ANSIBLE_ARGS[*]} " =~ " --check " ]]; then
-    print_header "Step 1: Preflight Checks"
-    ansible-playbook plays/preflight.yml "${ANSIBLE_ARGS[@]}" || {
-      print_error "Preflight checks failed"
-      exit 1
-    }
-    echo ""
-  fi
-
-  # Run main deployment
-  print_header "Step 2: System Configuration"
+  # Run everything in a single ansible-playbook invocation
+  # This ensures only ONE become password prompt
+  print_header "Running System Configuration"
   ansible-playbook site.yml "${ANSIBLE_ARGS[@]}" || {
     print_error "Deployment failed"
     exit 1
   }
   echo ""
 
-  # Run teardown (unless check mode)
-  if [[ ! " ${ANSIBLE_ARGS[*]} " =~ " --check " ]]; then
-    print_header "Step 3: Teardown"
-    ansible-playbook plays/teardown.yml "${ANSIBLE_ARGS[@]}" || {
-      print_warning "Teardown had warnings (this may be expected)"
-    }
-    echo ""
-  fi
-
   print_success "Deployment complete!"
+  ;;
+
+list)
+  print_header "Available Roles"
+  echo ""
+  
+  ROLES_DIR="$SCRIPT_DIR/roles"
+  if [[ -d "$ROLES_DIR" ]]; then
+    echo -e "${GREEN}Roles:${NC}"
+    for role_dir in "$ROLES_DIR"/*/; do
+      if [[ -d "$role_dir" ]]; then
+        role_name=$(basename "$role_dir")
+        echo -e "  ${GREEN}•${NC} $role_name"
+      fi
+    done
+  else
+    print_warning "No roles directory found at: $ROLES_DIR"
+  fi
+  
+  echo ""
+  print_header "Available Tags"
+  echo ""
+  
+  # Extract unique tags from roles and plays
+  TAGS=$(grep -rhoP 'tags:\s*\K\[?[^\]]+\]?' "$SCRIPT_DIR/roles/" "$SCRIPT_DIR/plays/" --include='*.yml' 2>/dev/null | \
+    tr -d '[]' | tr ',' '\n' | sed 's/^["'"'"']\+//;s/["'"'"']\+$//' | xargs -n1 | sort -u | grep -v '^$')
+  
+  if [[ -n "$TAGS" ]]; then
+    # Group tags by prefix
+    echo -e "${YELLOW}Core tags:${NC}"
+    echo "$TAGS" | grep -E '^(core|always|setup|bootstrap|preflight|verify|teardown|facts|extra)$' | while read -r tag; do
+      echo -e "  ${GREEN}•${NC} $tag"
+    done
+    
+    echo ""
+    echo -e "${YELLOW}Role tags:${NC}"
+    echo "$TAGS" | grep -E '^(aur|pacman|btrfs|dotfiles|flatpak|mounts|nix|vfio|arpc|distrobox|tuckr|udev|polkit|sudoers|bootloader|fonts|zram|chaoticaur|appimages|brew|etc|globalbin|globalunits|limitsd|shortcuts|home_manager)$' | while read -r tag; do
+      echo -e "  ${GREEN}•${NC} $tag"
+    done
+    
+    echo ""
+    echo -e "${YELLOW}Sub-tags:${NC}"
+    echo "$TAGS" | grep -vE '^(core|always|setup|bootstrap|preflight|verify|teardown|facts|extra|aur|pacman|btrfs|dotfiles|flatpak|mounts|nix|vfio|arpc|distrobox|tuckr|udev|polkit|sudoers|bootloader|fonts|zram|chaoticaur|appimages|brew|etc|globalbin|globalunits|limitsd|shortcuts|home_manager)$' | while read -r tag; do
+      echo -e "  ${GREEN}•${NC} $tag"
+    done
+  else
+    print_warning "No tags found"
+  fi
+  
+  echo ""
+  echo -e "${BLUE}Usage examples:${NC}"
+  echo "  ./run.sh --role base          # Run base role"
+  echo "  ./run.sh --role base --check  # Dry-run base role"
+  echo "  ./run.sh --tags packages      # Run tasks tagged 'packages'"
+  echo "  ./run.sh --tags btrfs --check # Test btrfs-related tasks"
+  exit 0
   ;;
 
 *)
