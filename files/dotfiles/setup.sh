@@ -297,9 +297,6 @@ do_post_stow() {
 			mkdir -p "$HOME/.config/uwsm"
 			ln -sf "$HOME/.profile" "$HOME/.config/uwsm/env"
 			echo "Detected 'uwsm'; linked ~/.profile to ~/.config/uwsm/env."
-			remove_this "$HOME/.config/trguing.json"
-			ln -sf "$(realpath "$ROOT/$dir/.config/trguing.json")" "$(realpath "$HOME/.config/trguing.json")"
-			echo "Linked to realpath of 'trguing.json'."
 		fi
 		local MONITOR_SCRIPTS="$HOME/.local/bin/monitor-session"
 		local SCRIPTS_DIR="$HOME/.local/bin/scripts"

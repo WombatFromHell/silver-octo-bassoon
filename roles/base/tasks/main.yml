@@ -41,10 +41,6 @@
   ansible.builtin.import_tasks: polkit.yml
   tags: [extra, polkit]
 
-- name: Include limitsd configs task
-  ansible.builtin.import_tasks: limits.yml
-  tags: [extra, limitsd]
-
 - name: Include udev-rules.d task
   ansible.builtin.import_tasks: udev.yml
   tags: [extra, udev]

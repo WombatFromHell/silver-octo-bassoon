@@ -8,22 +8,40 @@
         state: directory
         mode: "0755"
       become: true
+      when: ansible_system == "Linux"
 
-    - name: Copy tuckr binary
-      ansible.builtin.copy:
-        src: "{{ role_path }}/files/bin/tuckr"
-        dest: /usr/local/bin/tuckr
-        mode: "0755"
-        remote_src: false
-      become: true
-      register: dotfiles_tuckr_installed
-      no_log: true
+    - name: Install tuckr on Linux
+      when: ansible_system == "Linux"
+      block:
+        - name: Download tuckr binary
+          ansible.builtin.get_url:
+            url: "https://github.com/RaphGL/Tuckr/releases/download/0.13.0/tuckr-x86_64-linux"
+            dest: /usr/local/bin/tuckr
+            mode: "0755"
+            checksum: "sha256:f8a2057bf766c723c90b808146a5b17ec037575e3e4c9163492dce9678e5eaea"
+          become: true
+          register: dotfiles_tuckr_downloaded
 
-    - name: Verify tuckr installation
-      ansible.builtin.command: "tuckr --version"
-      register: dotfiles_tuckr_version
-      changed_when: false
-      failed_when: dotfiles_tuckr_version.rc != 0
+        - name: Verify tuckr installation
+          ansible.builtin.command: "tuckr --version"
+          register: dotfiles_tuckr_version
+          changed_when: false
+          failed_when: dotfiles_tuckr_version.rc != 0
+
+    - name: Install tuckr on macOS
+      when: ansible_system == "Darwin"
+      block:
+        - name: Install tuckr via Homebrew
+          community.general.homebrew:
+            name: tuckr
+            state: present
+          register: dotfiles_tuckr_installed
+
+        - name: Verify tuckr installation
+          ansible.builtin.command: "tuckr --version"
+          register: dotfiles_tuckr_version
+          changed_when: false
+          failed_when: dotfiles_tuckr_version.rc != 0
 
     - name: Check existing dotfiles root symlink
       ansible.builtin.stat:
