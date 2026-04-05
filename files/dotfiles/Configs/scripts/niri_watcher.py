@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-niri_vrr_watcher.py — Auto-enable VRR for fullscreen applications in niri.
+niri_watcher.py — Track fullscreen applications in niri and fire hooks.
 
 Architecture:
     config       — Pure dataclasses / settings (no I/O at import time)
@@ -8,9 +8,7 @@ Architecture:
     fetchers     — Thin I/O wrappers that return raw JSON strings
     parsers      — Pure JSON → model converters (easy to unit-test)
     evaluators   — Pure business-logic predicates (easy to unit-test)
-    gpu          — GPU-PID ancestor resolution (side-effectful, mockable)
     hooks        — Hook execution (side-effectful, mockable)
-    niri         — niri msg command wrappers (side-effectful, mockable)
     state        — Mutable runtime state containers
     orchestrator — Main poll loop; wires all layers together
 """
@@ -27,13 +25,13 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable
 
 # ---------------------------------------------------------------------------
 # Logging — module-level reference; handlers attached in main()
 # ---------------------------------------------------------------------------
 
-log = logging.getLogger("niri_vrr")
+log = logging.getLogger("niri_watcher")
 
 
 # ===========================================================================
@@ -54,14 +52,13 @@ log = logging.getLogger("niri_vrr")
 #
 # Environment variable reference (consumed by from_env()):
 #
-#   NIRI_VRR_POLL_INTERVAL   float  Seconds between poll cycles       [2]
-#   NIRI_VRR_LOG_FILE        path   Log file path override            [$XDG_RUNTIME_DIR/niri-vrr-watcher.log]
-#   NIRI_VRR_STARTUP_DELAY   float  Seconds to wait before first poll [3]
-#   NIRI_VRR_DEBUG           "0"/"1" Enable DEBUG-level logging       [0]
-#   NIRI_VRR_RELAXED_MODE    "0"/"1" Skip GPU-activity check          [0]
-#   NIRI_VRR_HOOK_ON         str    Colon-separated on-hooks          []
-#   NIRI_VRR_HOOK_OFF        str    Colon-separated off-hooks         []
-#   NIRI_VRR_EXCLUDED_APPS   str    Colon-separated app-ids to append []
+#   WATCHER_POLL_INTERVAL   float  Seconds between poll cycles       [2]
+#   WATCHER_LOG_FILE        path   Log file path override            [$XDG_RUNTIME_DIR/niri_watcher.log]
+#   WATCHER_STARTUP_DELAY   float  Seconds to wait before first poll [3]
+#   WATCHER_DEBUG           "0"/"1" Enable DEBUG-level logging       [0]
+#   WATCHER_HOOK_ON         str    Colon-separated on-hooks          []
+#   WATCHER_HOOK_OFF        str    Colon-separated off-hooks         []
+#   WATCHER_EXCLUDED_APPS   str    Colon-separated app-ids to append []
 #
 # ===========================================================================
 
@@ -88,17 +85,16 @@ class Config:
     """
 
     poll_interval: float = 2.0
-    log_file: Path = Path("/tmp/niri-vrr-watcher.log")
+    log_file: Path = Path("/tmp/niri_watcher.log")
     startup_delay: float = 3.0
     debug_mode: bool = False
-    relaxed_mode: bool = False
     hook_on: list[str] = field(default_factory=list)
     hook_off: list[str] = field(default_factory=list)
     excluded_apps: frozenset[str] = frozenset()
 
     @classmethod
     def from_env(cls) -> Config:
-        """Build a Config from the ``NIRI_VRR_*`` environment variables.
+        """Build a Config from the ``WATCHER_*`` environment variables.
 
         Designed to be called once at startup (in ``main()``).  Env vars
         are read at call time, not at import time, so the module can be
@@ -106,22 +102,21 @@ class Config:
         """
         runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
         return cls(
-            poll_interval=float(os.environ.get("NIRI_VRR_POLL_INTERVAL", "2")),
+            poll_interval=float(os.environ.get("WATCHER_POLL_INTERVAL", "2")),
             log_file=Path(
                 os.environ.get(
-                    "NIRI_VRR_LOG_FILE",
-                    f"{runtime_dir}/niri-vrr-watcher.log",
+                    "WATCHER_LOG_FILE",
+                    f"{runtime_dir}/niri_watcher.log",
                 )
             ),
-            startup_delay=float(os.environ.get("NIRI_VRR_STARTUP_DELAY", "3")),
-            debug_mode=os.environ.get("NIRI_VRR_DEBUG", "0") == "1",
-            relaxed_mode=os.environ.get("NIRI_VRR_RELAXED_MODE", "0") == "1",
-            hook_on=_parse_hook_var("NIRI_VRR_HOOK_ON"),
-            hook_off=_parse_hook_var("NIRI_VRR_HOOK_OFF"),
+            startup_delay=float(os.environ.get("WATCHER_STARTUP_DELAY", "3")),
+            debug_mode=os.environ.get("WATCHER_DEBUG", "0") == "1",
+            hook_on=_parse_hook_var("WATCHER_HOOK_ON"),
+            hook_off=_parse_hook_var("WATCHER_HOOK_OFF"),
             excluded_apps=frozenset(_DEFAULT_EXCLUDED)
             | frozenset(
                 e.strip()
-                for e in os.environ.get("NIRI_VRR_EXCLUDED_APPS", "").split(":")
+                for e in os.environ.get("WATCHER_EXCLUDED_APPS", "").split(":")
                 if e.strip()
             ),
         )
@@ -134,8 +129,8 @@ def _parse_hook_var(name: str) -> list[str]:
 
     ::
 
-        NIRI_VRR_HOOK_ON="/path/to/boost.sh on"
-        NIRI_VRR_HOOK_ON="/path/to/boost.sh on:/path/to/notify.sh on"
+        WATCHER_HOOK_ON="/path/to/boost.sh on"
+        WATCHER_HOOK_ON="/path/to/boost.sh on:/path/to/notify.sh on"
 
     Colons delimit individual commands.  Leading/trailing whitespace
     around each command is stripped.  Empty entries are ignored.
@@ -157,16 +152,31 @@ class OutputInfo:
     name: str
     width: int
     height: int
-    vrr_supported: bool = True
+    enabled: bool = True
+    scale: float = 1.0
 
     @property
     def resolution(self) -> tuple[int, int]:
+        """Logical resolution (before scale is applied)."""
         return (self.width, self.height)
 
     @property
-    def is_vrr_capable(self) -> bool:
-        """Whether this output currently reports VRR support."""
-        return self.vrr_supported
+    def physical_resolution(self) -> tuple[int, int]:
+        """Actual pixel resolution after applying scale factor."""
+        return (
+            int(self.width * self.scale),
+            int(self.height * self.scale),
+        )
+
+    @property
+    def is_enabled(self) -> bool:
+        """Whether this output is currently enabled (has a valid mode)."""
+        return self.enabled
+
+    @property
+    def is_scaled(self) -> bool:
+        """Whether this output has a scale factor other than 1.0."""
+        return self.scale != 1.0
 
 
 @dataclass(frozen=True)
@@ -217,28 +227,6 @@ def fetch_niri_workspaces() -> str:
     return _run_cmd(["niri", "msg", "-j", "workspaces"]) or "[]"
 
 
-def fetch_gpu_pids() -> list[int]:
-    """Return PIDs of processes doing GPU graphic+compute work via nvtop -s."""
-    try:
-        result = subprocess.run(
-            ["nvtop", "-s"], capture_output=True, text=True, timeout=5
-        )
-        data = json.loads(result.stdout)
-        pids: list[int] = []
-        for entry in data:
-            for proc in entry.get("processes", []):
-                if proc.get("kind") == "graphic & compute":
-                    pid = proc.get("pid")
-                    if pid is not None:
-                        try:
-                            pids.append(int(pid))
-                        except (ValueError, TypeError):
-                            pass
-        return pids
-    except Exception:
-        return []
-
-
 # ===========================================================================
 # parsers — pure JSON → model converters
 # ===========================================================================
@@ -248,6 +236,16 @@ def parse_outputs(outputs_json: str | None) -> dict[str, OutputInfo]:
     """
     Parse niri outputs JSON (object keyed by output name).
     Returns {output_name: OutputInfo}.
+
+    An output with ``current_mode: null`` is considered disabled (e.g., a
+    disconnected monitor) and is marked with ``enabled=False``.  Disabled
+    outputs are still returned in the dict so the orchestrator can track
+    them, but their resolution defaults to (0, 0).
+
+    The mode ``width``/``height`` from niri is the physical resolution.
+    Scale is read from the ``logical.scale`` field, defaulting to 1.0.
+    The stored ``width``/``height`` are the logical resolution (physical / scale),
+    so that ``physical_resolution`` correctly returns the actual pixel dimensions.
     """
     if not outputs_json:
         return {}
@@ -261,15 +259,33 @@ def parse_outputs(outputs_json: str | None) -> dict[str, OutputInfo]:
     for name, info in data.items():
         modes = info.get("modes", [])
         current_idx = info.get("current_mode")
+
+        # Detect disabled output: current_mode is explicitly null
+        if current_idx is None:
+            result[name] = OutputInfo(name=name, width=0, height=0, enabled=False)
+            continue
+
         try:
-            mode = modes[current_idx] if current_idx is not None else modes[0]
-            w, h = int(mode["width"]), int(mode["height"])
+            mode = modes[current_idx]
+            physical_w, physical_h = int(mode["width"]), int(mode["height"])
         except (IndexError, KeyError, TypeError, ValueError):
             log.debug("Could not determine mode for output %s", name)
             continue
-        vrr_supported = bool(info.get("vrr_supported", True))
+
+        # Extract scale from logical section
+        logical = info.get("logical", {})
+        scale = float(logical.get("scale", 1.0)) if logical else 1.0
+
+        # Store logical dimensions (physical / scale) so that
+        # physical_resolution = logical * scale = physical
+        logical_w = int(physical_w / scale) if scale != 0 else physical_w
+        logical_h = int(physical_h / scale) if scale != 0 else physical_h
+
         result[name] = OutputInfo(
-            name=name, width=w, height=h, vrr_supported=vrr_supported
+            name=name,
+            width=logical_w,
+            height=logical_h,
+            scale=scale,
         )
 
     return result
@@ -352,19 +368,32 @@ class EvalContext:
     ws_to_output: dict[int, str]
     outputs: dict[str, OutputInfo]
     excluded_apps: frozenset[str]
-    gpu_ancestor_pids: set[int]
-    relaxed_mode: bool
 
 
 def is_app_excluded(app_id: str, excluded: frozenset[str]) -> bool:
     return app_id in excluded
 
 
+_FULLSCREEN_TOLERANCE = 2  # px; handles fractional-scalating drift (e.g. 2562 vs 2560)
+
+
 def is_fullscreen(window: WindowInfo, output: OutputInfo) -> bool:
+    """Check if the window fills the output's logical viewport.
+
+    Both window dimensions (tile_size/window_size) and the output's
+    logical resolution are reported by niri in the same coordinate
+    space, so scale does not affect fullscreen detection.
+
+    A small tolerance (``_FULLSCREEN_TOLERANCE``) is applied to each
+    axis to account for minor discrepancies from fractional scaling
+    or compositor tile math.
+    """
     size = window.effective_size
     if size is None:
         return False
-    return size == output.resolution
+    ow, oh = output.resolution
+    return (abs(size[0] - ow) <= _FULLSCREEN_TOLERANCE
+            and abs(size[1] - oh) <= _FULLSCREEN_TOLERANCE)
 
 
 def resolve_output_for_window(
@@ -380,13 +409,13 @@ def resolve_output_for_window(
     return ctx.outputs.get(output_name)
 
 
-def window_wants_vrr(
+def window_is_fullscreen_and_active(
     window: WindowInfo,
     ctx: EvalContext,
 ) -> OutputInfo | None:
     """
-    Return the OutputInfo that should have VRR enabled for this window,
-    or None if VRR should not be enabled.
+    Return the OutputInfo if this window is fullscreen and active,
+    or None otherwise.
 
     Pure function — all external state passed via EvalContext.
     """
@@ -397,6 +426,11 @@ def window_wants_vrr(
     if output is None:
         return None
 
+    # Skip disabled outputs (current_mode: null)
+    if not output.is_enabled:
+        log.debug("\u2298 Disabled output ignored: %s", output.name)
+        return None
+
     if window.app_id and is_app_excluded(window.app_id, ctx.excluded_apps):
         log.debug("\u2298 Excluded: %s", window.app_id)
         return None
@@ -404,81 +438,27 @@ def window_wants_vrr(
     if not is_fullscreen(window, output):
         return None
 
-    if not ctx.relaxed_mode:
-        has_any_gpu = bool(ctx.gpu_ancestor_pids)
-        pid_is_gpu = window.pid is not None and window.pid in ctx.gpu_ancestor_pids
-        if not pid_is_gpu:
-            if not has_any_gpu:
-                return None
-            log.debug("\u2713 GPU activity (fallback): %s", window.app_id)
-        # pid_is_gpu -> direct match, pass through
-    else:
-        log.debug("\u2713 Fullscreen (relaxed mode): %s", window.app_id)
-
+    log.debug("\u2713 Fullscreen: %s", window.app_id)
     return output
 
 
-def compute_desired_vrr(
+def compute_desired_fullscreen(
     windows: list[WindowInfo],
     ctx: EvalContext,
 ) -> dict[str, bool]:
     """
-    Return {output_name: vrr_desired} for all known outputs.
+    Return {output_name: has_fullscreen_app} for all known outputs.
 
     Pure function — deterministic given its inputs.
     """
     desired = {name: False for name in ctx.outputs}
 
     for window in windows:
-        output = window_wants_vrr(window, ctx)
+        output = window_is_fullscreen_and_active(window, ctx)
         if output is not None:
             desired[output.name] = True
 
     return desired
-
-
-# ===========================================================================
-# gpu — GPU-PID ancestor resolution
-# ===========================================================================
-
-
-def _get_ppid(pid: int) -> int | None:
-    """Return parent PID for pid, or None if unavailable."""
-    try:
-        result = subprocess.run(
-            ["ps", "-o", "ppid=", "-p", str(pid)],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        ppid_str = result.stdout.strip()
-        return int(ppid_str) if ppid_str else None
-    except (subprocess.TimeoutExpired, ValueError, OSError):
-        return None
-
-
-def build_gpu_ancestor_set(leaf_pids: Iterable[int]) -> set[int]:
-    """
-    Walk the process tree upward from each GPU leaf PID.
-    Returns a set of all ancestor PIDs (including the leaves).
-    """
-    ancestors: set[int] = set()
-    leaf_count = 0
-    for leaf in leaf_pids:
-        leaf_count += 1
-        current: int | None = leaf
-        while current is not None and current not in (0, 1):
-            if current in ancestors:
-                break  # already walked this branch
-            ancestors.add(current)
-            current = _get_ppid(current)
-
-    log.debug(
-        "GPU ancestor set: %d PIDs from %d leaves",
-        len(ancestors),
-        leaf_count,
-    )
-    return ancestors
 
 
 # ===========================================================================
@@ -517,68 +497,28 @@ def execute_hook(
 
 
 # ===========================================================================
-# niri — niri msg command wrappers
-# ===========================================================================
-
-
-def niri_set_vrr(output_name: str, enable: bool) -> bool:
-    """
-    Call ``niri msg output <name> vrr on|off``.
-    Returns True on success, False on failure.
-    """
-    state = "on" if enable else "off"
-    try:
-        result = subprocess.run(
-            ["niri", "msg", "output", output_name, "vrr", state],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode != 0:
-            log.warning(
-                "niri vrr %s failed for %s: %s",
-                state,
-                output_name,
-                result.stderr.strip(),
-            )
-            return False
-        return True
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
-        log.warning("niri command error: %s", exc)
-        return False
-
-
-# ===========================================================================
 # state — mutable runtime state containers
 # ===========================================================================
 
 
 @dataclass
-class VrrState:
-    """Tracks which outputs currently have VRR enabled."""
+class FullscreenState:
+    """Tracks which outputs currently have a fullscreen app."""
 
-    _vrr_enabled: dict[str, bool] = field(default_factory=dict)
-    _vrr_capable: dict[str, bool] = field(default_factory=dict)
+    _has_fullscreen: dict[str, bool] = field(default_factory=dict)
 
     def get(self, output_name: str) -> bool | None:
-        return self._vrr_enabled.get(output_name)
+        return self._has_fullscreen.get(output_name)
 
-    def mark(self, output_name: str, enabled: bool) -> None:
-        self._vrr_enabled[output_name] = enabled
-
-    def set_capable(self, output_name: str, capable: bool) -> None:
-        self._vrr_capable[output_name] = capable
-
-    def is_capable(self, output_name: str) -> bool:
-        return self._vrr_capable.get(output_name, True)
+    def mark(self, output_name: str, active: bool) -> None:
+        self._has_fullscreen[output_name] = active
 
     def clear(self, output_name: str) -> None:
-        self._vrr_enabled.pop(output_name, None)
-        self._vrr_capable.pop(output_name, None)
+        self._has_fullscreen.pop(output_name, None)
 
     def all_tracked(self) -> set[str]:
-        """Return names of all outputs with a recorded VRR state."""
-        return set(self._vrr_enabled)
+        """Return names of all outputs with a recorded state."""
+        return set(self._has_fullscreen)
 
 
 @dataclass
@@ -617,18 +557,14 @@ class VrrOrchestrator:
         fetch_outputs: Callable[[], str] = fetch_niri_outputs,
         fetch_windows: Callable[[], str] = fetch_niri_windows,
         fetch_workspaces: Callable[[], str] = fetch_niri_workspaces,
-        fetch_gpu: Callable[[], list[int]] = fetch_gpu_pids,
-        set_vrr: Callable[[str, bool], bool] = niri_set_vrr,
         run_hook: Callable[[str, str, int | None], None] = execute_hook,
     ):
         self.config = config
         self._fetch_outputs = fetch_outputs
         self._fetch_windows = fetch_windows
         self._fetch_workspaces = fetch_workspaces
-        self._fetch_gpu = fetch_gpu
-        self._set_vrr = set_vrr
         self._run_hook = run_hook
-        self._vrr_state = VrrState()
+        self._fullscreen_state = FullscreenState()
         self._app_tracker = AppTracker()
 
     # ------------------------------------------------------------------
@@ -672,16 +608,13 @@ class VrrOrchestrator:
         outputs: dict[str, OutputInfo],
         windows: list[WindowInfo],
         ws_to_output: dict[int, str],
-        gpu_ancestors: set[int],
     ) -> dict[str, bool]:
         ctx = EvalContext(
             ws_to_output=ws_to_output,
             outputs=outputs,
             excluded_apps=self.config.excluded_apps,
-            gpu_ancestor_pids=gpu_ancestors,
-            relaxed_mode=self.config.relaxed_mode,
         )
-        desired = compute_desired_vrr(windows, ctx)
+        desired = compute_desired_fullscreen(windows, ctx)
 
         # Log newly-fullscreen apps
         for window in windows:
@@ -702,118 +635,110 @@ class VrrOrchestrator:
     # Phase 4: Act
     # ------------------------------------------------------------------
 
-    def _apply_vrr_transitions(
+    def _apply_fullscreen_transitions(
         self, desired: dict[str, bool], outputs: dict[str, OutputInfo]
     ) -> list[tuple[str, bool]]:
-        """Compare desired vs current state, apply changes.
+        """Compare desired vs current state, record transitions.
 
         Returns a list of ``(output_name, new_state)`` transitions that
-        were logically applied.  For outputs that do not support VRR,
-        the niri toggle call is skipped but the state is still tracked
-        so that on/off hooks fire and internal bookkeeping stays correct.
+        were logically applied.
         """
         transitions: list[tuple[str, bool]] = []
 
-        # Capture previous capability before updating, then record new capability
-        prev_capability: dict[str, bool] = {
-            name: self._vrr_state.is_capable(name) for name in desired
-        }
-        for output_name in desired:
-            output = outputs.get(output_name)
-            vrr_capable = output.vrr_supported if output else True
-            self._vrr_state.set_capable(output_name, vrr_capable)
-
         for output_name, want_on in desired.items():
-            prev = self._vrr_state.get(output_name)
-            prev_capable = prev_capability[output_name]
-            vrr_capable = self._vrr_state.is_capable(output_name)
+            prev = self._fullscreen_state.get(output_name)
 
-            if prev == want_on and prev_capable == vrr_capable:
-                continue  # no change in state or capability
+            if prev == want_on:
+                continue  # no change in state
             if prev is None and not want_on:
-                continue  # never set VRR and it should be off — skip
+                continue  # never set and it should be off — skip
 
-            if vrr_capable:
-                if self._set_vrr(output_name, want_on):
-                    self._vrr_state.mark(output_name, want_on)
-                    transitions.append((output_name, want_on))
-                    log.info(
-                        "%s VRR on %s",
-                        "Enabling" if want_on else "Disabling",
-                        output_name,
-                    )
-            else:
-                # Output does not report VRR support — skip the niri
-                # command but still record the state so hooks fire.
-                self._vrr_state.mark(output_name, want_on)
-                transitions.append((output_name, want_on))
-                log.info(
-                    "%s VRR on %s (skipped: output does not support VRR)",
-                    "Would enable" if want_on else "Would disable",
-                    output_name,
-                )
+            self._fullscreen_state.mark(output_name, want_on)
+            transitions.append((output_name, want_on))
+            log.info(
+                "%s fullscreen tracking on %s",
+                "Enabling" if want_on else "Disabling",
+                output_name,
+            )
         return transitions
 
     def _execute_transition_hooks(
         self,
         transitions: list[tuple[str, bool]],
-        gpu_ancestors: set[int],
     ) -> None:
-        """Run on/off hooks for completed VRR transitions."""
+        """Run on/off hooks for completed fullscreen transitions."""
         for output_name, want_on in transitions:
             hooks = self.config.hook_on if want_on else self.config.hook_off
             for spec in hooks:
-                pid = next(iter(gpu_ancestors), None) if want_on else None
+                # PID: pass the focused window's PID if available
+                pid = self._get_focused_window_pid(output_name)
                 self._run_hook(spec, output_name, pid)
             if not want_on:
                 self._app_tracker.clear(output_name)
 
+    def _get_focused_window_pid(self, output_name: str) -> int | None:
+        """Return the PID of the focused window on the given output."""
+        outputs_json = self._fetch_outputs()
+        windows_json = self._fetch_windows()
+        workspaces_json = self._fetch_workspaces()
+        outputs = parse_outputs(outputs_json)
+        windows = parse_windows(windows_json)
+        ws_to_output = parse_workspaces(workspaces_json)
+
+        ctx = EvalContext(
+            ws_to_output=ws_to_output,
+            outputs=outputs,
+            excluded_apps=self.config.excluded_apps,
+        )
+
+        for window in windows:
+            if window.is_focused and window.workspace_id is not None:
+                ws_output = ws_to_output.get(window.workspace_id)
+                if ws_output == output_name:
+                    return window.pid
+        return None
+
     def _cleanup_stale_outputs(self, known_outputs: set[str]) -> None:
         """Remove state for outputs that disappeared."""
-        for gone in self._vrr_state.all_tracked() - known_outputs:
+        for gone in self._fullscreen_state.all_tracked() - known_outputs:
             log.info("Output %s disconnected, cleaning state", gone)
-            self._vrr_state.clear(gone)
+            self._fullscreen_state.clear(gone)
             self._app_tracker.clear(gone)
 
     def _act(
         self,
         desired: dict[str, bool],
         outputs: dict[str, OutputInfo],
-        gpu_ancestors: set[int],
     ) -> None:
-        transitions = self._apply_vrr_transitions(desired, outputs)
-        self._execute_transition_hooks(transitions, gpu_ancestors)
+        transitions = self._apply_fullscreen_transitions(desired, outputs)
+        self._execute_transition_hooks(transitions)
         self._cleanup_stale_outputs(set(desired))
 
     # ------------------------------------------------------------------
     # Single poll cycle (exposed for testing)
     # ------------------------------------------------------------------
 
-    def poll_once(self, gpu_ancestors: set[int]) -> None:
+    def poll_once(self) -> None:
         outputs_json, windows_json, workspaces_json = self._collect()
         outputs, windows, ws_to_output = self._parse(
             outputs_json, windows_json, workspaces_json
         )
-        desired = self._decide(outputs, windows, ws_to_output, gpu_ancestors)
-        self._act(desired, outputs, gpu_ancestors)
+        desired = self._decide(outputs, windows, ws_to_output)
+        self._act(desired, outputs)
 
     # ------------------------------------------------------------------
     # Shutdown
     # ------------------------------------------------------------------
 
     def shutdown(self) -> None:
-        """Disable VRR and run off-hooks for all tracked outputs."""
-        log.info("Shutting down, disabling all VRR states...")
-        for output_name in list(self._vrr_state._vrr_enabled):
-            was_on = self._vrr_state.get(output_name)
-            capable = self._vrr_state.is_capable(output_name)
-            if was_on and capable:
-                self._set_vrr(output_name, False)
-                log.info("Disabling VRR on %s (shutdown)", output_name)
-            if was_on:
+        """Run off-hooks for all tracked outputs."""
+        log.info("Shutting down, clearing all fullscreen states...")
+        for output_name in list(self._fullscreen_state._has_fullscreen):
+            was_active = self._fullscreen_state.get(output_name)
+            if was_active:
                 for spec in self.config.hook_off:
                     self._run_hook(spec, output_name, None)
-            self._vrr_state.clear(output_name)
+            self._fullscreen_state.clear(output_name)
             self._app_tracker.clear(output_name)
 
     # ------------------------------------------------------------------
@@ -836,21 +761,15 @@ class VrrOrchestrator:
             signal.signal(signal.SIGTERM, _handle_signal)
 
         log.info(
-            "Monitoring active (interval: %.1fs, relaxed=%s)",
+            "Monitoring active (interval: %.1fs)",
             self.config.poll_interval,
-            self.config.relaxed_mode,
         )
 
         while True:
             cycle_start = time.monotonic()
 
-            gpu_ancestors: set[int] = set()
-            if not self.config.relaxed_mode:
-                leaf_pids = self._fetch_gpu()
-                gpu_ancestors = build_gpu_ancestor_set(leaf_pids)
-
             try:
-                self.poll_once(gpu_ancestors)
+                self.poll_once()
             except Exception:
                 log.exception("Unexpected error in poll cycle")
 
@@ -865,12 +784,10 @@ class VrrOrchestrator:
 # ===========================================================================
 
 
-def check_dependencies(relaxed_mode: bool) -> bool:
+def check_dependencies() -> bool:
     missing: list[str] = []
     if not shutil.which("niri"):
         missing.append("niri")
-    if not relaxed_mode and not shutil.which("nvtop"):
-        missing.append("nvtop")
     if missing:
         log.error("Missing required commands: %s", ", ".join(missing))
         print(f"Error: Missing: {', '.join(missing)}", file=sys.stderr)
@@ -879,7 +796,7 @@ def check_dependencies(relaxed_mode: bool) -> bool:
 
 
 # ===========================================================================
-# Entry point
+# entry point
 # ===========================================================================
 
 
@@ -903,7 +820,7 @@ def _configure_logging(
         the journal — no ``python3-systemd`` package needed.
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("niri_vrr")
+    logger = logging.getLogger("niri_watcher")
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
 
     # Clear stale handlers (important for re-configuration in tests)
@@ -940,14 +857,14 @@ def main() -> None:
 
     # Mirror to stderr when running as a systemd service (captured by
     # journald natively — no python3-systemd required) or when opted-in
-    # via NIRI_VRR_STDERR.
-    use_stderr = os.environ.get("NIRI_VRR_STDERR", "").lower() in ("1", "true", "yes")
+    # via WATCHER_STDERR.
+    use_stderr = os.environ.get("WATCHER_STDERR", "").lower() in ("1", "true", "yes")
     if not use_stderr:
         use_stderr = _detect_systemd_service()
 
     _configure_logging(config.log_file, config.debug_mode, service_mode=use_stderr)
 
-    if not check_dependencies(config.relaxed_mode):
+    if not check_dependencies():
         sys.exit(1)
 
     orchestrator = VrrOrchestrator(config)

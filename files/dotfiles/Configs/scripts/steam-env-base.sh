@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 # steam-env-base.sh - Base Steam gaming environment wrapper
 # Executes commands with standardized Steam environment variables

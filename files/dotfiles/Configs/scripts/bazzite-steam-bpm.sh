@@ -37,8 +37,9 @@ CMD+=(
 
 # include some optional wrappers conditionally
 OTHER_WRAPPERS=()
+# enable if using locally built mesa wrapper
 # add_if_exists "OTHER_WRAPPERS" "$HOME/mesa/mesa-run.sh"
-# add_if_exists "OTHER_WRAPPERS" "$SCRIPTS/perfboost.sh"
+add_if_exists "OTHER_WRAPPERS" "$SCRIPTS/gamemode.py --"
 
 # Add the rest of the command chain
 CMD+=(
