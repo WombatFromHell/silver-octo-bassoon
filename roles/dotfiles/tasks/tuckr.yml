@@ -1,6 +1,9 @@
 ---
 - name: Tuckr installation and dotfiles pre-install
   tags: tuckr
+  vars:
+    tuckr_version: "0.13.0"
+    tuckr_sha256: "f8a2057bf766c723c90b808146a5b17ec037575e3e4c9163492dce9678e5eaea"
   block:
     - name: Ensure /usr/local/bin exists
       ansible.builtin.file:
@@ -13,14 +16,24 @@
     - name: Install tuckr on Linux
       when: ansible_system == "Linux"
       block:
+        - name: Check existing tuckr binary checksum
+          ansible.builtin.stat:
+            path: /usr/local/bin/tuckr
+            checksum_algorithm: sha256
+          register: dotfiles_tuckr_stat
+          failed_when: false
+
         - name: Download tuckr binary
           ansible.builtin.get_url:
-            url: "https://github.com/RaphGL/Tuckr/releases/download/0.13.0/tuckr-x86_64-linux"
+            url: "https://github.com/RaphGL/Tuckr/releases/download/{{ tuckr_version }}/tuckr-x86_64-linux"
             dest: /usr/local/bin/tuckr
             mode: "0755"
-            checksum: "sha256:f8a2057bf766c723c90b808146a5b17ec037575e3e4c9163492dce9678e5eaea"
+            checksum: "sha256:{{ tuckr_sha256 }}"
           become: true
           register: dotfiles_tuckr_downloaded
+          when: >-
+            dotfiles_tuckr_stat.stat.checksum is not defined
+            or dotfiles_tuckr_stat.stat.checksum != tuckr_sha256
 
         - name: Verify tuckr installation
           ansible.builtin.command: "tuckr --version"
