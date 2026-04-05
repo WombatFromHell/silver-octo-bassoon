@@ -232,6 +232,7 @@ if status is-interactive
     alias lpod='lazydocker'
     alias yz='yazi'
     alias cat='bat'
+    alias ccat='cat -pP'
     alias edit='$EDITOR'
     alias sedit='sudo -E $EDITOR'
     alias mkdir='mkdir -pv'

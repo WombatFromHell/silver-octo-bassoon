@@ -275,7 +275,11 @@
       "GL-MT6000-1a7-5G"
     ]
   },
-  "bluetoothDevicePins": {},
+  "bluetoothDevicePins": {
+    "preferredDevice": [
+      "40:72:18:C5:4C:C9"
+    ]
+  },
   "audioInputDevicePins": {},
   "audioOutputDevicePins": {},
   "gtkThemingEnabled": false,
@@ -403,11 +407,10 @@
     "reboot",
     "logout",
     "poweroff",
-    "suspend",
     "lock",
     "restart"
   ],
-  "powerMenuDefaultAction": "suspend",
+  "powerMenuDefaultAction": "lock",
   "powerMenuGridLayout": false,
   "customPowerActionLock": "",
   "customPowerActionLogout": "",
@@ -424,6 +427,15 @@
   "showOnLastDisplay": {},
   "niriOutputSettings": {
     "DP-1": {
+      "vrrOnDemand": true
+    },
+    "LG Electronics LG TV SSCR2 0x01010101": {
+      "vrrOnDemand": true
+    },
+    "LG Electronics 27GL850 910NTGY7B319": {
+      "disabled": false
+    },
+    "HDMI-A-1": {
       "vrrOnDemand": true
     }
   },
