@@ -33,7 +33,7 @@
             path: "{{ dotfiles_root }}/Configs"
             file_type: directory
             recurse: false
-            excludes: "home,scripts,pipewire,systemd,tmux,niri"
+            excludes: "home,scripts,systemd,tmux"
           register: dotfiles_dirs
           no_log: true
 
@@ -67,14 +67,6 @@
     - name: Include tmux task
       ansible.builtin.import_tasks: tmux.yml
       tags: [extra, dotfiles, dotfiles_tmux]
-
-    # - name: Include niri task
-    #   ansible.builtin.import_tasks: niri.yml
-    #   tags: [extra, dotfiles, dotfiles_niri]
-
-    # - name: Include pipewire task
-    #   ansible.builtin.import_tasks: pipewire.yml
-    #   tags: [extra, dotfiles, dotfiles_pipewire]
 
     - name: Include GPG task
       ansible.builtin.import_tasks: gpg.yml
