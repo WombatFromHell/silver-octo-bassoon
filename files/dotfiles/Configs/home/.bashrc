@@ -1,3 +1,29 @@
+# .bashrc
+
+# Source global definitions
+if [ -f /etc/bashrc ]; then
+  . /etc/bashrc
+fi
+
+# User specific environment
+if ! [[ "$PATH" =~ "$HOME/.local/bin:$HOME/bin:" ]]; then
+  PATH="$HOME/.local/bin:$HOME/bin:$PATH"
+fi
+export PATH
+
+# Uncomment the following line if you don't like systemctl's auto-paging feature:
+# export SYSTEMD_PAGER=
+
+# User specific aliases and functions
+if [ -d ~/.bashrc.d ]; then
+  for rc in ~/.bashrc.d/*; do
+    if [ -f "$rc" ]; then
+      . "$rc"
+    fi
+  done
+fi
+unset rc
+
 function yy() {
   tmp=$(mktemp -t "yazi-cwd.XXXXXX")
   env YAZI_NO_SESSION=1 yazi "$@" --cwd-file="$tmp"
@@ -9,19 +35,18 @@ function yy() {
 
 # run only in interactive terminal mode
 if [[ $- == *i* ]]; then
+  # Check if fish is available and we're not already inside it
   if command -v fish &>/dev/null; then
-    # Check if the parent process is NOT fish
-    if [[ -z "$TMUX" &&
-      -z "$ZELLIJ" &&
-      "$(ps -o comm= -p "$PPID")" != "fish" ]]; then
+    # Safely get parent process name, fallback to empty string on failure
+    _parent_cmd=$(ps -p "$PPID" -o comm= 2>/dev/null || true)
+    # Only attempt exec if NOT in tmux/zellij and parent isn't fish
+    if [[ -z "$TMUX" && -z "$ZELLIJ" && "$_parent_cmd" != "fish" ]]; then
       exec fish -l
     else
       export SHELL_INDICATOR="bash"
     fi
   fi
-
-  # only executed when not in a fish sub-shell
-  if which eza >/dev/null 2>&1; then
+  if command -v eza &>/dev/null; then
     EZA_STANDARD_OPTIONS="--group --header --group-directories-first --icons --color=auto -A"
     alias l='eza $EZA_STANDARD_OPTIONS'
     alias la='eza $EZA_STANDARD_OPTIONS --all'
@@ -35,10 +60,12 @@ if [[ $- == *i* ]]; then
   #
   alias lg='lazygit'
   alias yz='yazi'
-  if which bat >/dev/null; then
+  if command -v bat &>/dev/null; then
     alias cat='bat'
+    alias ccat='bat -pP'
   fi
   alias mkdir='mkdir -pv'
+  alias tma='tmux attach-session -t "main"'
   alias tmls='tmux ls'
   #
   alias _rsync='rsync -avL --partial --update'
@@ -63,19 +90,31 @@ if [[ $- == *i* ]]; then
   #
   alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
 
-  if command -v direnv >/dev/null 2>&1; then
+  if command -v direnv &>/dev/null; then
     export DIRENV_LOG_FORMAT=
     eval "$(direnv hook bash)"
   fi
-  if command -v zoxide >/dev/null 2>&1; then
+  if command -v zoxide &>/dev/null; then
     eval "$(zoxide init bash)"
     alias cd="z"
   fi
-  if command -v atuin >/dev/null 2>&1; then
+  if command -v atuin &>/dev/null; then
     eval "$(atuin init bash --disable-up-arrow)"
   fi
-  # keep this on the bottom
-  if command -v starship >/dev/null 2>&1; then
+  #
+  if command -v starship &>/dev/null; then
+    # Save preexec framework state
+    _starship_saved_preexec="${preexec_functions[*]-}"
+    _starship_saved_precmd="${precmd_functions[*]-}"
+    _starship_saved_imported="${bash_preexec_imported-}${__bp_imported-}"
+    # Force starship into native PROMPT_COMMAND/PS0 mode
+    unset preexec_functions precmd_functions bash_preexec_imported __bp_imported
     eval "$(starship init bash)"
+    # Restore framework state for other tools (atuin, ble.sh, etc.)
+    [[ -n "$_starship_saved_preexec" ]] && preexec_functions=("$_starship_saved_preexec")
+    [[ -n "$_starship_saved_precmd" ]] && precmd_functions=("$_starship_saved_precmd")
+    [[ -n "$_starship_saved_imported" ]] && bash_preexec_imported=1
+    # Clean up temp vars
+    unset _starship_saved_preexec _starship_saved_precmd _starship_saved_imported
   fi
 fi
