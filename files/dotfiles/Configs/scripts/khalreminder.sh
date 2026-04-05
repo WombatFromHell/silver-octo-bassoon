@@ -195,15 +195,27 @@ cancel_timer() {
   fi
 }
 
+check_dependency() {
+  local cmd="$1"
+  # Try command -v first, then which as fallback
+  if command -v "$cmd" &>/dev/null; then
+    return 0
+  elif which "$cmd" &>/dev/null 2>&1; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 main() {
   parse_args "$@"
 
   local dep
   for dep in khal systemd-run systemctl "$NOTIFY_BIN"; do
-    command -v "$dep" &>/dev/null || {
-      echo "Error: $dep not found" >&2
+    if ! check_dependency "$dep"; then
+      echo "Error: $dep not found in PATH ($PATH)" >&2
       exit 1
-    }
+    fi
   done
 
   cancel_existing_timers
