@@ -237,6 +237,9 @@ if status is-interactive
     alias sedit='sudo -E $EDITOR'
     alias mkdir='mkdir -pv'
     alias sudoe='sudo -E env PATH=(string join ':' $PATH)'
+    #
+    alias khall='khal list --format '{start-time}-{end-time}-{start}-{end}-{title}' now 7d'
+    alias khalm='khal list --format '{start-time}-{end-time}-{start}-{end}-{title}' now 30d'
     # rsync shortcuts
     alias _rsync='rsync -avL --partial --update'
     alias _rsyncd='_rsync --dry-run'
