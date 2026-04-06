@@ -15,6 +15,7 @@ Architecture:
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import logging
 import os
@@ -61,19 +62,135 @@ log = logging.getLogger("niri_watcher")
 #   WATCHER_EXCLUDED_APPS   str    Colon-separated app-ids to append []
 #
 # ===========================================================================
+# AppFilter — glob-based app matching
+# ===========================================================================
 
 
-_DEFAULT_EXCLUDED = (
-    "brave-browser",
-    "brave-browser-beta",
-    "org.mozilla.firefox",
-    "org.kde.haruna",
-    "mpv",
-    "io.mpv.Mpv",
-    "com.spotify.Client",
-    "vesktop",
-    "com.discordapp.Discord",
+@dataclass(frozen=True)
+class AppFilter:
+    """A filter rule matching an app_id and optionally a window title.
+
+    Matching semantics:
+
+    - ``app_id`` is always an **exact** string match (no glob patterns).
+      Must be specified — ``None`` is not allowed.
+    - ``title`` supports **fnmatch**-style glob patterns (``*``, ``?``, etc.).
+      When ``title`` is ``None``, the filter matches **any** title.
+      When ``title`` is a string (including ``""``), the title must match
+      the glob pattern.
+    """
+
+    app_id: str
+    title: str | None = None
+
+    def matches(self, app_id: str, title: str | None) -> bool:
+        """Return True if the given app_id and title match this filter.
+
+        Parameters
+        ----------
+        app_id:
+            The window's app_id (e.g., ``"mpv"``, ``"brave-browser"``).
+        title:
+            The window's title (can be ``None`` if not set by the compositor).
+
+        Matching semantics:
+
+        - ``app_id`` is matched **exactly** (no glob patterns).
+        - ``title=None`` in the filter  → matches **any** title.
+        - ``title=""`` in the filter    → matches only empty/absent title.
+        - Otherwise, fnmatch glob matching on ``title``.
+        """
+        # app_id must match exactly (no fnmatch)
+        if app_id != self.app_id:
+            return False
+
+        # title=None filter means "match any title"
+        if self.title is None:
+            return True
+
+        # title is a string (possibly empty): fnmatch against window title
+        window_title = title if title is not None else ""
+        return fnmatch.fnmatchcase(window_title, self.title)
+
+    def __repr__(self) -> str:
+        return f"AppFilter(app_id={self.app_id!r}, title={self.title!r})"
+
+
+def parse_config_entry(entry: str) -> AppFilter | None:
+    """Parse a single ``app_id[,title]`` entry into an ``AppFilter``.
+
+    Supported formats (comma-separated within a rule, semicolon-delimited list):
+
+    - ``"mpv"``                  → ``AppFilter("mpv", None)``       (match any title)
+    - ``"steam,Steam Big Picture"`` → ``AppFilter("steam", "Steam Big Picture")``
+    - ``"steam,Steam Big*"``     → ``AppFilter("steam", "Steam Big*")`` (title glob)
+    - ``"steam,"``               → ``AppFilter("steam", "")``       (match only empty title)
+    - ``",My Title"``            → ``None`` (app_id is required, cannot be "any")
+
+    ``app_id`` is always required and matched exactly (no glob patterns).
+    ``title`` supports fnmatch globs, or ``None`` to match any title.
+
+    Returns ``None`` for empty/whitespace-only entries or entries with no app_id.
+    """
+    if not entry or not entry.strip():
+        return None
+
+    if "," in entry:
+        parts = entry.split(",", 1)
+        app_id_raw = parts[0].strip()
+        title_raw = parts[1]  # preserve title as-is (don't strip, might be intentional)
+
+        # app_id is required — no "any app_id" matching
+        if not app_id_raw:
+            return None
+
+        return AppFilter(app_id=app_id_raw, title=title_raw if title_raw else "")
+    else:
+        # No comma: app_id only, match any title
+        return AppFilter(app_id=entry.strip(), title=None)
+
+
+def _parse_app_filter_list(raw: str) -> frozenset[AppFilter]:
+    """Parse a semicolon-separated list of app filter entries.
+
+    Empty entries are skipped.  Returns a frozenset (deduplicated).
+    """
+    filters: list[AppFilter] = []
+    for entry in raw.split(";"):
+        parsed = parse_config_entry(entry)
+        if parsed is not None:
+            filters.append(parsed)
+    return frozenset(filters)
+
+
+# ===========================================================================
+# Defaults — built-in exclusion list
+# ===========================================================================
+
+#: Apps excluded from fullscreen detection by default.
+DEFAULT_EXCLUDED_APPS: frozenset[AppFilter] = frozenset(
+    {
+        AppFilter("brave-browser"),
+        AppFilter("brave-browser-beta"),
+        AppFilter("org.mozilla.firefox"),
+        AppFilter("org.kde.haruna"),
+        AppFilter("vlc"),
+        AppFilter("mpv"),
+        AppFilter("io.mpv.Mpv"),
+        AppFilter("vesktop"),
+        AppFilter("com.discordapp.Discord"),
+    }
 )
+
+#: Apps always detected as fullscreen (bypass nvtop check).
+DEFAULT_INCLUDED_APPS: frozenset[AppFilter] = frozenset(
+    {AppFilter("steam", "Steam Big Picture Mode")}
+)
+
+
+# ===========================================================================
+# config — immutable settings, no I/O at import time
+# ===========================================================================
 
 
 @dataclass(frozen=True)
@@ -90,7 +207,14 @@ class Config:
     debug_mode: bool = False
     hook_on: list[str] = field(default_factory=list)
     hook_off: list[str] = field(default_factory=list)
-    excluded_apps: frozenset[str] = frozenset()
+    #: User-defined exclusions from ``WATCHER_EXCLUDED_APPS`` (priority over defaults).
+    excluded_apps: frozenset[AppFilter] | frozenset[str] = field(
+        default_factory=frozenset
+    )
+    #: User-defined inclusions from ``WATCHER_INCLUDED_APPS`` (highest priority).
+    included_apps: frozenset[AppFilter] = field(default_factory=frozenset)
+    relaxed_mode: bool = False
+    hold_mode: bool = True
 
     @classmethod
     def from_env(cls) -> Config:
@@ -113,12 +237,14 @@ class Config:
             debug_mode=os.environ.get("WATCHER_DEBUG", "0") == "1",
             hook_on=_parse_hook_var("WATCHER_HOOK_ON"),
             hook_off=_parse_hook_var("WATCHER_HOOK_OFF"),
-            excluded_apps=frozenset(_DEFAULT_EXCLUDED)
-            | frozenset(
-                e.strip()
-                for e in os.environ.get("WATCHER_EXCLUDED_APPS", "").split(":")
-                if e.strip()
+            excluded_apps=_parse_app_filter_list(
+                os.environ.get("WATCHER_EXCLUDED_APPS", "")
             ),
+            included_apps=_parse_app_filter_list(
+                os.environ.get("WATCHER_INCLUDED_APPS", "")
+            ),
+            relaxed_mode=os.environ.get("WATCHER_RELAXED_MODE", "0") == "1",
+            hold_mode=os.environ.get("WATCHER_HOLD_MODE", "1") != "0",
         )
 
 
@@ -189,6 +315,7 @@ class WindowInfo:
     win_w: int | None
     win_h: int | None
     is_focused: bool
+    title: str | None = None
 
     @property
     def effective_size(self) -> tuple[int, int] | None:
@@ -225,6 +352,45 @@ def fetch_niri_windows() -> str:
 
 def fetch_niri_workspaces() -> str:
     return _run_cmd(["niri", "msg", "-j", "workspaces"]) or "[]"
+
+
+def fetch_gpu_pids() -> list[int]:
+    """Return PIDs of processes doing GPU graphic+compute work via ``nvtop -s``.
+
+    A process qualifies only if:
+    1. Its ``kind`` is ``"graphic & compute"``
+    2. Its ``gpu_usage`` is **not** ``null`` (must report an actual percentage)
+
+    This is the "strict" filter used when relaxed mode is **disabled**:
+    only processes reported by ``nvtop`` as ``"graphic & compute"`` with
+    measurable GPU activity are considered fullscreen gaming apps.
+
+    Returns an empty list if ``nvtop`` is unavailable or returns invalid
+    output.  Failures are silent — this is an optional enhancement.
+    """
+    try:
+        result = subprocess.run(
+            ["nvtop", "-s"], capture_output=True, text=True, timeout=5
+        )
+        data = json.loads(result.stdout)
+        pids: list[int] = []
+        for entry in data:
+            for proc in entry.get("processes", []):
+                if proc.get("kind") == "graphic & compute":
+                    # Skip processes with no GPU usage reading (null)
+                    gpu_usage = proc.get("gpu_usage")
+                    if gpu_usage is None:
+                        continue
+
+                    pid = proc.get("pid")
+                    if pid is not None:
+                        try:
+                            pids.append(int(pid))
+                        except (ValueError, TypeError):
+                            pass
+        return pids
+    except Exception:
+        return []
 
 
 # ===========================================================================
@@ -350,6 +516,7 @@ def parse_windows(windows_json: str | None) -> list[WindowInfo]:
                 win_w=_int_or_none(win_size[0]) if len(win_size) > 0 else None,
                 win_h=_int_or_none(win_size[1]) if len(win_size) > 1 else None,
                 is_focused=bool(win.get("is_focused", False)),
+                title=win.get("title") or None,
             )
         )
 
@@ -363,15 +530,66 @@ def parse_windows(windows_json: str | None) -> list[WindowInfo]:
 
 @dataclass(frozen=True)
 class EvalContext:
-    """Groups all context needed for a single poll-cycle evaluation."""
+    """Groups all context needed for a single poll-cycle evaluation.
+
+    Priority chain (checked in order, first match wins):
+        1. ``included_apps``        — user-defined inclusion (WATCHER_INCLUDED_APPS)
+        2. ``excluded_apps``        — user-defined exclusion (WATCHER_EXCLUDED_APPS)
+        3. ``default_included_apps`` — built-in inclusion
+        4. ``default_excluded_apps`` — built-in exclusion (DEFAULT_EXCLUDED_APPS)
+
+    If none of the above match and ``relaxed_mode`` is True, the window
+    is detected as fullscreen.  Otherwise the nvtop GPU check applies.
+    """
 
     ws_to_output: dict[int, str]
     outputs: dict[str, OutputInfo]
-    excluded_apps: frozenset[str]
+    excluded_apps: frozenset[AppFilter] | frozenset[str] = field(
+        default_factory=frozenset
+    )
+    included_apps: frozenset[AppFilter] = field(default_factory=frozenset)
+    default_excluded_apps: frozenset[AppFilter] = field(default_factory=frozenset)
+    default_included_apps: frozenset[AppFilter] = field(default_factory=frozenset)
+    relaxed_mode: bool = False
 
 
-def is_app_excluded(app_id: str, excluded: frozenset[str]) -> bool:
-    return app_id in excluded
+def is_app_excluded(
+    app_id: str,
+    excluded: frozenset[AppFilter] | frozenset[str],
+    *,
+    title: str | None = None,
+) -> bool:
+    """Return True if the given app_id/title matches any exclusion rule.
+
+    Supports both the new ``AppFilter`` frozenset and the legacy
+    ``frozenset[str]`` for backward compatibility.
+    """
+    if not excluded:
+        return False
+
+    # Check if this is a legacy frozenset[str]
+    first = next(iter(excluded), None)
+    if first is not None and isinstance(first, str):
+        return app_id in excluded  # type: ignore[operator]
+
+    # New AppFilter frozenset
+    for rule in excluded:  # type: ignore[assignment]
+        if isinstance(rule, AppFilter) and rule.matches(app_id, title):
+            return True
+    return False
+
+
+def is_app_included(
+    app_id: str,
+    included: frozenset[AppFilter],
+    *,
+    title: str | None = None,
+) -> bool:
+    """Return True if the given app_id/title matches any inclusion rule."""
+    for rule in included:
+        if rule.matches(app_id, title):
+            return True
+    return False
 
 
 _FULLSCREEN_TOLERANCE = 2  # px; handles fractional-scalating drift (e.g. 2562 vs 2560)
@@ -392,8 +610,10 @@ def is_fullscreen(window: WindowInfo, output: OutputInfo) -> bool:
     if size is None:
         return False
     ow, oh = output.resolution
-    return (abs(size[0] - ow) <= _FULLSCREEN_TOLERANCE
-            and abs(size[1] - oh) <= _FULLSCREEN_TOLERANCE)
+    return (
+        abs(size[0] - ow) <= _FULLSCREEN_TOLERANCE
+        and abs(size[1] - oh) <= _FULLSCREEN_TOLERANCE
+    )
 
 
 def resolve_output_for_window(
@@ -412,14 +632,45 @@ def resolve_output_for_window(
 def window_is_fullscreen_and_active(
     window: WindowInfo,
     ctx: EvalContext,
+    *,
+    gpu_pids: set[int] | None = None,
 ) -> OutputInfo | None:
     """
     Return the OutputInfo if this window is fullscreen and active,
     or None otherwise.
 
+    Priority chain (checked in order, first match wins):
+
+        1. **User inclusion** — ``WATCHER_INCLUDED_APPS`` → DETECTED
+        2. **User exclusion** — ``WATCHER_EXCLUDED_APPS`` → SKIP
+        3. **Default inclusion** — ``DEFAULT_INCLUDED_APPS`` → DETECTED
+        4. **Default exclusion** — ``DEFAULT_EXCLUDED_APPS`` → SKIP
+
+    If none of the above match:
+        5. **Relaxed mode** — detect without nvtop check
+        6. **Strict mode** — require PID in ``nvtop -s`` output
+
+    Included apps (user or default) bypass the focus requirement — they
+    are detected as fullscreen regardless of whether they are focused.
+    All other apps must be focused to be detected.
+
     Pure function — all external state passed via EvalContext.
+    The ``gpu_pids`` parameter injects the nvtop result for testability.
     """
-    if not window.is_focused:
+    app_id = window.app_id
+    title = window.title
+
+    # --- Step 0: Determine inclusion status (controls focus bypass) ---
+    is_included = bool(
+        app_id
+        and (
+            is_app_included(app_id, ctx.included_apps, title=title)
+            or is_app_included(app_id, ctx.default_included_apps, title=title)
+        )
+    )
+
+    # Focus gate — included apps bypass this requirement
+    if not window.is_focused and not is_included:
         return None
 
     output = resolve_output_for_window(window, ctx)
@@ -431,20 +682,53 @@ def window_is_fullscreen_and_active(
         log.debug("\u2298 Disabled output ignored: %s", output.name)
         return None
 
-    if window.app_id and is_app_excluded(window.app_id, ctx.excluded_apps):
-        log.debug("\u2298 Excluded: %s", window.app_id)
-        return None
-
+    # Must be logically fullscreen
     if not is_fullscreen(window, output):
         return None
 
-    log.debug("\u2713 Fullscreen: %s", window.app_id)
+    # --- Step 1: User inclusion (WATCHER_INCLUDED_APPS) ---
+    if app_id and is_app_included(app_id, ctx.included_apps, title=title):
+        log.debug("\u2713 User-included: %s", app_id)
+        return output
+
+    # --- Step 2: User exclusion (WATCHER_EXCLUDED_APPS) ---
+    if app_id and is_app_excluded(app_id, ctx.excluded_apps, title=title):
+        log.debug("\u2298 User-excluded: %s", app_id)
+        return None
+
+    # --- Step 3: Default inclusion (DEFAULT_INCLUDED_APPS) ---
+    if app_id and is_app_included(app_id, ctx.default_included_apps, title=title):
+        log.debug("\u2713 Default-included: %s", app_id)
+        return output
+
+    # --- Step 4: Default exclusion (DEFAULT_EXCLUDED_APPS) ---
+    if app_id and is_app_excluded(app_id, ctx.default_excluded_apps, title=title):
+        log.debug("\u2298 Default-excluded: %s", app_id)
+        return None
+
+    # --- Step 5: Relaxed mode — detect all non-matched apps ---
+    if ctx.relaxed_mode:
+        log.debug("\u2713 Relaxed mode fullscreen: %s", app_id)
+        return output
+
+    # --- Step 6: Strict mode — check GPU usage via nvtop ---
+    if gpu_pids is not None and window.pid is not None:
+        if window.pid not in gpu_pids:
+            log.debug("\u2298 No GPU activity: %s (PID %d)", app_id, window.pid)
+            return None
+        log.debug("\u2713 Fullscreen + GPU: %s (PID %d)", app_id, window.pid)
+        return output
+
+    # If gpu_pids is None (nvtop unavailable), default to allowing detection
+    log.debug("\u2713 Fullscreen: %s", app_id)
     return output
 
 
 def compute_desired_fullscreen(
     windows: list[WindowInfo],
     ctx: EvalContext,
+    *,
+    gpu_pids: set[int] | None = None,
 ) -> dict[str, bool]:
     """
     Return {output_name: has_fullscreen_app} for all known outputs.
@@ -454,7 +738,7 @@ def compute_desired_fullscreen(
     desired = {name: False for name in ctx.outputs}
 
     for window in windows:
-        output = window_is_fullscreen_and_active(window, ctx)
+        output = window_is_fullscreen_and_active(window, ctx, gpu_pids=gpu_pids)
         if output is not None:
             desired[output.name] = True
 
@@ -539,6 +823,105 @@ class AppTracker:
         self._output_current_app.pop(output_name, None)
 
 
+@dataclass
+class VerifiedPIDCache:
+    """Caches PIDs that passed the nvtop strict filter.
+
+    A PID remains cached until it loses focus, at which point
+    it's evicted (the app may have exited or switched to a
+    non-3D window).
+    """
+
+    _verified: set[int] = field(default_factory=set)
+
+    def is_verified(self, pid: int) -> bool:
+        return pid in self._verified
+
+    def verify(self, pid: int) -> None:
+        self._verified.add(pid)
+
+    def evict_unfocused(self, focused_pids: set[int]) -> None:
+        """Remove PIDs that are no longer focused."""
+        self._verified &= focused_pids
+
+    def clear(self) -> None:
+        self._verified.clear()
+
+
+# ===========================================================================
+# Hold Mode — process existence tracking for included apps
+# ===========================================================================
+
+
+def is_process_alive(pid: int) -> bool:
+    """Return True if a process with the given PID exists.
+
+    Uses ``os.kill(pid, 0)`` which checks permissions/existence
+    without sending a signal.  Returns False for invalid PIDs
+    or when the process has exited.
+    """
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+@dataclass
+class HoldPIDTracker:
+    """Tracks PIDs of included apps that triggered fullscreen.
+
+    When hold mode is enabled, these PIDs are checked on each cycle.
+    As long as a tracked PID is still alive, HOOK_OFF is suppressed
+    for the corresponding output — even if the window is no longer
+    fullscreen.
+    """
+
+    _pids: dict[str, int] = field(default_factory=dict)  # output_name → pid
+
+    def record(self, pid: int, output_name: str) -> None:
+        """Record a PID for the given output."""
+        self._pids[output_name] = pid
+
+    def has_running_pid(self, pid: int) -> bool:
+        """Return True if the PID is recorded and still alive."""
+        for output_name, recorded_pid in self._pids.items():
+            if recorded_pid == pid and is_process_alive(recorded_pid):
+                return True
+        return False
+
+    def is_output_held(self, output_name: str) -> bool:
+        """Return True if the output's recorded PID is still alive."""
+        pid = self._pids.get(output_name)
+        if pid is None:
+            return False
+        return is_process_alive(pid)
+
+    def evict_dead_pids(self) -> None:
+        """Remove all recorded PIDs that are no longer alive."""
+        self._pids = {
+            name: pid for name, pid in self._pids.items() if is_process_alive(pid)
+        }
+
+    def evict_missing_pids(self, present_pids: set[int]) -> None:
+        """Remove recorded PIDs that no longer appear in the compositor window list."""
+        self._pids = {
+            name: pid for name, pid in self._pids.items() if pid in present_pids
+        }
+
+    def evict_non_matching_pids(self, valid_pids: set[int]) -> None:
+        """Remove recorded PIDs that are no longer in the valid set."""
+        self._pids = {
+            name: pid for name, pid in self._pids.items() if pid in valid_pids
+        }
+
+    def clear(self) -> None:
+        self._pids.clear()
+
+    def clear_output(self, output_name: str) -> None:
+        self._pids.pop(output_name, None)
+
+
 # ===========================================================================
 # orchestrator — main poll loop
 # ===========================================================================
@@ -557,15 +940,20 @@ class VrrOrchestrator:
         fetch_outputs: Callable[[], str] = fetch_niri_outputs,
         fetch_windows: Callable[[], str] = fetch_niri_windows,
         fetch_workspaces: Callable[[], str] = fetch_niri_workspaces,
+        fetch_gpu_pids: Callable[[], list[int]] = fetch_gpu_pids,
         run_hook: Callable[[str, str, int | None], None] = execute_hook,
     ):
         self.config = config
         self._fetch_outputs = fetch_outputs
         self._fetch_windows = fetch_windows
         self._fetch_workspaces = fetch_workspaces
+        self._fetch_gpu_pids = fetch_gpu_pids
         self._run_hook = run_hook
         self._fullscreen_state = FullscreenState()
         self._app_tracker = AppTracker()
+        self._pid_cache = VerifiedPIDCache()
+        self._hold_pid_tracker = HoldPIDTracker()
+        self._last_cycle_hash: int | None = None
 
     # ------------------------------------------------------------------
     # Phase 1: Collect
@@ -577,6 +965,38 @@ class VrrOrchestrator:
             self._fetch_windows(),
             self._fetch_workspaces(),
         )
+
+    # ------------------------------------------------------------------
+    # Stable hash (excludes volatile fields like focus_timestamp)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _stable_cycle_hash(
+        outputs_json: str,
+        windows: list[WindowInfo],
+        ws_to_output: dict[int, str],
+    ) -> int:
+        """Hash the cycle state, ignoring volatile fields (focus_timestamp).
+
+        Windows are hashed via their consumed fields only; outputs_json is
+        hashed raw (it has no volatile fields); workspaces as sorted tuples.
+        """
+        windows_key = tuple(
+            (
+                w.app_id,
+                w.pid,
+                w.workspace_id,
+                w.tile_w,
+                w.tile_h,
+                w.win_w,
+                w.win_h,
+                w.is_focused,
+                w.title,
+            )
+            for w in windows
+        )
+        ws_key = tuple(sorted(ws_to_output.items()))
+        return hash((outputs_json, windows_key, ws_key))
 
     # ------------------------------------------------------------------
     # Phase 2: Parse  (delegates to pure parsers)
@@ -609,19 +1029,68 @@ class VrrOrchestrator:
         windows: list[WindowInfo],
         ws_to_output: dict[int, str],
     ) -> dict[str, bool]:
+        # Collect currently focused window PIDs
+        focused_pids: set[int] = {
+            w.pid for w in windows if w.is_focused and w.pid is not None
+        }
+
+        # Evict stale entries (windows that lost focus)
+        self._pid_cache.evict_unfocused(focused_pids)
+
+        # Evict hold-mode entries for windows that disappeared from the
+        # compositor (closed window → safe to fire HOOK_OFF).
+        all_window_pids: set[int] = {w.pid for w in windows if w.pid is not None}
+        self._hold_pid_tracker.evict_missing_pids(all_window_pids)
+
+        # Fetch GPU PIDs for strict mode (only when nvtop check is needed)
+        gpu_pids: set[int] | None = None
+        if not self.config.relaxed_mode:
+            unverified_pids = focused_pids - self._pid_cache._verified
+            if unverified_pids:
+                # Only call nvtop -s if we have unverified focused PIDs
+                fresh_gpu_pids = set(self._fetch_gpu_pids())
+                # Verify any unverified PIDs that appear in nvtop output
+                for pid in unverified_pids:
+                    if pid in fresh_gpu_pids:
+                        self._pid_cache.verify(pid)
+                gpu_pids = fresh_gpu_pids
+
+            # Use cached verified PIDs + fresh nvtop results (if called)
+            gpu_pids = self._pid_cache._verified | (gpu_pids or set())
+
         ctx = EvalContext(
             ws_to_output=ws_to_output,
             outputs=outputs,
             excluded_apps=self.config.excluded_apps,
+            included_apps=self.config.included_apps,
+            default_excluded_apps=DEFAULT_EXCLUDED_APPS,
+            default_included_apps=DEFAULT_INCLUDED_APPS,
+            relaxed_mode=self.config.relaxed_mode,
         )
-        desired = compute_desired_fullscreen(windows, ctx)
+        desired = compute_desired_fullscreen(windows, ctx, gpu_pids=gpu_pids)
 
-        # Log newly-fullscreen apps
+        # Evict hold-mode entries for windows that no longer match inclusion
+        # rules (e.g. Steam BPM title changed to something else).
+        still_included_pids: set[int] = {
+            w.pid
+            for w in windows
+            if w.pid is not None and self._is_included_app(w.app_id, ctx, title=w.title)
+        }
+        self._hold_pid_tracker.evict_non_matching_pids(still_included_pids)
+
+        # Log focused fullscreen apps and record hold-mode PIDs for
+        # included apps (unfocused included apps are now also detected,
+        # so we no longer skip them here).
         for window in windows:
-            if not window.is_focused:
-                continue
             output = resolve_output_for_window(window, ctx)
-            if output and desired.get(output.name):
+            if not output or not desired.get(output.name):
+                continue
+
+            # Log only focused windows that are actually fullscreen
+            # (not just any focused window on a fullscreen output —
+            # unfocused included apps can make an output "fullscreen"
+            # without being the focused window).
+            if window.is_focused and is_fullscreen(window, output):
                 if self._app_tracker.record_app(output.name, window):
                     log.info(
                         "Fullscreen: %s (PID %s) on %s",
@@ -629,7 +1098,36 @@ class VrrOrchestrator:
                         window.pid,
                         output.name,
                     )
+
+            # Record PID for hold mode if it's an included app
+            if window.pid is not None and self._is_included_app(
+                window.app_id, ctx, title=window.title
+            ):
+                already_tracked = self._hold_pid_tracker.is_output_held(output.name)
+                self._hold_pid_tracker.record(window.pid, output.name)
+                if self.config.hold_mode and not already_tracked:
+                    log.info(
+                        "Hold mode: tracking PID %s for %s on %s",
+                        window.pid,
+                        window.app_id,
+                        output.name,
+                    )
+
         return desired
+
+    @staticmethod
+    def _is_included_app(
+        app_id: str,
+        ctx: EvalContext,
+        *,
+        title: str | None = None,
+    ) -> bool:
+        """Return True if the app matches user or default inclusion rules."""
+        if is_app_included(app_id, ctx.included_apps, title=title):
+            return True
+        if is_app_included(app_id, ctx.default_included_apps, title=title):
+            return True
+        return False
 
     # ------------------------------------------------------------------
     # Phase 4: Act
@@ -642,6 +1140,10 @@ class VrrOrchestrator:
 
         Returns a list of ``(output_name, new_state)`` transitions that
         were logically applied.
+
+        When hold mode is enabled and an output's recorded PID is still
+        alive, transitions to False are suppressed — the output stays
+        logically fullscreen until the process exits.
         """
         transitions: list[tuple[str, bool]] = []
 
@@ -652,6 +1154,18 @@ class VrrOrchestrator:
                 continue  # no change in state
             if prev is None and not want_on:
                 continue  # never set and it should be off — skip
+
+            # Hold mode: suppress transition to False if PID alive
+            if (
+                self.config.hold_mode
+                and not want_on
+                and self._hold_pid_tracker.is_output_held(output_name)
+            ):
+                log.debug(
+                    "Hold mode: suppressing fullscreen off for %s (PID alive)",
+                    output_name,
+                )
+                continue  # skip transition — state stays True
 
             self._fullscreen_state.mark(output_name, want_on)
             transitions.append((output_name, want_on))
@@ -665,36 +1179,28 @@ class VrrOrchestrator:
     def _execute_transition_hooks(
         self,
         transitions: list[tuple[str, bool]],
+        windows: list[WindowInfo],
+        ws_to_output: dict[int, str],
     ) -> None:
         """Run on/off hooks for completed fullscreen transitions."""
         for output_name, want_on in transitions:
             hooks = self.config.hook_on if want_on else self.config.hook_off
             for spec in hooks:
-                # PID: pass the focused window's PID if available
-                pid = self._get_focused_window_pid(output_name)
+                pid = self._focused_window_pid(output_name, windows, ws_to_output)
                 self._run_hook(spec, output_name, pid)
             if not want_on:
                 self._app_tracker.clear(output_name)
 
-    def _get_focused_window_pid(self, output_name: str) -> int | None:
+    @staticmethod
+    def _focused_window_pid(
+        output_name: str,
+        windows: list[WindowInfo],
+        ws_to_output: dict[int, str],
+    ) -> int | None:
         """Return the PID of the focused window on the given output."""
-        outputs_json = self._fetch_outputs()
-        windows_json = self._fetch_windows()
-        workspaces_json = self._fetch_workspaces()
-        outputs = parse_outputs(outputs_json)
-        windows = parse_windows(windows_json)
-        ws_to_output = parse_workspaces(workspaces_json)
-
-        ctx = EvalContext(
-            ws_to_output=ws_to_output,
-            outputs=outputs,
-            excluded_apps=self.config.excluded_apps,
-        )
-
         for window in windows:
             if window.is_focused and window.workspace_id is not None:
-                ws_output = ws_to_output.get(window.workspace_id)
-                if ws_output == output_name:
+                if ws_to_output.get(window.workspace_id) == output_name:
                     return window.pid
         return None
 
@@ -704,14 +1210,23 @@ class VrrOrchestrator:
             log.info("Output %s disconnected, cleaning state", gone)
             self._fullscreen_state.clear(gone)
             self._app_tracker.clear(gone)
+            self._hold_pid_tracker.clear_output(gone)
+        # Clear PID cache when outputs change (focus context may have shifted)
+        if self._fullscreen_state.all_tracked() - known_outputs:
+            self._pid_cache.clear()
+
+        # Evict dead PIDs from hold tracker
+        self._hold_pid_tracker.evict_dead_pids()
 
     def _act(
         self,
         desired: dict[str, bool],
         outputs: dict[str, OutputInfo],
+        windows: list[WindowInfo],
+        ws_to_output: dict[int, str],
     ) -> None:
         transitions = self._apply_fullscreen_transitions(desired, outputs)
-        self._execute_transition_hooks(transitions)
+        self._execute_transition_hooks(transitions, windows, ws_to_output)
         self._cleanup_stale_outputs(set(desired))
 
     # ------------------------------------------------------------------
@@ -723,8 +1238,16 @@ class VrrOrchestrator:
         outputs, windows, ws_to_output = self._parse(
             outputs_json, windows_json, workspaces_json
         )
+
+        # Content-hash skip: if nothing changed, skip _decide() and _act()
+        cycle_hash = self._stable_cycle_hash(outputs_json, windows, ws_to_output)
+        if cycle_hash == self._last_cycle_hash:
+            log.debug("No state change detected, skipping cycle")
+            return
+        self._last_cycle_hash = cycle_hash
+
         desired = self._decide(outputs, windows, ws_to_output)
-        self._act(desired, outputs)
+        self._act(desired, outputs, windows, ws_to_output)
 
     # ------------------------------------------------------------------
     # Shutdown
@@ -740,6 +1263,9 @@ class VrrOrchestrator:
                     self._run_hook(spec, output_name, None)
             self._fullscreen_state.clear(output_name)
             self._app_tracker.clear(output_name)
+            self._hold_pid_tracker.clear_output(output_name)
+        self._pid_cache.clear()
+        self._hold_pid_tracker.clear()
 
     # ------------------------------------------------------------------
     # Main loop
@@ -852,7 +1378,155 @@ def _detect_systemd_service() -> bool:
     )
 
 
+def print_help() -> None:
+    """Print comprehensive usage information."""
+    help_text = """\
+Usage: niri_watcher.py [OPTIONS]
+
+Track fullscreen applications in niri and fire hooks when they enter or
+exit fullscreen mode.  Designed for per-output variable refresh rate (VRR)
+control — e.g. enabling VRR when a game goes fullscreen and disabling it
+when it does not.
+
+OPTIONS
+  -h, --help    Show this help message and exit.
+  --version     Print version and exit.
+
+ENVIRONMENT VARIABLES
+
+  Polling & Startup
+    WATCHER_POLL_INTERVAL     float   Poll interval in seconds.
+                                          Default: 2
+    WATCHER_STARTUP_DELAY     float   Seconds to wait before first poll.
+                                          Default: 3
+    WATCHER_LOG_FILE          path    Log file location.
+                                          Default: $XDG_RUNTIME_DIR/niri_watcher.log
+
+  Logging
+    WATCHER_DEBUG             0|1     Enable DEBUG-level logging.
+                                          Default: 0
+    WATCHER_STDERR            0|1     Mirror log to stderr (auto-enabled
+                                      when running as a systemd service).
+                                          Default: 0
+
+  Hooks
+    WATCHER_HOOK_ON           str     Colon-separated command(s) to run when
+                                      a fullscreen app is detected.
+                                      Receives NIRI_OUTPUT_NAME and
+                                      NIRI_APP_PID in the environment.
+                                          Default: (none)
+    WATCHER_HOOK_OFF          str     Colon-separated command(s) to run when
+                                      fullscreen app exits.
+                                          Default: (none)
+
+  App Filters
+
+    Filters use the format:  app_id[,title][;app_id[,title] ...]
+
+    - app_id  is an exact match (no globs).  Required.
+    - title   supports fnmatch globs (*, ?, etc.).  Optional.
+              - Omitted (no comma) → matches any title.
+              - Empty (trailing comma, e.g. "mpv,") → matches empty title.
+    - Multiple rules are separated by semicolons.
+
+    WATCHER_EXCLUDED_APPS     str     Semicolon-separated app filters to
+                                      exclude from fullscreen detection.
+                                      Takes priority over default exclusions.
+                                          Default: (none)
+
+    WATCHER_INCLUDED_APPS     str     Semicolon-separated app filters to
+                                      always detect as fullscreen (bypass
+                                      nvtop GPU check).  Highest priority.
+                                          Default: (none)
+
+    Built-in included:
+      steam,Steam Big Picture Mode
+
+    Built-in excluded:
+      brave-browser, brave-browser-beta, org.mozilla.firefox,
+      org.kde.haruna, vlc, mpv, io.mpv.Mpv, vesktop,
+      com.discordapp.Discord
+
+  Modes
+    WATCHER_RELAXED_MODE      0|1     When enabled, detects all non-excluded
+                                      apps without nvtop GPU check.
+                                          Default: 0
+
+    WATCHER_HOLD_MODE         0|1     When enabled (default), suppresses
+                                      WATCHER_HOOK_OFF for included apps as
+                                      long as their window is present in
+                                      niri and the process is alive.
+                                      Release conditions:
+                                        - Window closed (removed from niri)
+                                        - app_id/title no longer matches
+                                          inclusion rules
+                                        - Process exits
+                                          Default: 1
+
+EXAMPLES
+
+  Basic usage with VRR hooks:
+
+    export WATCHER_HOOK_ON="ksuperkey -e 'vrr on'"
+    export WATCHER_HOOK_OFF="ksuperkey -e 'vrr off'"
+    niri_watcher.py
+
+  Include custom apps with glob title matching:
+
+    export WATCHER_INCLUDED_APPS="wine.exe,*Game*;wine-staging,"
+    niri_watcher.py
+
+  Exclude a specific app:
+
+    export WATCHER_EXCLUDED_APPS="com.mitchellh.ghostty"
+    niri_watcher.py
+
+  Relaxed mode (no nvtop required):
+
+    export WATCHER_RELAXED_MODE=1
+    niri_watcher.py
+
+  Disable hold mode (always fire hook_off when fullscreen ends):
+
+    export WATCHER_HOLD_MODE=0
+    niri_watcher.py
+
+REQUIREMENTS
+  niri        The niri Wayland compositor (must be running).
+  nvtop       Optional. Used for GPU activity detection in strict mode.
+              If unavailable, relaxed mode or nvtop fallback applies.
+
+ARCHITECTURE
+  Fullscreen detection priority chain (first match wins):
+    1. WATCHER_INCLUDED_APPS  → detected (focus not required)
+    2. WATCHER_EXCLUDED_APPS  → skipped
+    3. DEFAULT_INCLUDED_APPS  → detected (focus not required)
+    4. DEFAULT_EXCLUDED_APPS  → skipped
+    5. Relaxed mode           → detected (no nvtop check)
+    6. Strict mode            → detected only if PID shows GPU
+                                activity via nvtop -s (graphic & compute)
+
+  Included apps bypass the focus requirement — they are detected as
+  fullscreen regardless of whether they are focused.  All other apps
+  must be focused to be detected.
+
+  Hold mode prevents HOOK_OFF from firing while an included app's
+  process is alive and its window exists in niri.  This prevents VRR
+  from toggling when Steam BPM briefly loses focus during game launch.
+"""
+    print(help_text, end="")
+
+
 def main() -> None:
+    # Handle --help / -h before any configuration
+    if "-h" in sys.argv or "--help" in sys.argv:
+        print_help()
+        sys.exit(0)
+
+    if "--version" in sys.argv:
+        print("niri_watcher.py 1.0.0")
+        sys.exit(0)
+
     config = Config.from_env()
 
     # Mirror to stderr when running as a systemd service (captured by
