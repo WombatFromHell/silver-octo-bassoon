@@ -427,7 +427,8 @@
   "showOnLastDisplay": {},
   "niriOutputSettings": {
     "DP-1": {
-      "vrrOnDemand": true
+      "vrrOnDemand": true,
+      "disabled": true
     },
     "LG Electronics LG TV SSCR2 0x01010101": {
       "vrrOnDemand": true
@@ -436,12 +437,17 @@
       "disabled": false
     },
     "HDMI-A-1": {
-      "vrrOnDemand": true
+      "vrrOnDemand": true,
+      "disabled": false
     }
   },
   "hyprlandOutputSettings": {},
-  "displayProfiles": {},
-  "activeDisplayProfile": {},
+  "displayProfiles": {
+    "niri": {}
+  },
+  "activeDisplayProfile": {
+    "niri": ""
+  },
   "displayProfileAutoSelect": false,
   "displayShowDisconnected": false,
   "displaySnapToEdge": true,

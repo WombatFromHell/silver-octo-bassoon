@@ -134,7 +134,6 @@ spawn-sh-at-startup "/usr/bin/systemctl --user restart xdg-desktop-portal xdg-de
 // only uncomment below if using 'kdewallet' with blank password
 // spawn-sh-at-startup "qdbus org.kde.kwalletd6 /modules/kwalletd6 org.kde.KWallet.open kdewallet 0 login"
 spawn-at-startup "/usr/bin/dms" "run"
-spawn-at-startup "/usr/bin/kanshi"
 binds {
     Mod+Alt+Slash {
         show-hotkey-overlay
@@ -161,6 +160,10 @@ binds {
     }
     Super+Ctrl+Shift+Alt+S hotkey-overlay-title="Screenshot Interactive" {
         spawn-sh "niri msg action screenshot"
+    }
+    //
+    Mod+Shift+Alt+P hotkey-overlay-title="Switch Kanshi Display Profile" {
+        spawn-sh "toggle-kanshi-outputs.sh"
     }
     //
     Super+Ctrl+Shift+P hotkey-overlay-title="Hyprpicker" {
@@ -522,5 +525,4 @@ binds {
 include "dms/cursor.kdl"
 include "dms/binds.kdl"
 include "dms/windowrules.kdl"
-include "dms/outputs.kdl"
 
