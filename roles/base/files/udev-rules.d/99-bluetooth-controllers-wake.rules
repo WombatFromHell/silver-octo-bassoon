@@ -1,0 +1,4 @@
+# '8bitdo Pro 2'
+ACTION=="add", SUBSYSTEM=="input", ATTRS{uniq}=="e4:17:d8:c9:a7:79", ATTR{power/wakeup}="enabled"
+# 'Pro Controller'
+ACTION=="add", SUBSYSTEM=="input", ATTRS{uniq}=="e4:17:d8:41:67:5c", ATTR{power/wakeup}="enabled"
