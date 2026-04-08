@@ -846,9 +846,9 @@ class SCXScheduler(_BaseFeature):
         return result.stdout.strip()
 
     def _apply(self) -> FeatureResult:
-        """Run ``scxctl -s <scheduler> -m <mode>`` and return a result."""
+        """Run ``scxctl start -s <scheduler> -m <mode>`` and return a result."""
         result = self._scxctl.run_or_none(
-            [self._CMD, "-s", self._cfg.scx_scheduler, "-m", self._cfg.scx_mode]
+            [self._CMD, "start", "-s", self._cfg.scx_scheduler, "-m", self._cfg.scx_mode]
         )
         ok = result is not None and result.returncode == 0
         if ok:

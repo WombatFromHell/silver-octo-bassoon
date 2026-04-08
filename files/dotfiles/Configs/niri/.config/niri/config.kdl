@@ -133,7 +133,6 @@ spawn-sh-at-startup "/usr/bin/systemctl --user restart xdg-desktop-portal xdg-de
 //
 // only uncomment below if using 'kdewallet' with blank password
 // spawn-sh-at-startup "qdbus org.kde.kwalletd6 /modules/kwalletd6 org.kde.KWallet.open kdewallet 0 login"
-spawn-at-startup "/usr/bin/dms" "run"
 binds {
     Mod+Alt+Slash {
         show-hotkey-overlay
@@ -152,6 +151,7 @@ binds {
     Mod+Alt+F hotkey-overlay-title="Open Dolphin" {
         spawn "dolphin"
     }
+    //
     Super+Shift+S hotkey-overlay-title="Screenshot Window" {
         spawn-sh "niri msg action screenshot-window"
     }

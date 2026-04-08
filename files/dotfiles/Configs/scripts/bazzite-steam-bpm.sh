@@ -4,6 +4,7 @@ set -euo pipefail
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 SCRIPTS="$HOME/.local/bin/scripts"
+LOCK_FILE="${XDG_RUNTIME_DIR}/bazzite-steam-bpm.lock"
 
 STEAM="$SCRIPTS/bazzite-steam.sh"
 STEAM_ARGS=(
@@ -23,14 +24,24 @@ LOCAL_STEAM_ENV_VARS=(
   "PROTON_ENABLE_WAYLAND=1"
 )
 
-# ── Helper Functions ──────────────────────────────────────────────────────────
+HOOKS=(
+  "$SCRIPTS/gamemode.py --"
+)
 
-add_if_exists() {
-  local array_name="$1"
-  local file="$2"
-  if [[ -f "$file" ]]; then
-    eval "$array_name+=(\"$file\")"
-  fi
+# ── Shutdown Hook Interceptor ────────────────────────────────────────────────
+
+check_shutdown_flag() {
+  for arg in "$@"; do
+    if [[ "$arg" == "-shutdown" ]]; then
+      local hook
+      hook="$(command -v steamos-session-select 2>/dev/null)" || true
+      if [[ -n "$hook" ]]; then
+        exec "$hook" "$@"
+      fi
+      shutdown_steam_if_running
+      exit 0
+    fi
+  done
 }
 
 # ── Steam Shutdown Logic ─────────────────────────────────────────────────────
@@ -56,38 +67,37 @@ shutdown_steam_if_running() {
   fi
 }
 
-# ── Command Chain Builder ────────────────────────────────────────────────────
-
-build_command() {
-  local CMD=()
-
-  # Environment variables
-  CMD+=(
-    env "${LOCAL_STEAM_ENV_VARS[@]}"
-  )
-
-  # Optional wrappers
-  local OTHER_WRAPPERS=()
-  add_if_exists "OTHER_WRAPPERS" "$SCRIPTS/gamemode.py --"
-
-  CMD+=(
-    "${OTHER_WRAPPERS[@]}"
-    "${GAMESCOPE_WRAPPER}" "${GAMESCOPE_ARGS[@]}"
-    "${STEAM}" "${STEAM_ARGS[@]}"
-  )
-
-  echo "${CMD[@]}"
-}
-
 # ── Main Execution ───────────────────────────────────────────────────────────
 
 main() {
+  check_shutdown_flag "${@}"
+
+  # Prevent concurrent executions (hold lock until session ends)
+  exec 200>"$LOCK_FILE"
+  if ! flock -n 200; then
+    if pgrep -a gamescope 2>/dev/null | grep -q "$STEAM" 2>/dev/null; then
+      echo "Gamescope Steam session already active" >&2
+      exit 0
+    fi
+    flock 200
+  fi
+
   shutdown_steam_if_running
 
-  local CMD
-  read -ra CMD <<<"$(build_command)"
+  # Build the command chain inline
+  local cmd=(env "${LOCAL_STEAM_ENV_VARS[@]}")
+  for hook_str in "${HOOKS[@]}"; do
+    read -ra hook <<<"$hook_str"
+    if [[ -x "${hook[0]:-}" ]]; then
+      cmd+=("${hook[@]}")
+      echo "Hook: ${hook[0]}" >&2
+    else
+      echo "Skipping missing/unexecutable hook: ${hook[0]:-$hook_str}" >&2
+    fi
+  done
+  cmd+=("${GAMESCOPE_WRAPPER}" "${GAMESCOPE_ARGS[@]}" "${STEAM}" "${STEAM_ARGS[@]}")
 
-  "${CMD[@]}" "${@}"
+  exec "${cmd[@]}"
 }
 
 main "${@}"
