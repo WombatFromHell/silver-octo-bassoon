@@ -19,7 +19,7 @@ ssh_key_dir: "{{ support_dir }}/.ssh"
 pipewire_dir: "{{ home_dir }}/.config/pipewire"
 
 # Kernel Arguments
-kernel_args: "split_lock_detect=off amdgpu.ppfeaturemask=0xfffd7fff amdgpu.dcdebugmask=0x410"
+kernel_args: "split_lock_detect=off amdgpu.ppfeaturemask=0xfffd7fff amdgpu.dcdebugmask=0x410 mem_sleep_default=s2idle"
 
 # Program Checks
 program_checks:
