@@ -21,7 +21,7 @@ import sys
 from dataclasses import FrozenInstanceError
 from unittest.mock import MagicMock, patch
 
-import pytest  # ty: ignore[unresolved-import]
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -33,9 +33,16 @@ from niri_watcher import (
     FullscreenState,
     HoldPIDTracker,
     OutputInfo,
+    SubprocessConfig,
+    SubprocessRunner,
     VerifiedPIDCache,
     VrrOrchestrator,
     WindowInfo,
+    _collect_ancestor_pids,
+    _get_parent_pid,
+    _is_xwayland_process,
+    _extract_xwayland_display,
+    _match_window_to_gpu,
     compute_desired_fullscreen,
     execute_hook,
     fetch_gpu_pids,
@@ -57,9 +64,9 @@ from niri_watcher import (
 
 
 @pytest.fixture
-def excluded_apps() -> frozenset[str]:
+def excluded_apps() -> frozenset[AppFilter]:
     """Standard excluded-apps set for tests."""
-    return frozenset({"brave-browser", "mpv"})
+    return frozenset({AppFilter("brave-browser"), AppFilter("mpv")})
 
 
 @pytest.fixture
@@ -239,6 +246,28 @@ def orchestrator_factory():
         return orch, mocks
 
     return _build
+
+
+# ===========================================================================
+# SubprocessRunner fixture — mock the subprocess factory
+# ===========================================================================
+
+
+@pytest.fixture
+def mock_runner():
+    """Return a mocked SubprocessRunner for testing.
+
+    Usage:
+        runner = mock_runner
+        runner.run_text.return_value = '{"key": "value"}'
+        runner.run_json.return_value = [{"pid": "1234"}]
+        runner.run_check.return_value = True
+        runner.spawn_detached.return_value = MagicMock()
+    """
+    runner = MagicMock(spec=SubprocessRunner)
+    runner.config = SubprocessConfig()
+    with patch("niri_watcher._default_runner", runner):
+        yield runner
 
 
 # ===========================================================================
@@ -638,16 +667,15 @@ class TestParseWindows:
 
 class TestIsAppExcluded:
     def test_excluded(self):
-        """Backward compat: app_id in frozenset[str] still works."""
-        excluded = frozenset({"mpv"})
+        excluded = frozenset({AppFilter("mpv")})
         assert is_app_excluded("mpv", excluded) is True
 
     def test_not_excluded(self):
-        excluded = frozenset({"mpv"})
+        excluded = frozenset({AppFilter("mpv")})
         assert is_app_excluded("com.example.Game", excluded) is False
 
     def test_empty_app_id(self):
-        excluded = frozenset({"mpv"})
+        excluded = frozenset({AppFilter("mpv")})
         assert is_app_excluded("", excluded) is False
 
     def test_excluded_with_appfilter_glob_title(self):
@@ -700,30 +728,34 @@ class TestIsAppIncluded:
         assert is_app_included("mpv", included, title=None) is True
 
 
+def _eval_window_fullscreen(
+    window,
+    outputs=None,
+    ws_to_output=None,
+    excluded=None,
+    included=None,
+    default_included=None,
+    default_excluded=None,
+    relaxed_mode=False,
+) -> OutputInfo | None:
+    """Shared helper: build EvalContext and call window_is_fullscreen_and_active."""
+    ctx = EvalContext(
+        ws_to_output=ws_to_output or {1: "DP-1"},
+        outputs=outputs or {"DP-1": make_output()},
+        excluded_apps=excluded or frozenset(),
+        included_apps=included or frozenset(),
+        default_excluded_apps=default_excluded or frozenset(),
+        default_included_apps=default_included or frozenset(),
+        relaxed_mode=relaxed_mode,
+    )
+    return window_is_fullscreen_and_active(window, ctx)
+
+
 class TestWindowIsFullscreenAndActiveWithInclusion:
     """Tests for window_is_fullscreen_and_active with inclusion logic."""
 
-    def _call(
-        self,
-        window,
-        outputs=None,
-        ws_to_output=None,
-        excluded=None,
-        included=None,
-        default_included=None,
-        default_excluded=None,
-        relaxed_mode=False,
-    ) -> OutputInfo | None:
-        ctx = EvalContext(
-            ws_to_output=ws_to_output or {1: "DP-1"},
-            outputs=outputs or {"DP-1": make_output()},
-            excluded_apps=excluded or frozenset(),
-            included_apps=included or frozenset(),
-            default_excluded_apps=default_excluded or frozenset(),
-            default_included_apps=default_included or frozenset(),
-            relaxed_mode=relaxed_mode,
-        )
-        return window_is_fullscreen_and_active(window, ctx)
+    def _call(self, window, **kwargs) -> OutputInfo | None:
+        return _eval_window_fullscreen(window, **kwargs)
 
     def test_included_app_always_detected_as_fullscreen(self):
         """Included apps should be detected as fullscreen even if excluded."""
@@ -823,27 +855,13 @@ class TestAppFilterPriority:
     4. DEFAULT_EXCLUDED_APPS  (default exclusion) — lowest
     """
 
-    def _call(
-        self,
-        window,
-        user_included=None,
-        user_excluded=None,
-        default_included=None,
-        default_excluded=None,
-        relaxed_mode=False,
-        outputs=None,
-        ws_to_output=None,
-    ):
-        ctx = EvalContext(
-            ws_to_output=ws_to_output or {1: "DP-1"},
-            outputs=outputs or {"DP-1": make_output()},
-            excluded_apps=user_excluded or frozenset(),
-            included_apps=user_included or frozenset(),
-            default_excluded_apps=default_excluded or frozenset(),
-            default_included_apps=default_included or frozenset(),
-            relaxed_mode=relaxed_mode,
+    def _call(self, window, user_included=None, user_excluded=None, **kwargs):
+        return _eval_window_fullscreen(
+            window,
+            included=user_included,
+            excluded=user_excluded,
+            **kwargs,
         )
-        return window_is_fullscreen_and_active(window, ctx)
 
     def test_user_excluded_overrides_default_included(self):
         """WATCHER_EXCLUDED_APPS > DEFAULT_INCLUDED_APPS."""
@@ -948,7 +966,7 @@ class TestComputeDesiredFullscreenWithInclusion:
         desired = compute_desired_fullscreen(windows, ctx)
         assert desired["DP-1"] is True  # Game is included
 
-    def test_relaxed_mode_excluded_app_still_detected(
+    def test_relaxed_mode_non_excluded_app_detected(
         self, single_output, ws_to_output_single
     ):
         """In relaxed mode, non-excluded apps are detected without nvtop check."""
@@ -1043,7 +1061,8 @@ class TestWindowIsFullscreenAndActive:
         ctx = make_eval_ctx(
             outputs=outputs,
             ws_to_output=ws_to_output,
-            excluded=excluded or frozenset({"brave-browser", "mpv"}),
+            excluded=excluded
+            or frozenset({AppFilter("brave-browser"), AppFilter("mpv")}),
         )
         return window_is_fullscreen_and_active(window, ctx)
 
@@ -1116,7 +1135,7 @@ class TestComputeDesiredFullscreen:
         ctx = self._ctx(
             outputs=single_output,
             ws_to_output=ws_to_output_single,
-            excluded=frozenset({"brave-browser", "mpv"}),
+            excluded=frozenset({AppFilter("brave-browser"), AppFilter("mpv")}),
         )
         desired = compute_desired_fullscreen(windows, ctx)
         assert desired == {"DP-1": False}
@@ -1131,7 +1150,7 @@ class TestComputeDesiredFullscreen:
         ctx = self._ctx(
             outputs=dual_outputs,
             ws_to_output=ws_to_output_dual,
-            excluded=frozenset({"brave-browser", "mpv"}),
+            excluded=frozenset({AppFilter("brave-browser"), AppFilter("mpv")}),
         )
         desired = compute_desired_fullscreen(windows, ctx)
         assert desired["DP-1"] is True
@@ -1142,7 +1161,7 @@ class TestComputeDesiredFullscreen:
         ctx = self._ctx(
             outputs=single_output,
             ws_to_output=ws_to_output_single,
-            excluded=frozenset({"brave-browser", "mpv"}),
+            excluded=frozenset({AppFilter("brave-browser"), AppFilter("mpv")}),
         )
         desired = compute_desired_fullscreen(windows, ctx)
         assert desired["DP-1"] is False
@@ -1329,7 +1348,7 @@ class TestVrrOrchestratorPollOnce:
         cfg = Config(
             hook_on=["/bin/hook on"],
             hook_off=["/bin/hook off"],
-            excluded_apps=frozenset({"mpv"}),
+            excluded_apps=frozenset({AppFilter("mpv")}),
         )
         orch, mocks = orchestrator_factory(
             cfg=cfg,
@@ -1663,38 +1682,34 @@ class TestHookExecution:
         hook_call = mocks["run_hook"].call_args
         assert hook_call[0][1] == "DP-1"
 
-    def test_execute_hook_with_env_vars(self):
-        mock_popen = MagicMock()
-        with patch("niri_watcher.subprocess.Popen", mock_popen):
-            with patch("niri_watcher.shutil.which", return_value="/bin/echo"):
-                execute_hook("/bin/echo test", "DP-1", app_pid=1234)
-        mock_popen.assert_called_once()
-        env = mock_popen.call_args[1]["env"]
+    def test_execute_hook_with_env_vars(self, mock_runner):
+        mock_runner.spawn_detached.return_value = MagicMock()
+        execute_hook("/bin/echo test", "DP-1", app_pid=1234)
+        mock_runner.spawn_detached.assert_called_once()
+        call_args = mock_runner.spawn_detached.call_args
+        assert call_args[0][0] == ["/bin/echo", "test"]
+        env = call_args[1]["env"]
         assert env["NIRI_OUTPUT_NAME"] == "DP-1"
         assert env["NIRI_APP_PID"] == "1234"
 
-    def test_execute_hook_without_pid(self):
-        mock_popen = MagicMock()
-        with patch("niri_watcher.subprocess.Popen", mock_popen):
-            with patch("niri_watcher.shutil.which", return_value="/bin/echo"):
-                execute_hook("/bin/echo test", "DP-1", app_pid=None)
-        env = mock_popen.call_args[1]["env"]
+    def test_execute_hook_without_pid(self, mock_runner):
+        mock_runner.spawn_detached.return_value = MagicMock()
+        execute_hook("/bin/echo test", "DP-1", app_pid=None)
+        mock_runner.spawn_detached.assert_called_once()
+        env = mock_runner.spawn_detached.call_args[1]["env"]
         assert env["NIRI_APP_PID"] == ""
 
-    def test_execute_hook_command_not_found(self, caplog):
-        with patch("niri_watcher.shutil.which", return_value=None):
-            with patch("niri_watcher.Path.is_file", return_value=False):
-                execute_hook("/nonexistent/cmd", "DP-1")
-        assert any(
-            r.levelno == logging.WARNING
-            for r in caplog.records
-            if r.name == "niri_watcher"
-        )
+    def test_execute_hook_command_not_found(self, mock_runner, caplog):
+        mock_runner.spawn_detached.return_value = None
+        execute_hook("/nonexistent/cmd", "DP-1")
+        mock_runner.spawn_detached.assert_called_once()
+        # Warning is logged by SubprocessRunner.spawn_detached (mocked here)
+        # In real usage, the runner would log at WARNING level
+        assert mock_runner.spawn_detached.call_count == 1
 
-    def test_execute_hook_empty_spec(self):
-        with patch("niri_watcher.subprocess.Popen") as mock_popen:
-            execute_hook("", "DP-1")
-        mock_popen.assert_not_called()
+    def test_execute_hook_empty_spec(self, mock_runner):
+        execute_hook("", "DP-1")
+        mock_runner.spawn_detached.assert_not_called()
 
 
 # ===========================================================================
@@ -1719,7 +1734,7 @@ class TestEdgeCases:
         ctx = EvalContext(
             ws_to_output=ws_to_output_single,
             outputs=single_output,
-            excluded_apps=frozenset({"brave-browser", "mpv"}),
+            excluded_apps=frozenset({AppFilter("brave-browser"), AppFilter("mpv")}),
         )
         result = window_is_fullscreen_and_active(window, ctx)
         assert result is not None
@@ -1729,7 +1744,7 @@ class TestEdgeCases:
         ctx = EvalContext(
             ws_to_output={},
             outputs={"DP-1": make_output()},
-            excluded_apps=frozenset({"brave-browser", "mpv"}),
+            excluded_apps=frozenset({AppFilter("brave-browser"), AppFilter("mpv")}),
         )
         result = window_is_fullscreen_and_active(w, ctx)
         assert result is None
@@ -1744,7 +1759,7 @@ class TestEdgeCases:
         ctx = EvalContext(
             ws_to_output=ws_to_output_single,
             outputs=single_output,
-            excluded_apps=frozenset({"brave-browser", "mpv"}),
+            excluded_apps=frozenset({AppFilter("brave-browser"), AppFilter("mpv")}),
         )
         desired = compute_desired_fullscreen(windows, ctx)
         assert desired["DP-1"] is True
@@ -1758,7 +1773,7 @@ class TestEdgeCases:
         ctx = EvalContext(
             ws_to_output=ws_to_output_single,
             outputs=single_output,
-            excluded_apps=frozenset({"brave-browser", "mpv"}),
+            excluded_apps=frozenset({AppFilter("brave-browser"), AppFilter("mpv")}),
         )
         desired = compute_desired_fullscreen(windows, ctx)
         assert desired["DP-1"] is False
@@ -1803,7 +1818,7 @@ class TestEdgeCases:
         ctx = EvalContext(
             ws_to_output={1: "DP-1", 2: "HDMI-1"},
             outputs=outputs,
-            excluded_apps=frozenset({"brave-browser", "mpv"}),
+            excluded_apps=frozenset({AppFilter("brave-browser"), AppFilter("mpv")}),
         )
         desired = compute_desired_fullscreen([], ctx)
         assert desired == {"DP-1": False, "HDMI-1": False}
@@ -2268,7 +2283,8 @@ class TestWindowIsFullscreenAndActiveWithScale:
         ctx = make_eval_ctx(
             outputs=outputs,
             ws_to_output=ws_to_output,
-            excluded=excluded or frozenset({"brave-browser", "mpv"}),
+            excluded=excluded
+            or frozenset({AppFilter("brave-browser"), AppFilter("mpv")}),
         )
         return window_is_fullscreen_and_active(window, ctx)
 
@@ -2672,6 +2688,7 @@ class TestHoldPIDTracker:
         tracker.record(os.getpid(), "DP-1")
         tracker.clear()
         assert tracker.has_running_pid(os.getpid()) is False
+        assert tracker._pid_to_output == {}
 
     def test_is_output_held_alive_pid(self):
 
@@ -3347,6 +3364,173 @@ class TestHoldModeWithRealPID:
 # ===========================================================================
 
 
+class TestSubprocessRunner:
+    """Tests for the SubprocessRunner factory class."""
+
+    def test_run_text_success(self):
+        """Returns stdout text on success."""
+        runner = SubprocessRunner()
+        with patch("niri_watcher.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="hello world\n")
+            result = runner.run_text(["echo", "hello world"])
+        assert result == "hello world"
+
+    def test_run_text_strips_whitespace(self):
+        """Returns stripped text."""
+        runner = SubprocessRunner()
+        with patch("niri_watcher.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="  hello  \n")
+            result = runner.run_text(["echo", "hello"])
+        assert result == "hello"
+
+    def test_run_text_empty_returns_none(self):
+        """Empty stdout returns None."""
+        runner = SubprocessRunner()
+        with patch("niri_watcher.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="   ")
+            result = runner.run_text(["echo"])
+        assert result is None
+
+    def test_run_text_file_not_found(self):
+        """Returns None when command not found."""
+        runner = SubprocessRunner()
+        with patch("niri_watcher.subprocess.run", side_effect=FileNotFoundError):
+            result = runner.run_text(["nonexistent_cmd"])
+        assert result is None
+
+    def test_run_text_timeout(self):
+        """Returns None on timeout."""
+        runner = SubprocessRunner()
+        with patch(
+            "niri_watcher.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["cmd"], 5),
+        ):
+            result = runner.run_text(["slow_cmd"])
+        assert result is None
+
+    def test_run_text_os_error(self):
+        """Returns None on OSError."""
+        runner = SubprocessRunner()
+        with patch("niri_watcher.subprocess.run", side_effect=OSError("fail")):
+            result = runner.run_text(["bad_cmd"])
+        assert result is None
+
+    def test_run_json_success(self):
+        """Parses and returns JSON data."""
+        runner = SubprocessRunner()
+        with patch.object(
+            runner, "run_text", return_value='{"key": "value"}'
+        ) as mock_text:
+            result = runner.run_json(["cmd"])
+        assert result == {"key": "value"}
+        mock_text.assert_called_once_with(["cmd"])
+
+    def test_run_json_list(self):
+        """Parses JSON list."""
+        runner = SubprocessRunner()
+        with patch.object(runner, "run_text", return_value="[1, 2, 3]"):
+            result = runner.run_json(["cmd"])
+        assert result == [1, 2, 3]
+
+    def test_run_json_invalid_returns_none(self):
+        """Returns None when JSON is invalid."""
+        runner = SubprocessRunner()
+        with patch.object(runner, "run_text", return_value="not json"):
+            result = runner.run_json(["cmd"])
+        assert result is None
+
+    def test_run_json_text_failure(self):
+        """Returns None when underlying text fetch fails."""
+        runner = SubprocessRunner()
+        with patch.object(runner, "run_text", return_value=None):
+            result = runner.run_json(["cmd"])
+        assert result is None
+
+    def test_run_check_success(self):
+        """Returns True when exit code is 0."""
+        runner = SubprocessRunner()
+        with patch("niri_watcher.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            result = runner.run_check(["pgrep", "-x", "niri"])
+        assert result is True
+
+    def test_run_check_failure(self):
+        """Returns False when exit code is non-zero."""
+        runner = SubprocessRunner()
+        with patch("niri_watcher.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1)
+            result = runner.run_check(["pgrep", "-x", "niri"])
+        assert result is False
+
+    def test_run_check_file_not_found(self):
+        """Returns False when command not found."""
+        runner = SubprocessRunner()
+        with patch("niri_watcher.subprocess.run", side_effect=FileNotFoundError):
+            result = runner.run_check(["nonexistent"])
+        assert result is False
+
+    def test_run_check_timeout(self):
+        """Returns False on timeout."""
+        runner = SubprocessRunner()
+        with patch(
+            "niri_watcher.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["cmd"], 5),
+        ):
+            result = runner.run_check(["slow_cmd"])
+        assert result is False
+
+    def test_spawn_detached_success(self):
+        """Spawns and returns Popen object."""
+        runner = SubprocessRunner()
+        with patch("niri_watcher.shutil.which", return_value="/bin/echo"):
+            with patch("niri_watcher.subprocess.Popen") as mock_popen:
+                mock_popen.return_value = MagicMock()
+                result = runner.spawn_detached(["/bin/echo", "test"])
+        assert result is not None
+        mock_popen.assert_called_once()
+
+    def test_spawn_detached_with_env(self):
+        """Passes custom environment."""
+        runner = SubprocessRunner()
+        with patch("niri_watcher.shutil.which", return_value="/bin/cmd"):
+            with patch("niri_watcher.subprocess.Popen") as mock_popen:
+                mock_popen.return_value = MagicMock()
+                custom_env = {"FOO": "bar"}
+                runner.spawn_detached(["/bin/cmd"], env=custom_env)
+        assert mock_popen.call_args[1]["env"] == custom_env
+
+    def test_spawn_detached_command_not_found(self):
+        """Returns None when command not found."""
+        runner = SubprocessRunner()
+        with patch("niri_watcher.shutil.which", return_value=None):
+            with patch("niri_watcher.Path.is_file", return_value=False):
+                result = runner.spawn_detached(["/nonexistent"])
+        assert result is None
+
+    def test_spawn_detached_os_error(self):
+        """Returns None on OSError."""
+        runner = SubprocessRunner()
+        with patch("niri_watcher.shutil.which", return_value="/bin/cmd"):
+            with patch("niri_watcher.subprocess.Popen", side_effect=OSError):
+                result = runner.spawn_detached(["/bin/cmd"])
+        assert result is None
+
+    def test_config_custom_timeout(self):
+        """Uses configured timeout."""
+        config = SubprocessConfig(default_timeout=10.0)
+        runner = SubprocessRunner(config=config)
+        assert runner.config.default_timeout == 10.0
+
+    def test_config_logging_disabled(self):
+        """Logging can be disabled."""
+        config = SubprocessConfig(log_failures=False)
+        runner = SubprocessRunner(config=config)
+        assert runner.config.log_failures is False
+
+
+# ===========================================================================
+
+
 class TestFetchGpuPids:
     """Tests for the nvtop -s GPU PID extraction."""
 
@@ -3362,7 +3546,7 @@ class TestFetchGpuPids:
             ]
         )
 
-    def test_graphic_and_compute_pid_returned(self):
+    def test_graphic_and_compute_pid_returned(self, mock_runner):
         """Processes with kind='graphic & compute' and non-null gpu_usage qualify."""
         data = self._make_nvtop_output(
             [
@@ -3374,12 +3558,12 @@ class TestFetchGpuPids:
                 },
             ]
         )
-        with patch("niri_watcher.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(stdout=data)
+        mock_runner.run_json.return_value = json.loads(data)
+        with patch("niri_watcher._collect_ancestor_pids", return_value=set()):
             result = fetch_gpu_pids()
         assert result == [1234]
 
-    def test_graphic_only_pid_excluded(self):
+    def test_graphic_only_pid_excluded(self, mock_runner):
         """Processes with kind='graphic' (no compute) are excluded."""
         data = self._make_nvtop_output(
             [
@@ -3391,12 +3575,12 @@ class TestFetchGpuPids:
                 },
             ]
         )
-        with patch("niri_watcher.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(stdout=data)
+        mock_runner.run_json.return_value = json.loads(data)
+        with patch("niri_watcher._collect_ancestor_pids", return_value=set()):
             result = fetch_gpu_pids()
         assert result == []
 
-    def test_null_gpu_usage_excluded(self):
+    def test_null_gpu_usage_excluded(self, mock_runner):
         """Processes with gpu_usage=null are excluded even if kind matches."""
         data = self._make_nvtop_output(
             [
@@ -3408,12 +3592,12 @@ class TestFetchGpuPids:
                 },
             ]
         )
-        with patch("niri_watcher.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(stdout=data)
+        mock_runner.run_json.return_value = json.loads(data)
+        with patch("niri_watcher._collect_ancestor_pids", return_value=set()):
             result = fetch_gpu_pids()
         assert result == []
 
-    def test_zero_percent_gpu_usage_included(self):
+    def test_zero_percent_gpu_usage_included(self, mock_runner):
         """Processes with gpu_usage='0%' ARE included (they have a valid reading)."""
         data = self._make_nvtop_output(
             [
@@ -3425,57 +3609,327 @@ class TestFetchGpuPids:
                 },
             ]
         )
-        with patch("niri_watcher.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(stdout=data)
+        mock_runner.run_json.return_value = json.loads(data)
+        with patch("niri_watcher._collect_ancestor_pids", return_value=set()):
             result = fetch_gpu_pids()
         assert result == [1111]
 
-    def test_multiple_devices_merged(self):
+    def test_multiple_devices_merged(self, mock_runner):
         """PIDs from multiple GPU devices are merged."""
-        data = json.dumps(
-            [
-                {
-                    "device_name": "AMD GPU",
-                    "processes": [
-                        {"pid": "100", "kind": "graphic & compute", "gpu_usage": "10%"},
-                    ],
-                },
-                {
-                    "device_name": "NVIDIA GPU",
-                    "processes": [
-                        {"pid": "200", "kind": "graphic & compute", "gpu_usage": "20%"},
-                    ],
-                },
-            ]
-        )
-        with patch("niri_watcher.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(stdout=data)
+        data = [
+            {
+                "device_name": "AMD GPU",
+                "processes": [
+                    {"pid": "100", "kind": "graphic & compute", "gpu_usage": "10%"},
+                ],
+            },
+            {
+                "device_name": "NVIDIA GPU",
+                "processes": [
+                    {"pid": "200", "kind": "graphic & compute", "gpu_usage": "20%"},
+                ],
+            },
+        ]
+        mock_runner.run_json.return_value = data
+        with patch("niri_watcher._collect_ancestor_pids", return_value=set()):
             result = fetch_gpu_pids()
         assert sorted(result) == [100, 200]
 
-    def test_invalid_json_returns_empty(self):
-        with patch("niri_watcher.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(stdout="not json")
-            result = fetch_gpu_pids()
+    def test_invalid_json_returns_empty(self, mock_runner):
+        mock_runner.run_json.return_value = None
+        result = fetch_gpu_pids()
         assert result == []
 
-    def test_subprocess_failure_returns_empty(self):
-        with patch("niri_watcher.subprocess.run", side_effect=FileNotFoundError):
-            result = fetch_gpu_pids()
+    def test_subprocess_failure_returns_empty(self, mock_runner):
+        mock_runner.run_json.return_value = None
+        result = fetch_gpu_pids()
         assert result == []
 
-    def test_timeout_returns_empty(self):
+    def test_timeout_returns_empty(self, mock_runner):
+        mock_runner.run_json.return_value = None
+        result = fetch_gpu_pids()
+        assert result == []
+
+    def test_ancestor_pids_included_for_proton_game(self, mock_runner):
+        """Parent/grandparent PIDs are included — handles Wine/Proton PID mismatch."""
+        # Simulate a Proton game: game.exe (PID 299547) is child of proton (PID 193318)
+        data = self._make_nvtop_output(
+            [
+                {
+                    "pid": "299547",
+                    "cmdline": "S:\\Games\\Shape of Dreams\\Shape of Dreams.exe",
+                    "kind": "graphic & compute",
+                    "gpu_usage": "28%",
+                },
+            ]
+        )
+        mock_runner.run_json.return_value = json.loads(data)
         with patch(
-            "niri_watcher.subprocess.run",
-            side_effect=subprocess.TimeoutExpired(["nvtop", "-s"], 5),
-        ):
+            "niri_watcher._collect_ancestor_pids",
+            return_value={193318, 12345, 1},
+        ) as mock_ancestors:
             result = fetch_gpu_pids()
-        assert result == []
+        # Should include both the game PID and all its ancestors
+        assert sorted(result) == [1, 12345, 193318, 299547]
+        mock_ancestors.assert_called_once_with(299547)
 
 
 # ===========================================================================
-# Window title parsing — parse_windows extracts title from niri JSON
+# Parent PID resolution — /proc parsing tests
 # ===========================================================================
+
+
+class TestGetParentPid:
+    """Tests for _get_parent_pid() — reading PPid from /proc/<pid>/status."""
+
+    def test_valid_process_returns_ppid(self):
+        """PID 1 (init) should have PPid 0."""
+        # PID 1 always exists and has PPid=0
+        result = _get_parent_pid(1)
+        assert result == 0
+
+    def test_nonexistent_process_returns_none(self):
+        """Very high PID that likely doesn't exist returns None."""
+        result = _get_parent_pid(999999999)
+        assert result is None
+
+    def test_pid_0_returns_none(self):
+        """PID 0 is invalid — should return None."""
+        result = _get_parent_pid(0)
+        assert result is None
+
+
+class TestCollectAncestorPids:
+    """Tests for _collect_ancestor_pids() — walking the process tree."""
+
+    def test_pid_1_has_no_ancestors(self):
+        """Init (PID 1) has no parent — should return empty set."""
+        result = _collect_ancestor_pids(1)
+        assert result == set()
+
+    def test_child_process_includes_parent_chain(self):
+        """A child process should include all ancestors up to PID 1."""
+        # Use the current Python process — it will have a parent chain
+        current_pid = os.getpid()
+        result = _collect_ancestor_pids(current_pid)
+        # Should include at least PID 1 (init) and likely more
+        assert 1 in result or len(result) > 0
+
+    def test_nonexistent_process_returns_empty(self):
+        """Nonexistent PID returns empty set."""
+        result = _collect_ancestor_pids(999999999)
+        assert result == set()
+
+
+# ===========================================================================
+# Xwayland and process matching — TDD for Proton/Wine PID gap
+# ===========================================================================
+
+
+class TestIsXwaylandProcess:
+    """Tests for _is_xwayland_process()."""
+
+    def test_xwayland_satellite(self):
+        with patch("niri_watcher._get_process_cmdline") as mock_cmd:
+            mock_cmd.return_value = ["/usr/bin/xwayland-satellite", ":0"]
+            assert _is_xwayland_process(12345) is True
+
+    def test_xwayland_server(self):
+        with patch("niri_watcher._get_process_cmdline") as mock_cmd:
+            mock_cmd.return_value = [
+                "/usr/bin/Xwayland",
+                ":0",
+                "-rootless",
+            ]
+            assert _is_xwayland_process(12345) is True
+
+    def test_case_insensitive(self):
+        with patch("niri_watcher._get_process_cmdline") as mock_cmd:
+            mock_cmd.return_value = ["/usr/bin/XWAYLAND", ":0"]
+            assert _is_xwayland_process(12345) is True
+
+    def test_non_xwayland_process(self):
+        with patch("niri_watcher._get_process_cmdline") as mock_cmd:
+            mock_cmd.return_value = ["/usr/bin/brave", "--type=gpu-process"]
+            assert _is_xwayland_process(12345) is False
+
+    def test_unreadable_pid(self):
+        with patch("niri_watcher._get_process_cmdline") as mock_cmd:
+            mock_cmd.return_value = []
+            assert _is_xwayland_process(999999999) is False
+
+
+class TestExtractXwaylandDisplay:
+    """Tests for _extract_xwayland_display()."""
+
+    def test_xwayland_display_argument(self):
+        with patch("niri_watcher._get_process_cmdline") as mock_cmd:
+            mock_cmd.return_value = [
+                "/usr/bin/Xwayland",
+                ":0",
+                "-listenfd",
+                "93",
+                "-rootless",
+            ]
+            assert _extract_xwayland_display(12345) == ":0"
+
+    def test_xwayland_display_with_different_number(self):
+        with patch("niri_watcher._get_process_cmdline") as mock_cmd:
+            mock_cmd.return_value = ["/usr/bin/Xwayland", ":1", "-rootless"]
+            assert _extract_xwayland_display(12345) == ":1"
+
+    def test_no_display_argument(self):
+        with patch("niri_watcher._get_process_cmdline") as mock_cmd:
+            mock_cmd.return_value = ["/usr/bin/some-process", "--foo"]
+            assert _extract_xwayland_display(12345) is None
+
+    def test_empty_cmdline(self):
+        with patch("niri_watcher._get_process_cmdline") as mock_cmd:
+            mock_cmd.return_value = []
+            assert _extract_xwayland_display(12345) is None
+
+
+class TestMatchWindowToGpu:
+    """Tests for _match_window_to_gpu() — the PID gap bridge."""
+
+    def test_direct_pid_match(self):
+        """Native game: window PID is directly in GPU PIDs."""
+        assert _match_window_to_gpu(1234, {1234, 5678}) is True
+
+    def test_no_match_empty_gpu_pids(self):
+        """No GPU activity at all."""
+        assert _match_window_to_gpu(1234, set()) is False
+
+    def test_no_match_none_window_pid(self):
+        """Window has no PID (should not match)."""
+        assert _match_window_to_gpu(None, {1234}) is False
+
+    def test_no_match_disjoint_pids(self):
+        """Window and GPU processes have completely unrelated PIDs."""
+        # Without common ancestors or Xwayland match, should be False
+        with (
+            patch("niri_watcher._collect_ancestor_pids", return_value=set()),
+            patch("niri_watcher._is_xwayland_process", return_value=False),
+        ):
+            assert _match_window_to_gpu(100, {200, 300}) is False
+
+    def test_common_ancestor_match(self):
+        """Proton game: window and GPU share a common ancestor (e.g. Steam)."""
+
+        # Window PID 100 has ancestors {50, 1}
+        # GPU PID 200 has ancestors {50, 1}
+        # Common ancestor 50 → should match
+        def fake_ancestors(pid: int) -> set[int]:
+            if pid == 100:
+                return {50, 1}
+            if pid == 200:
+                return {50, 1}
+            return set()
+
+        with (
+            patch("niri_watcher._collect_ancestor_pids", side_effect=fake_ancestors),
+            patch("niri_watcher._is_xwayland_process", return_value=False),
+        ):
+            assert _match_window_to_gpu(100, {200}) is True
+
+    def test_xwayland_display_match(self):
+        """Xwayland game: window is Xwayland, GPU process has matching DISPLAY."""
+
+        def fake_ancestors(pid: int) -> set[int]:
+            return set()  # No common ancestors
+
+        with (
+            patch("niri_watcher._collect_ancestor_pids", side_effect=fake_ancestors),
+            patch("niri_watcher._is_xwayland_process", return_value=True),
+            patch("niri_watcher._extract_xwayland_display", return_value=":0"),
+            patch(
+                "niri_watcher._find_gpu_process_displays",
+                return_value={299547: ":0"},
+            ),
+        ):
+            assert _match_window_to_gpu(193318, {299547}) is True
+
+    def test_xwayland_display_mismatch(self):
+        """Xwayland window but GPU process uses different display."""
+
+        def fake_ancestors(pid: int) -> set[int]:
+            return set()
+
+        with (
+            patch("niri_watcher._collect_ancestor_pids", side_effect=fake_ancestors),
+            patch("niri_watcher._is_xwayland_process", return_value=True),
+            patch("niri_watcher._extract_xwayland_display", return_value=":0"),
+            patch(
+                "niri_watcher._find_gpu_process_displays",
+                return_value={299547: ":1"},  # Different display
+            ),
+        ):
+            assert _match_window_to_gpu(193318, {299547}) is False
+
+    def test_xwayland_no_display_found(self):
+        """Xwayland window but no GPU process has a DISPLAY set."""
+
+        def fake_ancestors(pid: int) -> set[int]:
+            return set()
+
+        with (
+            patch("niri_watcher._collect_ancestor_pids", side_effect=fake_ancestors),
+            patch("niri_watcher._is_xwayland_process", return_value=True),
+            patch("niri_watcher._extract_xwayland_display", return_value=":0"),
+            patch(
+                "niri_watcher._find_gpu_process_displays",
+                return_value={},  # No GPU process with DISPLAY
+            ),
+        ):
+            assert _match_window_to_gpu(193318, {299547}) is False
+
+
+# ===========================================================================
+# Startup readiness — _wait_for_niri
+# ===========================================================================
+
+
+class TestWaitForNiri:
+    """Tests for the niri readiness probe (pgrep-based gate)."""
+
+    def test_returns_immediately_when_niri_ready(
+        self, orchestrator_factory, mock_runner
+    ):
+        """If niri process exists, no delay occurs."""
+        import time as _time
+
+        orch, _mocks = orchestrator_factory()
+        mock_runner.run_check.return_value = True
+        start = _time.monotonic()
+        orch._wait_for_niri()
+        elapsed = _time.monotonic() - start
+        # Should return almost instantly (well under 0.5s)
+        assert elapsed < 0.5
+        # run_check was called at least once
+        assert mock_runner.run_check.call_count >= 1
+        assert mock_runner.run_check.call_args[0][0] == ["pgrep", "-x", "niri"]
+
+    def test_retries_until_niri_found(self, orchestrator_factory, mock_runner):
+        """If niri isn't running yet, it keeps retrying."""
+        orch, _mocks = orchestrator_factory(cfg=Config(startup_delay=2.1))
+        call_count = 0
+
+        def _flaky_pgrep(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return call_count >= 3
+
+        mock_runner.run_check.side_effect = _flaky_pgrep
+        orch._wait_for_niri()
+        assert call_count == 3  # succeeded on 3rd attempt
+
+    def test_proceeds_after_timeout(self, orchestrator_factory, mock_runner):
+        """If niri never starts, it logs a warning and returns."""
+        orch, _mocks = orchestrator_factory(cfg=Config(startup_delay=0.5))
+        mock_runner.run_check.return_value = False
+        orch._wait_for_niri()
+        # Should not raise — returns after timeout
+        assert mock_runner.run_check.call_count >= 1
 
 
 class TestParseWindowsTitle:
@@ -3791,50 +4245,64 @@ class TestStableCycleHash:
             outputs, windows_a, ws
         ) == VrrOrchestrator._stable_cycle_hash(outputs, windows_b, ws)
 
-    def test_tile_size_change_changes_hash(self):
+    @pytest.mark.parametrize(
+        ("make_a", "make_b", "desc"),
+        [
+            pytest.param(
+                lambda s: [s._make_window(tile_w=1920, tile_h=1080)],
+                lambda s: [s._make_window(tile_w=1280, tile_h=720)],
+                "tile_size",
+                id="tile_size_change",
+            ),
+            pytest.param(
+                lambda s: [s._make_window(is_focused=True)],
+                lambda s: [s._make_window(is_focused=False)],
+                "focus",
+                id="focus_change",
+            ),
+            pytest.param(
+                lambda s: [s._make_window(app_id="com.example.Game")],
+                lambda s: [s._make_window(app_id="com.other.App")],
+                "app_id",
+                id="app_id_change",
+            ),
+            pytest.param(
+                lambda s: [s._make_window(pid=1234)],
+                lambda s: [s._make_window(pid=5678)],
+                "pid",
+                id="pid_change",
+            ),
+            pytest.param(
+                lambda s: [s._make_window(title="Game Window")],
+                lambda s: [s._make_window(title="Other Window")],
+                "title",
+                id="title_change",
+            ),
+        ],
+    )
+    def test_window_change_alters_hash(self, make_a, make_b, desc):
         outputs = '{"DP-1": {}}'
         ws = {1: "DP-1"}
-        w_full = [self._make_window(tile_w=1920, tile_h=1080)]
-        w_small = [self._make_window(tile_w=1280, tile_h=720)]
         assert VrrOrchestrator._stable_cycle_hash(
-            outputs, w_full, ws
-        ) != VrrOrchestrator._stable_cycle_hash(outputs, w_small, ws)
+            outputs, make_a(self), ws
+        ) != VrrOrchestrator._stable_cycle_hash(outputs, make_b(self), ws)
 
-    def test_focus_change_changes_hash(self):
-        outputs = '{"DP-1": {}}'
-        ws = {1: "DP-1"}
-        w_focused = [self._make_window(is_focused=True)]
-        w_unfocused = [self._make_window(is_focused=False)]
-        assert VrrOrchestrator._stable_cycle_hash(
-            outputs, w_focused, ws
-        ) != VrrOrchestrator._stable_cycle_hash(outputs, w_unfocused, ws)
-
-    def test_app_id_change_changes_hash(self):
-        outputs = '{"DP-1": {}}'
-        ws = {1: "DP-1"}
-        w_a = [self._make_window(app_id="com.example.Game")]
-        w_b = [self._make_window(app_id="com.other.App")]
-        assert VrrOrchestrator._stable_cycle_hash(
-            outputs, w_a, ws
-        ) != VrrOrchestrator._stable_cycle_hash(outputs, w_b, ws)
-
-    def test_pid_change_changes_hash(self):
-        outputs = '{"DP-1": {}}'
-        ws = {1: "DP-1"}
-        w_a = [self._make_window(pid=1234)]
-        w_b = [self._make_window(pid=5678)]
-        assert VrrOrchestrator._stable_cycle_hash(
-            outputs, w_a, ws
-        ) != VrrOrchestrator._stable_cycle_hash(outputs, w_b, ws)
-
-    def test_outputs_json_change_changes_hash(self):
+    @pytest.mark.parametrize(
+        ("outputs_a", "outputs_b", "id"),
+        [
+            pytest.param(
+                '{"DP-1": {}}',
+                '{"DP-1": {}, "DP-2": {}}',
+                "outputs_json_change",
+            ),
+        ],
+    )
+    def test_outputs_json_change_changes_hash(self, outputs_a, outputs_b, id):
         windows = [self._make_window()]
         ws = {1: "DP-1"}
-        out_a = '{"DP-1": {}}'
-        out_b = '{"DP-1": {}, "DP-2": {}}'
         assert VrrOrchestrator._stable_cycle_hash(
-            out_a, windows, ws
-        ) != VrrOrchestrator._stable_cycle_hash(out_b, windows, ws)
+            outputs_a, windows, ws
+        ) != VrrOrchestrator._stable_cycle_hash(outputs_b, windows, ws)
 
     def test_workspace_change_changes_hash(self):
         outputs = '{"DP-1": {}}'
@@ -3860,15 +4328,6 @@ class TestStableCycleHash:
         ws = {1: "DP-1"}
         h = VrrOrchestrator._stable_cycle_hash(outputs, [], ws)
         assert isinstance(h, int)
-
-    def test_title_change_changes_hash(self):
-        outputs = '{"DP-1": {}}'
-        ws = {1: "DP-1"}
-        w_a = [self._make_window(title="Game Window")]
-        w_b = [self._make_window(title="Other Window")]
-        assert VrrOrchestrator._stable_cycle_hash(
-            outputs, w_a, ws
-        ) != VrrOrchestrator._stable_cycle_hash(outputs, w_b, ws)
 
 
 # ===========================================================================

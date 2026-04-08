@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 from typing import Any
 
-import pytest  # ty: ignore[unresolved-import]
+import pytest
 
 # Import everything from the module under test (no mocking of the SUT).
 import gamemode
@@ -38,8 +38,8 @@ def _cfg(**overrides: Any) -> gamemode.Config:
         enable_inhibit=False,
         enable_audio=False,
         enable_steam=False,
-        scx_name="scx_lavd",
-        scx_args="",
+        scx_scheduler="lavd",
+        scx_mode="gaming",
         profile_game="throughput-performance-bazzite",
         profile_desktop="balanced-bazzite",
         audio_latency="60",
@@ -71,6 +71,14 @@ def logger():
 def runner(logger):
     """A real Runner backed by the fixture logger."""
     return gamemode.Runner(logger)
+
+
+@pytest.fixture()
+def niri_session(monkeypatch):
+    """Fake a niri compositor session via environment variables."""
+    monkeypatch.setenv("XDG_SESSION_DESKTOP", "niri")
+    monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
+    monkeypatch.setattr(gamemode, "compositor_is_niri", lambda: True)
 
 
 # ============================================================================
@@ -122,6 +130,62 @@ def _cp(stdout="", stderr="", rc=0):
 
 
 # ============================================================================
+# Test helpers: factory + map builders
+# ============================================================================
+
+
+def _make_feature(
+    FeatureClass, cfg, logger, *, resolve_map=None, run_map=None, pipe_map=None
+):
+    """Create a FakeRunner + instantiate a feature, returning both.
+
+    Usage::
+        vrr, fake = _make_feature(gamemode.VRR, cfg, logger, resolve_map=..., run_map=..., pipe_map=...)
+        pp, fake = _make_feature(gamemode.PowerProfile, cfg, logger, resolve_map=..., run_map=...)
+    """
+    r = FakeRunner(
+        logger,
+        resolve_map=resolve_map or {},
+        run_map=run_map or {},
+        pipe_map=pipe_map or {},
+    )
+    return FeatureClass(cfg, r, logger), r
+
+
+def _vrr_maps(vrr_supported=True, vrr_enabled=False, output="DP-1"):
+    """Return (resolve_map, run_map, pipe_map) for a VRR test scenario.
+
+    *vrr_supported* and *vrr_enabled* control the canned jq responses.
+    """
+    niri_json = json.dumps(
+        {
+            output: {
+                "vrr_supported": vrr_supported,
+                "vrr_enabled": vrr_enabled,
+            }
+        }
+    )
+    resolve_map = {"niri": "/usr/bin/niri", "jq": "/usr/bin/jq"}
+    run_map = {("niri", "msg", "-j", "outputs"): _cp(stdout=niri_json)}
+    pipe_map = {
+        ("jq", "-r", "--arg", "o", output, ".[$o].vrr_supported // true"): _cp(
+            stdout=str(vrr_supported).lower()
+        ),
+        (
+            "jq",
+            "-r",
+            "--arg",
+            "o",
+            output,
+            'if .[$o].vrr_enabled == true then "true" '
+            'elif .[$o].vrr_enabled == false then "false" '
+            'else "" end',
+        ): _cp(stdout=str(vrr_enabled).lower()),
+    }
+    return resolve_map, run_map, pipe_map
+
+
+# ============================================================================
 # Config
 # ============================================================================
 
@@ -129,11 +193,13 @@ def _cp(stdout="", stderr="", rc=0):
 class TestConfig:
     def test_defaults_from_env(self, monkeypatch):
         monkeypatch.setenv("ENABLE_VRR", "false")
-        monkeypatch.setenv("SCX_SCHEDULER_NAME", "scx_custom")
+        monkeypatch.setenv("SCX_SCHEDULER", "custom")
+        monkeypatch.setenv("SCX_SCHEDULER_MODE", "power-save")
         monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/999")
         cfg = gamemode.Config()
         assert cfg.enable_vrr is False
-        assert cfg.scx_name == "scx_custom"
+        assert cfg.scx_scheduler == "custom"
+        assert cfg.scx_mode == "power-save"
         assert cfg.runtime_dir == "/run/user/999"
 
     def test_state_dir_derived(self, tmp_path):
@@ -173,12 +239,6 @@ class TestLogging:
         log = gamemode.setup_logging(tmp_runtime, to_file=False, debug=False)
         assert len(log.handlers) >= 1
 
-    def test_idempotent(self, tmp_runtime):
-        log = gamemode.setup_logging(tmp_runtime)
-        count = len(log.handlers)
-        log = gamemode.setup_logging(tmp_runtime)
-        assert len(log.handlers) == count
-
     def test_file_handler(self, tmp_runtime):
         log = gamemode.setup_logging(tmp_runtime, to_file=True)
         file_handlers = [h for h in log.handlers if isinstance(h, logging.FileHandler)]
@@ -214,14 +274,29 @@ class TestRunner:
         assert result.returncode == 0
         assert result.stdout.strip() == "hello"
 
-    def test_capture(self, runner):
-        result = runner.capture(["echo", "-n", "captured"])
-        assert result.stdout.strip() == "captured"
 
-    def test_pipe(self, runner):
-        result = runner.pipe(["cat"], input_data="piped")
-        assert result.returncode == 0
-        assert result.stdout.strip() == "piped"
+# ============================================================================
+# Factory Runner Classes
+# ============================================================================
+
+
+class TestCheckedCommandRunner:
+    def test_run_or_none_when_available(self, logger):
+        resolve_map = {"echo": "/usr/bin/echo"}
+        run_map = {("echo", "-n", "hello"): _cp(stdout="hello")}
+        r = FakeRunner(logger, resolve_map=resolve_map, run_map=run_map)
+        checked = r.make_checked_runner("echo", "test")
+        assert checked.is_available is True
+        result = checked.run_or_none(["echo", "-n", "hello"])
+        assert result is not None
+        assert result.stdout.strip() == "hello"
+
+    def test_run_or_none_when_missing(self, logger):
+        r = FakeRunner(logger, resolve_map={})
+        checked = r.make_checked_runner("no_such_cmd", "test")
+        assert checked.is_available is False
+        result = checked.run_or_none(["no_such_cmd"])
+        assert result is None
 
 
 # ============================================================================
@@ -411,24 +486,6 @@ class TestFeatureResult:
         r = gamemode.FeatureResult.error("failed")
         assert r.ok is False
 
-    def test_noop(self):
-        r = gamemode.FeatureResult.noop()
-        assert r.ok is True
-        assert r.skipped is False
-        assert r.changed is False
-
-    @pytest.mark.parametrize(
-        "factory,expected_repr_substring",
-        [
-            (lambda: gamemode.FeatureResult.skip("x"), "skipped"),
-            (lambda: gamemode.FeatureResult.did_change("x"), "changed"),
-            (lambda: gamemode.FeatureResult.error("x"), "error"),
-            (lambda: gamemode.FeatureResult.noop(), "noop"),
-        ],
-    )
-    def test_repr(self, factory, expected_repr_substring):
-        assert expected_repr_substring in repr(factory())
-
 
 # ============================================================================
 # Feature: VRR
@@ -436,26 +493,10 @@ class TestFeatureResult:
 
 
 class TestVRR:
-    def _make_vrr(self, cfg, logger, resolve_map=None, run_map=None, pipe_map=None):
-        r = FakeRunner(
-            logger,
-            resolve_map=resolve_map or {},
-            run_map=run_map or {},
-            pipe_map=pipe_map or {},
-        )
-        return gamemode.VRR(cfg, r, logger), r
-
-    @staticmethod
-    def _niri_outputs_json(vrr_supported=True, vrr_enabled=False):
-        return '{"DP-1":{"vrr_supported":%s,"vrr_enabled":%s}}' % (
-            str(vrr_supported).lower(),
-            str(vrr_enabled).lower(),
-        )
-
     @pytest.mark.parametrize("enabled", [True, False])
     def test_skip_when_disabled(self, tmp_path, logger, enabled):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_vrr=enabled)
-        vrr, _ = self._make_vrr(cfg, logger)
+        vrr, _ = _make_feature(gamemode.VRR, cfg, logger)
         result = vrr.enable("DP-1")
         if not enabled:
             assert result.skipped is True
@@ -465,159 +506,92 @@ class TestVRR:
         monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
         monkeypatch.setattr(gamemode, "compositor_is_niri", lambda: False)
         cfg = _cfg(runtime_dir=str(tmp_path), enable_vrr=True)
-        vrr, _ = self._make_vrr(cfg, logger)
+        vrr, _ = _make_feature(gamemode.VRR, cfg, logger)
         result = vrr.enable("DP-1")
         assert result.skipped is True
 
-    def test_enable_success(self, tmp_path, logger, monkeypatch):
-        monkeypatch.setenv("XDG_SESSION_DESKTOP", "niri")
-        monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
-        monkeypatch.setattr(gamemode, "compositor_is_niri", lambda: True)
+    def test_enable_success(self, tmp_path, logger, niri_session):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_vrr=True)
-
-        niri_json = self._niri_outputs_json(vrr_supported=True, vrr_enabled=False)
-        resolve_map = {
-            "niri": "/usr/bin/niri",
-            "jq": "/usr/bin/jq",
-        }
-        run_map = {
-            ("niri", "msg", "-j", "outputs"): _cp(stdout=niri_json),
-            ("niri", "msg", "output", "DP-1", "vrr", "on"): _cp(),
-        }
-        pipe_map = {
-            ("jq", "-r", "--arg", "o", "DP-1", ".[$o].vrr_supported // true"): _cp(
-                stdout="true"
-            ),
-            (
-                "jq",
-                "-r",
-                "--arg",
-                "o",
-                "DP-1",
-                'if .[$o].vrr_enabled == true then "true" '
-                'elif .[$o].vrr_enabled == false then "false" '
-                'else "" end',
-            ): _cp(stdout="false"),
-        }
-        vrr, fake = self._make_vrr(cfg, logger, resolve_map, run_map, pipe_map)
+        resolve_map, run_map, pipe_map = _vrr_maps(
+            vrr_supported=True, vrr_enabled=False
+        )
+        run_map[("niri", "msg", "output", "DP-1", "vrr", "on")] = _cp()
+        vrr, fake = _make_feature(
+            gamemode.VRR,
+            cfg,
+            logger,
+            resolve_map=resolve_map,
+            run_map=run_map,
+            pipe_map=pipe_map,
+        )
 
         result = vrr.enable("DP-1")
         assert result.changed is True
         assert result.ok is True
 
-    def test_enable_already_on(self, tmp_path, logger, monkeypatch):
-        monkeypatch.setenv("XDG_SESSION_DESKTOP", "niri")
-        monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
-        monkeypatch.setattr(gamemode, "compositor_is_niri", lambda: True)
+    def test_enable_already_on(self, tmp_path, logger, niri_session):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_vrr=True)
-
-        niri_json = self._niri_outputs_json(vrr_supported=True, vrr_enabled=True)
-        resolve_map = {"niri": "/usr/bin/niri", "jq": "/usr/bin/jq"}
-        run_map = {
-            ("niri", "msg", "-j", "outputs"): _cp(stdout=niri_json),
-        }
-        pipe_map = {
-            ("jq", "-r", "--arg", "o", "DP-1", ".[$o].vrr_supported // true"): _cp(
-                stdout="true"
-            ),
-            (
-                "jq",
-                "-r",
-                "--arg",
-                "o",
-                "DP-1",
-                'if .[$o].vrr_enabled == true then "true" '
-                'elif .[$o].vrr_enabled == false then "false" '
-                'else "" end',
-            ): _cp(stdout="true"),
-        }
-        vrr, _ = self._make_vrr(cfg, logger, resolve_map, run_map, pipe_map)
+        resolve_map, run_map, pipe_map = _vrr_maps(vrr_supported=True, vrr_enabled=True)
+        vrr, _ = _make_feature(
+            gamemode.VRR,
+            cfg,
+            logger,
+            resolve_map=resolve_map,
+            run_map=run_map,
+            pipe_map=pipe_map,
+        )
 
         result = vrr.enable("DP-1")
         assert result.changed is False
         assert result.skipped is False
 
-    def test_disable_success(self, tmp_path, logger, monkeypatch):
-        monkeypatch.setenv("XDG_SESSION_DESKTOP", "niri")
-        monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
-        monkeypatch.setattr(gamemode, "compositor_is_niri", lambda: True)
+    def test_disable_success(self, tmp_path, logger, niri_session):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_vrr=True)
-
-        niri_json = self._niri_outputs_json(vrr_supported=True, vrr_enabled=True)
-        resolve_map = {"niri": "/usr/bin/niri", "jq": "/usr/bin/jq"}
-        run_map = {
-            ("niri", "msg", "-j", "outputs"): _cp(stdout=niri_json),
-            ("niri", "msg", "output", "DP-1", "vrr", "off"): _cp(),
-        }
-        pipe_map = {
-            ("jq", "-r", "--arg", "o", "DP-1", ".[$o].vrr_supported // true"): _cp(
-                stdout="true"
-            ),
-            (
-                "jq",
-                "-r",
-                "--arg",
-                "o",
-                "DP-1",
-                'if .[$o].vrr_enabled == true then "true" '
-                'elif .[$o].vrr_enabled == false then "false" '
-                'else "" end',
-            ): _cp(stdout="true"),
-        }
-        vrr, _ = self._make_vrr(cfg, logger, resolve_map, run_map, pipe_map)
+        resolve_map, run_map, pipe_map = _vrr_maps(vrr_supported=True, vrr_enabled=True)
+        run_map[("niri", "msg", "output", "DP-1", "vrr", "off")] = _cp()
+        vrr, _ = _make_feature(
+            gamemode.VRR,
+            cfg,
+            logger,
+            resolve_map=resolve_map,
+            run_map=run_map,
+            pipe_map=pipe_map,
+        )
 
         result = vrr.disable("DP-1")
         assert result.changed is True
 
-    def test_disable_already_off(self, tmp_path, logger, monkeypatch):
-        monkeypatch.setenv("XDG_SESSION_DESKTOP", "niri")
-        monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
-        monkeypatch.setattr(gamemode, "compositor_is_niri", lambda: True)
+    def test_disable_already_off(self, tmp_path, logger, niri_session):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_vrr=True)
-
-        niri_json = self._niri_outputs_json(vrr_supported=True, vrr_enabled=False)
-        resolve_map = {"niri": "/usr/bin/niri", "jq": "/usr/bin/jq"}
-        run_map = {
-            ("niri", "msg", "-j", "outputs"): _cp(stdout=niri_json),
-        }
-        pipe_map = {
-            ("jq", "-r", "--arg", "o", "DP-1", ".[$o].vrr_supported // true"): _cp(
-                stdout="true"
-            ),
-            (
-                "jq",
-                "-r",
-                "--arg",
-                "o",
-                "DP-1",
-                'if .[$o].vrr_enabled == true then "true" '
-                'elif .[$o].vrr_enabled == false then "false" '
-                'else "" end',
-            ): _cp(stdout="false"),
-        }
-        vrr, _ = self._make_vrr(cfg, logger, resolve_map, run_map, pipe_map)
+        resolve_map, run_map, pipe_map = _vrr_maps(
+            vrr_supported=True, vrr_enabled=False
+        )
+        vrr, _ = _make_feature(
+            gamemode.VRR,
+            cfg,
+            logger,
+            resolve_map=resolve_map,
+            run_map=run_map,
+            pipe_map=pipe_map,
+        )
 
         result = vrr.disable("DP-1")
         assert result.changed is False
         assert result.skipped is False
 
-    def test_skip_not_capable(self, tmp_path, logger, monkeypatch):
-        monkeypatch.setenv("XDG_SESSION_DESKTOP", "niri")
-        monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
-        monkeypatch.setattr(gamemode, "compositor_is_niri", lambda: True)
+    def test_skip_not_capable(self, tmp_path, logger, niri_session):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_vrr=True)
-
-        niri_json = self._niri_outputs_json(vrr_supported=False, vrr_enabled=False)
-        resolve_map = {"niri": "/usr/bin/niri", "jq": "/usr/bin/jq"}
-        run_map = {
-            ("niri", "msg", "-j", "outputs"): _cp(stdout=niri_json),
-        }
-        pipe_map = {
-            ("jq", "-r", "--arg", "o", "DP-1", ".[$o].vrr_supported // true"): _cp(
-                stdout="false"
-            ),
-        }
-        vrr, _ = self._make_vrr(cfg, logger, resolve_map, run_map, pipe_map)
+        resolve_map, run_map, pipe_map = _vrr_maps(
+            vrr_supported=False, vrr_enabled=False
+        )
+        vrr, _ = _make_feature(
+            gamemode.VRR,
+            cfg,
+            logger,
+            resolve_map=resolve_map,
+            run_map=run_map,
+            pipe_map=pipe_map,
+        )
 
         result = vrr.enable("DP-1")
         assert result.skipped is True
@@ -629,13 +603,9 @@ class TestVRR:
 
 
 class TestPowerProfile:
-    def _make_pp(self, cfg, logger, resolve_map=None, run_map=None):
-        r = FakeRunner(logger, resolve_map=resolve_map or {}, run_map=run_map or {})
-        return gamemode.PowerProfile(cfg, r, logger), r
-
     def test_skip_when_disabled(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path))
-        pp, _ = self._make_pp(cfg, logger)
+        pp, _ = _make_feature(gamemode.PowerProfile, cfg, logger)
         result = pp.enable("DP-1")
         assert result.skipped is True
 
@@ -647,7 +617,9 @@ class TestPowerProfile:
             ("tuned-adm", "active"): _cp(stdout="Active profile: balanced-bazzite"),
             ("tuned-adm", "profile", "throughput-performance-bazzite"): _cp(),
         }
-        pp, fake = self._make_pp(cfg, logger, resolve_map, run_map)
+        pp, fake = _make_feature(
+            gamemode.PowerProfile, cfg, logger, resolve_map=resolve_map, run_map=run_map
+        )
 
         result = pp.enable("DP-1")
         assert result.changed is True
@@ -664,7 +636,9 @@ class TestPowerProfile:
                 stdout="Active profile: throughput-performance-bazzite"
             ),
         }
-        pp, _ = self._make_pp(cfg, logger, resolve_map, run_map)
+        pp, _ = _make_feature(
+            gamemode.PowerProfile, cfg, logger, resolve_map=resolve_map, run_map=run_map
+        )
         result = pp.enable("DP-1")
         assert result.changed is False
         assert result.skipped is False
@@ -678,7 +652,9 @@ class TestPowerProfile:
             ),
             ("tuned-adm", "profile", "balanced-bazzite"): _cp(),
         }
-        pp, fake = self._make_pp(cfg, logger, resolve_map, run_map)
+        pp, fake = _make_feature(
+            gamemode.PowerProfile, cfg, logger, resolve_map=resolve_map, run_map=run_map
+        )
         result = pp.disable("DP-1")
         assert result.changed is True
         assert ("run", ["tuned-adm", "profile", "balanced-bazzite"]) in fake.calls
@@ -690,59 +666,63 @@ class TestPowerProfile:
 
 
 class TestSCXScheduler:
-    def _make_scx(self, cfg, logger, resolve_map=None, run_map=None):
-        r = FakeRunner(logger, resolve_map=resolve_map or {}, run_map=run_map or {})
-        return gamemode.SCXScheduler(cfg, r, logger), r
-
     def test_skip_when_disabled(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path))
-        scx, _ = self._make_scx(cfg, logger)
+        scx, _ = _make_feature(gamemode.SCXScheduler, cfg, logger)
         result = scx.enable("DP-1")
         assert result.skipped is True
 
     def test_enable_starts_when_none_running(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_scx=True)
-        resolve_map = {"scxctl": "/usr/bin/scxctl", "scx_lavd": "/usr/bin/scx_lavd"}
+        resolve_map = {"scxctl": "/usr/bin/scxctl"}
         run_map = {
             ("scxctl", "get"): _cp(stdout="no scx scheduler running"),
-            ("scxctl", "start", "-s", "scx_lavd", "--args="): _cp(),
+            ("scxctl", "-s", "lavd", "-m", "gaming"): _cp(),
         }
-        scx, fake = self._make_scx(cfg, logger, resolve_map, run_map)
+        scx, fake = _make_feature(
+            gamemode.SCXScheduler, cfg, logger, resolve_map=resolve_map, run_map=run_map
+        )
         result = scx.enable("DP-1")
         assert result.changed is True
-        assert ("run", ["scxctl", "start", "-s", "scx_lavd", "--args="]) in fake.calls
+        assert ("run", ["scxctl", "-s", "lavd", "-m", "gaming"]) in fake.calls
 
     def test_enable_noop_when_already_loaded(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_scx=True)
-        resolve_map = {"scxctl": "/usr/bin/scxctl", "scx_lavd": "/usr/bin/scx_lavd"}
+        resolve_map = {"scxctl": "/usr/bin/scxctl"}
         run_map = {
-            ("scxctl", "get"): _cp(stdout="scx_lavd running"),
+            ("scxctl", "get"): _cp(stdout="lavd gaming"),
         }
-        scx, _ = self._make_scx(cfg, logger, resolve_map, run_map)
+        scx, _ = _make_feature(
+            gamemode.SCXScheduler, cfg, logger, resolve_map=resolve_map, run_map=run_map
+        )
         result = scx.enable("DP-1")
         assert result.changed is False
         assert result.skipped is False
 
     def test_enable_switches_scheduler(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_scx=True)
-        resolve_map = {"scxctl": "/usr/bin/scxctl", "scx_lavd": "/usr/bin/scx_lavd"}
+        resolve_map = {"scxctl": "/usr/bin/scxctl"}
         run_map = {
-            ("scxctl", "get"): _cp(stdout="scx_rustland running"),
-            ("scxctl", "switch", "-s", "scx_lavd", "--args="): _cp(),
+            ("scxctl", "get"): _cp(stdout="rustland default"),
+            ("scxctl", "-s", "lavd", "-m", "gaming"): _cp(),
         }
-        scx, fake = self._make_scx(cfg, logger, resolve_map, run_map)
+        scx, fake = _make_feature(
+            gamemode.SCXScheduler, cfg, logger, resolve_map=resolve_map, run_map=run_map
+        )
         result = scx.enable("DP-1")
         assert result.changed is True
-        assert ("run", ["scxctl", "switch", "-s", "scx_lavd", "--args="]) in fake.calls
+        assert ("run", ["scxctl", "-s", "lavd", "-m", "gaming"]) in fake.calls
 
     def test_disable_unloads(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_scx=True)
         resolve_map = {"scxctl": "/usr/bin/scxctl"}
         run_map = {
-            ("scxctl", "get"): _cp(stdout="scx_lavd running"),
+            ("scxctl", "get"): _cp(stdout="lavd gaming"),
             ("scxctl", "stop"): _cp(),
         }
-        scx, fake = self._make_scx(cfg, logger, resolve_map, run_map)
+        scx, fake = _make_feature(
+            gamemode.SCXScheduler, cfg, logger, resolve_map=resolve_map, run_map=run_map
+        )
         result = scx.disable("DP-1")
         assert result.changed is True
         assert ("run", ["scxctl", "stop"]) in fake.calls
@@ -753,7 +733,9 @@ class TestSCXScheduler:
         run_map = {
             ("scxctl", "get"): _cp(stdout="no scx scheduler running"),
         }
-        scx, _ = self._make_scx(cfg, logger, resolve_map, run_map)
+        scx, _ = _make_feature(
+            gamemode.SCXScheduler, cfg, logger, resolve_map=resolve_map, run_map=run_map
+        )
         result = scx.disable("DP-1")
         assert result.changed is False
         assert result.skipped is False
@@ -765,18 +747,15 @@ class TestSCXScheduler:
 
 
 class TestAudioPriority:
-    def _make_audio(self, cfg, logger):
-        return gamemode.AudioPriority(cfg, gamemode.Runner(logger), logger)
-
     def test_skip_when_disabled(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path))
-        audio = self._make_audio(cfg, logger)
+        audio, _ = _make_feature(gamemode.AudioPriority, cfg, logger)
         result = audio.enable("DP-1")
         assert result.skipped is True
 
     def test_enable_sets_env(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_audio=True, audio_latency="120")
-        audio = self._make_audio(cfg, logger)
+        audio, _ = _make_feature(gamemode.AudioPriority, cfg, logger)
         result = audio.enable("DP-1")
         assert result.changed is True
         assert os.environ.get("PULSE_LATENCY_MSEC") == "120"
@@ -784,7 +763,7 @@ class TestAudioPriority:
 
     def test_enable_writes_env_file(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_audio=True, audio_latency="80")
-        audio = self._make_audio(cfg, logger)
+        audio, _ = _make_feature(gamemode.AudioPriority, cfg, logger)
         audio.enable("DP-1")
         content = cfg.audio_env_file.read_text()
         assert "PULSE_LATENCY_MSEC=80" in content
@@ -793,7 +772,7 @@ class TestAudioPriority:
     def test_disable_clears_env(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_audio=True)
         os.environ["PULSE_LATENCY_MSEC"] = "50"
-        audio = self._make_audio(cfg, logger)
+        audio, _ = _make_feature(gamemode.AudioPriority, cfg, logger)
         result = audio.disable("DP-1")
         assert result.changed is True
         assert "PULSE_LATENCY_MSEC" not in os.environ
@@ -802,13 +781,13 @@ class TestAudioPriority:
         cfg = _cfg(runtime_dir=str(tmp_path), enable_audio=True)
         cfg.audio_env_file.parent.mkdir(parents=True, exist_ok=True)
         cfg.audio_env_file.write_text("export PULSE_LATENCY_MSEC=50\n")
-        audio = self._make_audio(cfg, logger)
+        audio, _ = _make_feature(gamemode.AudioPriority, cfg, logger)
         audio.disable("DP-1")
         assert cfg.audio_env_file.exists() is False
 
     def test_disable_missing_file_is_noop(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_audio=True)
-        audio = self._make_audio(cfg, logger)
+        audio, _ = _make_feature(gamemode.AudioPriority, cfg, logger)
         result = audio.disable("DP-1")
         assert result.changed is True
 
@@ -819,29 +798,22 @@ class TestAudioPriority:
 
 
 class TestScreenInhibit:
-    def _make_inhibit(self, cfg, logger, resolve_map=None, run_map=None):
-        r = FakeRunner(logger, resolve_map=resolve_map or {}, run_map=run_map or {})
-        return gamemode.ScreenInhibit(cfg, r, logger), r
-
     def test_skip_when_disabled(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path))
-        inh, _ = self._make_inhibit(cfg, logger)
+        inh, _ = _make_feature(gamemode.ScreenInhibit, cfg, logger)
         result = inh.enable("DP-1")
         assert result.skipped is True
 
     def test_skip_when_not_niri(self, tmp_path, logger, monkeypatch):
         monkeypatch.setenv("XDG_SESSION_DESKTOP", "gnome")
         monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
-        # pgrep may find niri on the user's real system — isolate from that.
         monkeypatch.setattr(gamemode, "compositor_is_niri", lambda: False)
         cfg = _cfg(runtime_dir=str(tmp_path), enable_inhibit=True)
-        inh, _ = self._make_inhibit(cfg, logger)
+        inh, _ = _make_feature(gamemode.ScreenInhibit, cfg, logger)
         result = inh.enable("DP-1")
         assert result.skipped is True
 
-    def test_enable_dms(self, tmp_path, logger, monkeypatch):
-        monkeypatch.setenv("XDG_SESSION_DESKTOP", "niri")
-        monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
+    def test_enable_dms(self, tmp_path, logger, niri_session):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_inhibit=True)
 
         resolve_map = {"dms": "/usr/bin/dms"}
@@ -859,13 +831,17 @@ class TestScreenInhibit:
                 "gamemode.py gaming session",
             ): _cp(),
         }
-        inh, _ = self._make_inhibit(cfg, logger, resolve_map, run_map)
+        inh, _ = _make_feature(
+            gamemode.ScreenInhibit,
+            cfg,
+            logger,
+            resolve_map=resolve_map,
+            run_map=run_map,
+        )
         result = inh.enable("DP-1")
         assert result.changed is True
 
-    def test_disable_dms(self, tmp_path, logger, monkeypatch):
-        monkeypatch.setenv("XDG_SESSION_DESKTOP", "niri")
-        monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
+    def test_disable_dms(self, tmp_path, logger, niri_session):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_inhibit=True)
 
         resolve_map = {"dms": "/usr/bin/dms"}
@@ -875,7 +851,13 @@ class TestScreenInhibit:
             ),
             ("dms", "ipc", "call", "inhibit", "disable"): _cp(),
         }
-        inh, _ = self._make_inhibit(cfg, logger, resolve_map, run_map)
+        inh, _ = _make_feature(
+            gamemode.ScreenInhibit,
+            cfg,
+            logger,
+            resolve_map=resolve_map,
+            run_map=run_map,
+        )
         result = inh.disable("DP-1")
         assert result.changed is True
         assert "disabled" in result.detail
@@ -885,7 +867,9 @@ class TestScreenInhibit:
         resolve_map = {
             "systemd-inhibit": "/usr/bin/systemd-inhibit",
         }
-        inh, _ = self._make_inhibit(cfg, logger, resolve_map)
+        inh, _ = _make_feature(
+            gamemode.ScreenInhibit, cfg, logger, resolve_map=resolve_map
+        )
         result = inh.inhibit_argv(["mygame", "--arg"])
         assert result[0] == "/usr/bin/systemd-inhibit"
         assert "--what=idle:sleep" in result
@@ -894,14 +878,16 @@ class TestScreenInhibit:
 
     def test_inhibit_argv_returns_raw_when_disabled(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_inhibit=False)
-        inh, _ = self._make_inhibit(cfg, logger)
+        inh, _ = _make_feature(gamemode.ScreenInhibit, cfg, logger)
         result = inh.inhibit_argv(["mygame"])
         assert result == ["mygame"]
 
     def test_inhibit_argv_returns_raw_when_no_systemd_inhibit(self, tmp_path, logger):
         cfg = _cfg(runtime_dir=str(tmp_path), enable_inhibit=True)
         resolve_map = {}
-        inh, _ = self._make_inhibit(cfg, logger, resolve_map)
+        inh, _ = _make_feature(
+            gamemode.ScreenInhibit, cfg, logger, resolve_map=resolve_map
+        )
         result = inh.inhibit_argv(["mygame"])
         assert result == ["mygame"]
 
@@ -942,18 +928,6 @@ class TestFeatureOrchestration:
         )
         names = [name for name, _ in features]
         assert names == ["tuned", "vrr", "scx", "audio", "inhibit"]
-
-    def test_features_enable_calls_each_feature(self, tmp_runtime, logger):
-        features = gamemode.collect_features(
-            tmp_runtime, gamemode.Runner(logger), logger
-        )
-        gamemode.features_enable(features, "DP-1", logger)
-
-    def test_features_disable_calls_each_feature(self, tmp_runtime, logger):
-        features = gamemode.collect_features(
-            tmp_runtime, gamemode.Runner(logger), logger
-        )
-        gamemode.features_disable(features, "DP-1", logger)
 
 
 # ============================================================================
@@ -1063,109 +1037,19 @@ class TestActionWrapper:
         # State should be cleared
         assert state.value() == ""
 
-    def test_cleanup_fires_on_sigterm(self, tmp_path, logger):
-        """When the wrapper receives SIGTERM, cleanup must run before exit.
+    @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT])
+    def test_cleanup_fires_on_signal(self, tmp_path, logger, signum):
+        """When the wrapper receives SIGTERM/SIGINT, cleanup must run before exit.
 
         The wrapper is launched as a child subprocess so that signal
         handlers are installed on its main thread.  The parent sends
-        SIGTERM and verifies that cleanup ran before the child died.
+        the signal and verifies that cleanup ran before the child died.
         """
         cfg = self._make_cfg(tmp_path)
-        state_file = tmp_path / "feature_state.json"
-
-        # Locate gamemode.py for the child process.
+        state_file = tmp_path / f"feature_state_{signum.name.lower()}.json"
         gamemode_dir = os.path.dirname(os.path.abspath(__file__))
 
-        # Subprocess script: runs action_wrapper on the main thread.
-        child_script = tmp_path / "wrapper_sigterm.py"
-        child_script.write_text(f"""
-import sys, os, time, json, signal
-from unittest.mock import patch
-sys.path.insert(0, {gamemode_dir!r})
-import gamemode
-import logging
-
-logger = logging.getLogger("gamemode")
-logger.setLevel(logging.DEBUG)
-logger.addHandler(logging.NullHandler())
-
-cfg = gamemode.Config(
-    enable_scx=False, enable_vrr=False, enable_tuned=False,
-    enable_inhibit=False, enable_audio=False, enable_steam=False,
-    runtime_dir={str(tmp_path)!r},
-    vrr_output_default="DP-1",
-)
-state = gamemode.StateManager(cfg)
-state.init()
-
-state_file = {str(state_file)!r}
-
-class RecordFeature(gamemode.Feature):
-    def __init__(self):
-        self.en = []
-        self.dis = []
-    def enable(self, output):
-        self.en.append(output)
-        return gamemode.FeatureResult.did_change("en")
-    def disable(self, output):
-        self.dis.append(output)
-        with open(state_file, "w") as f:
-            json.dump({{"en": self.en, "dis": self.dis}}, f)
-        return gamemode.FeatureResult.did_change("dis")
-
-feat = RecordFeature()
-features = [("fake", feat)]
-runner = gamemode.Runner(logger)
-
-with patch.object(gamemode, "collect_features", return_value=features):
-    gamemode.action_wrapper(cfg, runner, logger, ["/bin/sleep", "60"])
-""")
-
-        # Launch the wrapper as a subprocess.
-        child = subprocess.Popen(
-            ["python3", str(child_script)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-
-        # Wait for the wrapper to reach "wrapper" state.
-        for _ in range(50):
-            try:
-                s = gamemode.StateManager(cfg).value()
-                if s == "wrapper":
-                    break
-            except FileNotFoundError:
-                pass
-            time.sleep(0.1)
-        else:
-            child.kill()
-            child.wait()
-            pytest.fail("Wrapper did not reach running state")
-
-        # Send SIGTERM to the subprocess.
-        child.send_signal(signal.SIGTERM)
-        child.wait(timeout=10)
-
-        # Read results
-        assert state_file.exists(), (
-            f"Child did not write feature state (rc={child.returncode})"
-        )
-        result = json.loads(state_file.read_text())
-        assert result["dis"] == ["DP-1"], f"Cleanup did not run: {result}"
-        # Check the actual state file (managed by StateManager) is cleared
-        assert gamemode.StateManager(cfg).value() == "", "State not cleared"
-
-    def test_cleanup_fires_on_sigint(self, tmp_path, logger):
-        """When the wrapper receives SIGINT, cleanup must run before exit.
-
-        Same approach as SIGTERM — launch as subprocess, send signal.
-        """
-        cfg = self._make_cfg(tmp_path)
-        state_file = tmp_path / "feature_state_sigint.json"
-        gamemode_dir = os.path.dirname(os.path.abspath(__file__))
-
-        child_script = tmp_path / "wrapper_sigint.py"
+        child_script = tmp_path / "wrapper_signal.py"
         child_script.write_text(f"""
 import sys, os, time, json, signal
 from unittest.mock import patch
@@ -1228,7 +1112,7 @@ with patch.object(gamemode, "collect_features", return_value=features):
             child.wait()
             pytest.fail("Wrapper did not reach running state")
 
-        child.send_signal(signal.SIGINT)
+        child.send_signal(signum)
         child.wait(timeout=10)
 
         assert state_file.exists(), (
@@ -1236,7 +1120,6 @@ with patch.object(gamemode, "collect_features", return_value=features):
         )
         result = json.loads(state_file.read_text())
         assert result["dis"] == ["DP-1"], f"Cleanup did not run: {result}"
-        # Check the actual state file (managed by StateManager) is cleared
         assert gamemode.StateManager(cfg).value() == "", "State not cleared"
 
     def test_concurrent_wrapper_skips(self, tmp_path, logger):

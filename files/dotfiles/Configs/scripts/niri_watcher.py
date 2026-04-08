@@ -36,31 +36,133 @@ log = logging.getLogger("niri_watcher")
 
 
 # ===========================================================================
-# config — immutable settings, no I/O at import time
-#
-# Config is a frozen dataclass with two construction paths:
-#
-#   1. Config.from_env()  — reads environment variables at call time and
-#      builds a fully-populated instance.  This is the normal entry point
-#      used by ``main()`` and by real systemd service runs.
-#
-#   2. Config(...)        — uses the zero-value defaults for every field.
-#      Because defaults are plain literals (no env lookups, no Path.home()),
-#      ``Config()`` is safe to call during import, in tests, or anywhere
-#      that must not touch the filesystem or environment.
-#
-# All fields are read-only after construction (frozen=True).
-#
-# Environment variable reference (consumed by from_env()):
-#
-#   WATCHER_POLL_INTERVAL   float  Seconds between poll cycles       [2]
-#   WATCHER_LOG_FILE        path   Log file path override            [$XDG_RUNTIME_DIR/niri_watcher.log]
-#   WATCHER_STARTUP_DELAY   float  Seconds to wait before first poll [3]
-#   WATCHER_DEBUG           "0"/"1" Enable DEBUG-level logging       [0]
-#   WATCHER_HOOK_ON         str    Colon-separated on-hooks          []
-#   WATCHER_HOOK_OFF        str    Colon-separated off-hooks         []
-#   WATCHER_EXCLUDED_APPS   str    Colon-separated app-ids to append []
-#
+# subprocess factory — centralized process execution
+# ===========================================================================
+
+
+@dataclass(frozen=True)
+class SubprocessConfig:
+    """Configuration for subprocess execution.
+
+    Parameters
+    ----------
+    default_timeout:
+        Default timeout in seconds for blocking operations.
+    log_failures:
+        Whether to log failures at WARNING level (DEBUG for timeouts).
+    """
+
+    default_timeout: float = 5.0
+    log_failures: bool = True
+
+
+class SubprocessRunner:
+    """Factory for consistent subprocess execution across the codebase.
+
+    Centralizes timeout handling, error logging, and return-value extraction.
+    Designed to be injectable for testing — production code uses the default
+    instance; tests inject a mock.
+
+    Usage:
+        runner = SubprocessRunner()
+        text = runner.run_text(["niri", "msg", "-j", "outputs"])
+        data = runner.run_json(["nvtop", "-s"])
+        alive = runner.run_check(["pgrep", "-x", "niri"])
+        runner.spawn_detached(["/path/to/hook.sh", "on"], env={...})
+    """
+
+    def __init__(self, config: SubprocessConfig | None = None):
+        self.config = config or SubprocessConfig()
+
+    def run_text(self, args: list[str]) -> str | None:
+        """Run a command and return stripped stdout, or ``None`` on failure."""
+        try:
+            result = subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                timeout=self.config.default_timeout,
+            )
+            stripped = result.stdout.strip()
+            return stripped if stripped else None
+        except FileNotFoundError:
+            if self.config.log_failures:
+                log.debug("Command not found: %s", args[0])
+            return None
+        except subprocess.TimeoutExpired:
+            if self.config.log_failures:
+                log.debug("Command timed out: %s", args[0])
+            return None
+        except OSError as exc:
+            if self.config.log_failures:
+                log.warning("Command failed (%s): %s", args[0], exc)
+            return None
+
+    def run_json(self, args: list[str]) -> dict | list | None:
+        """Run a command and parse stdout as JSON.
+
+        Returns parsed data (dict or list), or ``None`` on failure.
+        """
+        text = self.run_text(args)
+        if text is None:
+            return None
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            if self.config.log_failures:
+                log.warning("Invalid JSON from %s", args[0])
+            return None
+
+    def run_check(self, args: list[str]) -> bool:
+        """Run a command and return True if exit code is 0.
+
+        Failures are silent — suitable for readiness probes like pgrep.
+        """
+        try:
+            result = subprocess.run(
+                args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=self.config.default_timeout,
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return False
+
+    def spawn_detached(
+        self,
+        args: list[str],
+        env: dict[str, str] | None = None,
+    ) -> subprocess.Popen | None:
+        """Spawn a detached process (for hooks/daemons).
+
+        Returns the Popen object on success, or ``None`` if the command
+        is not found.  stdout/stderr are suppressed.
+        """
+        cmd = args[0]
+        if not shutil.which(cmd) and not Path(cmd).is_file():
+            if self.config.log_failures:
+                log.warning("Command not found/executable: %s", cmd)
+            return None
+        try:
+            proc = subprocess.Popen(
+                args,
+                env=env or os.environ,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            log.info("Spawned: %s", " ".join(args))
+            return proc
+        except OSError as exc:
+            if self.config.log_failures:
+                log.warning("Spawn failed (%s): %s", cmd, exc)
+            return None
+
+
+# Module-level singleton (default instance used when none injected)
+_default_runner = SubprocessRunner()
+
+
 # ===========================================================================
 # AppFilter — glob-based app matching
 # ===========================================================================
@@ -155,12 +257,11 @@ def _parse_app_filter_list(raw: str) -> frozenset[AppFilter]:
 
     Empty entries are skipped.  Returns a frozenset (deduplicated).
     """
-    filters: list[AppFilter] = []
-    for entry in raw.split(";"):
-        parsed = parse_config_entry(entry)
-        if parsed is not None:
-            filters.append(parsed)
-    return frozenset(filters)
+    return frozenset(
+        parsed
+        for entry in raw.split(";")
+        if (parsed := parse_config_entry(entry)) is not None
+    )
 
 
 # ===========================================================================
@@ -208,9 +309,7 @@ class Config:
     hook_on: list[str] = field(default_factory=list)
     hook_off: list[str] = field(default_factory=list)
     #: User-defined exclusions from ``WATCHER_EXCLUDED_APPS`` (priority over defaults).
-    excluded_apps: frozenset[AppFilter] | frozenset[str] = field(
-        default_factory=frozenset
-    )
+    excluded_apps: frozenset[AppFilter] = field(default_factory=frozenset)
     #: User-defined inclusions from ``WATCHER_INCLUDED_APPS`` (highest priority).
     included_apps: frozenset[AppFilter] = field(default_factory=frozenset)
     relaxed_mode: bool = False
@@ -332,26 +431,185 @@ class WindowInfo:
 # ===========================================================================
 
 
-def _run_cmd(args: list[str]) -> str | None:
-    """Run a command and return stdout, or ``None`` on failure/empty."""
-    try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=5)
-        stripped = result.stdout.strip()
-        return stripped if stripped else None
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        return None
-
-
 def fetch_niri_outputs() -> str:
-    return _run_cmd(["niri", "msg", "-j", "outputs"]) or "{}"
+    return _default_runner.run_text(["niri", "msg", "-j", "outputs"]) or "{}"
 
 
 def fetch_niri_windows() -> str:
-    return _run_cmd(["niri", "msg", "-j", "windows"]) or "[]"
+    return _default_runner.run_text(["niri", "msg", "-j", "windows"]) or "[]"
 
 
 def fetch_niri_workspaces() -> str:
-    return _run_cmd(["niri", "msg", "-j", "workspaces"]) or "[]"
+    return _default_runner.run_text(["niri", "msg", "-j", "workspaces"]) or "[]"
+
+
+# ===========================================================================
+# /proc readers — thin helpers for process metadata
+# ===========================================================================
+
+
+def _read_proc_file(pid: int, filename: str, mode: str = "rb") -> bytes | str | None:
+    """Read a ``/proc/<pid>/<filename>`` file. Returns ``None`` on failure.
+
+    Used internally by ``_get_parent_pid``, ``_get_process_env``, and
+    ``_get_process_cmdline`` to centralize proc error handling.
+    """
+    try:
+        with open(f"/proc/{pid}/{filename}", mode) as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _get_parent_pid(pid: int) -> int | None:
+    """Return the parent PID (PPID) of the given PID via /proc.
+
+    Reads /proc/<pid>/status and extracts the PPid field.
+    Returns None if the process no longer exists or the field is unreadable.
+    """
+    data = _read_proc_file(pid, "status", mode="r")
+    if data is None or not isinstance(data, str):
+        return None
+    try:
+        for line in data.splitlines():
+            if line.startswith("PPid:"):
+                ppid_str = line.split(":", 1)[1].strip()
+                return int(ppid_str)
+    except (ValueError, IndexError):
+        pass
+    return None
+
+
+def _collect_ancestor_pids(pid: int) -> set[int]:
+    """Collect all ancestor PIDs of a process (parent, grandparent, etc.).
+
+    Walks up the process tree via /proc/<pid>/status until PID 1 (init)
+    is reached or the process tree becomes unreadable.
+
+    Returns a set containing all ancestor PIDs (excluding the process itself).
+    """
+    ancestors: set[int] = set()
+    current = pid
+    while True:
+        ppid = _get_parent_pid(current)
+        if ppid is None or ppid == 0:
+            break
+        ancestors.add(ppid)
+        if ppid == 1:
+            break
+        current = ppid
+    return ancestors
+
+
+def _get_process_env(pid: int, var: str) -> str | None:
+    """Read an environment variable from /proc/<pid>/environ.
+
+    Returns the value of the variable, or None if the process is
+    inaccessible or the variable is not set.
+    """
+    data = _read_proc_file(pid, "environ")
+    if data is None or not isinstance(data, bytes):
+        return None
+    # environ entries are null-byte separated KEY=VALUE pairs
+    for entry in data.split(b"\0"):
+        if entry.startswith(f"{var}=".encode()):
+            return entry.decode(errors="replace").split("=", 1)[1]
+    return None
+
+
+def _get_process_cmdline(pid: int) -> list[str]:
+    """Read the command line of a process from /proc/<pid>/cmdline.
+
+    Returns a list of arguments, or an empty list on failure.
+    """
+    data = _read_proc_file(pid, "cmdline")
+    if data is None or not isinstance(data, bytes) or not data:
+        return []
+    return [arg.decode(errors="replace") for arg in data.split(b"\0") if arg]
+
+
+def _find_gpu_process_displays(gpu_pids: set[int]) -> dict[int, str]:
+    """Map GPU-active PIDs to their DISPLAY environment variable.
+
+    Returns a dict {pid: display} for each PID that has a DISPLAY set.
+    """
+    result: dict[int, str] = {}
+    for pid in gpu_pids:
+        display = _get_process_env(pid, "DISPLAY")
+        if display:
+            result[pid] = display
+    return result
+
+
+def _extract_xwayland_display(pid: int) -> str | None:
+    """Extract the DISPLAY number from an Xwayland process command line.
+
+    Parses argv to find the display argument (e.g., ":0" from
+    "Xwayland :0 -listenfd 93 ...").
+    Returns the display string (e.g., ":0") or None.
+    """
+    cmdline = _get_process_cmdline(pid)
+    for arg in cmdline:
+        # Xwayland display is the first argument starting with ":"
+        if arg.startswith(":"):
+            return arg
+    return None
+
+
+def _is_xwayland_process(pid: int) -> bool:
+    """Check if a PID is an Xwayland or xwayland-satellite process."""
+    cmdline = _get_process_cmdline(pid)
+    if not cmdline:
+        return False
+    cmd = cmdline[0]
+    return "xwayland" in cmd.lower() or "Xwayland" in cmd
+
+
+def _match_window_to_gpu(
+    window_pid: int | None,
+    gpu_pids: set[int],
+) -> bool:
+    """Check if the window's process tree is connected to GPU-active processes.
+
+    Matching strategies (tried in order):
+    1. **Direct PID match**: window_pid is in gpu_pids (native games)
+    2. **Ancestor match**: a GPU process shares an ancestor with window_pid
+       (Proton games launched via wine/umu where window PID is a wrapper)
+    3. **Xwayland match**: window PID is Xwayland/satellite and a GPU
+       process has a DISPLAY env var matching the Xwayland display number
+
+    Returns True if any strategy succeeds.
+    """
+    if window_pid is None or not gpu_pids:
+        return False
+
+    # Strategy 1: Direct PID match
+    if window_pid in gpu_pids:
+        return True
+
+    # Strategy 2: Check if any GPU process shares a common ancestor
+    # with the window PID (covers Proton/Wine launchers).
+    # Compute window's ancestor chain once, then check each GPU PID.
+    window_ancestors = _collect_ancestor_pids(window_pid) | {window_pid}
+    for gpu_pid in gpu_pids:
+        if gpu_pid in window_ancestors:
+            return True
+        gpu_ancestors = _collect_ancestor_pids(gpu_pid)
+        if gpu_ancestors & window_ancestors:
+            return True
+
+    # Strategy 3: Xwayland matching
+    # If the window PID is Xwayland or xwayland-satellite, extract the
+    # display number and check if any GPU process uses that display
+    if _is_xwayland_process(window_pid):
+        window_display = _extract_xwayland_display(window_pid)
+        if window_display:
+            gpu_displays = _find_gpu_process_displays(gpu_pids)
+            for gpu_pid, display in gpu_displays.items():
+                if display == window_display:
+                    return True
+
+    return False
 
 
 def fetch_gpu_pids() -> list[int]:
@@ -365,32 +623,39 @@ def fetch_gpu_pids() -> list[int]:
     only processes reported by ``nvtop`` as ``"graphic & compute"`` with
     measurable GPU activity are considered fullscreen gaming apps.
 
+    **Proton/Wine support**: For each GPU-active process, all ancestor PIDs
+    (parent, grandparent, etc.) are also included. This handles the common
+    case where a compositor reports the wine/proton wrapper PID while nvtop
+    reports the actual game executable PID (a child process).
+
     Returns an empty list if ``nvtop`` is unavailable or returns invalid
     output.  Failures are silent — this is an optional enhancement.
     """
-    try:
-        result = subprocess.run(
-            ["nvtop", "-s"], capture_output=True, text=True, timeout=5
-        )
-        data = json.loads(result.stdout)
-        pids: list[int] = []
-        for entry in data:
-            for proc in entry.get("processes", []):
-                if proc.get("kind") == "graphic & compute":
-                    # Skip processes with no GPU usage reading (null)
-                    gpu_usage = proc.get("gpu_usage")
-                    if gpu_usage is None:
-                        continue
-
-                    pid = proc.get("pid")
-                    if pid is not None:
-                        try:
-                            pids.append(int(pid))
-                        except (ValueError, TypeError):
-                            pass
-        return pids
-    except Exception:
+    data = _default_runner.run_json(["nvtop", "-s"])
+    if data is None:
         return []
+
+    pids: set[int] = set()
+    for entry in data:
+        for proc in entry.get("processes", []):
+            if proc.get("kind") == "graphic & compute":
+                # Skip processes with no GPU usage reading (null)
+                gpu_usage = proc.get("gpu_usage")
+                if gpu_usage is None:
+                    continue
+
+                pid = proc.get("pid")
+                if pid is not None:
+                    try:
+                        pid_int = int(pid)
+                        pids.add(pid_int)
+                        # Include all ancestor PIDs (handles Wine/Proton
+                        # where the compositor reports the wrapper PID but
+                        # nvtop reports the child game executable PID)
+                        pids.update(_collect_ancestor_pids(pid_int))
+                    except (ValueError, TypeError):
+                        pass
+    return sorted(pids)
 
 
 # ===========================================================================
@@ -544,9 +809,7 @@ class EvalContext:
 
     ws_to_output: dict[int, str]
     outputs: dict[str, OutputInfo]
-    excluded_apps: frozenset[AppFilter] | frozenset[str] = field(
-        default_factory=frozenset
-    )
+    excluded_apps: frozenset[AppFilter] = field(default_factory=frozenset)
     included_apps: frozenset[AppFilter] = field(default_factory=frozenset)
     default_excluded_apps: frozenset[AppFilter] = field(default_factory=frozenset)
     default_included_apps: frozenset[AppFilter] = field(default_factory=frozenset)
@@ -555,28 +818,12 @@ class EvalContext:
 
 def is_app_excluded(
     app_id: str,
-    excluded: frozenset[AppFilter] | frozenset[str],
+    excluded: frozenset[AppFilter],
     *,
     title: str | None = None,
 ) -> bool:
-    """Return True if the given app_id/title matches any exclusion rule.
-
-    Supports both the new ``AppFilter`` frozenset and the legacy
-    ``frozenset[str]`` for backward compatibility.
-    """
-    if not excluded:
-        return False
-
-    # Check if this is a legacy frozenset[str]
-    first = next(iter(excluded), None)
-    if first is not None and isinstance(first, str):
-        return app_id in excluded  # type: ignore[operator]
-
-    # New AppFilter frozenset
-    for rule in excluded:  # type: ignore[assignment]
-        if isinstance(rule, AppFilter) and rule.matches(app_id, title):
-            return True
-    return False
+    """Return True if the given app_id/title matches any exclusion rule."""
+    return any(rule.matches(app_id, title) for rule in excluded)
 
 
 def is_app_included(
@@ -686,37 +933,58 @@ def window_is_fullscreen_and_active(
     if not is_fullscreen(window, output):
         return None
 
-    # --- Step 1: User inclusion (WATCHER_INCLUDED_APPS) ---
-    if app_id and is_app_included(app_id, ctx.included_apps, title=title):
-        log.debug("\u2713 User-included: %s", app_id)
-        return output
-
-    # --- Step 2: User exclusion (WATCHER_EXCLUDED_APPS) ---
-    if app_id and is_app_excluded(app_id, ctx.excluded_apps, title=title):
-        log.debug("\u2298 User-excluded: %s", app_id)
-        return None
-
-    # --- Step 3: Default inclusion (DEFAULT_INCLUDED_APPS) ---
-    if app_id and is_app_included(app_id, ctx.default_included_apps, title=title):
-        log.debug("\u2713 Default-included: %s", app_id)
-        return output
-
-    # --- Step 4: Default exclusion (DEFAULT_EXCLUDED_APPS) ---
-    if app_id and is_app_excluded(app_id, ctx.default_excluded_apps, title=title):
-        log.debug("\u2298 Default-excluded: %s", app_id)
-        return None
+    # --- Steps 1–4: Priority chain (declarative data-driven evaluation) ---
+    # Each rule: (label, symbol, predicate, accept)
+    #   predicate(app_id, title) -> bool
+    #   accept=True -> return output, accept=False -> return None
+    _priority_rules: list[tuple[str, str, Callable[[str, str | None], bool], bool]] = [
+        (
+            "User-included",
+            "\u2713",
+            lambda a, t: is_app_included(a, ctx.included_apps, title=t),
+            True,
+        ),
+        (
+            "User-excluded",
+            "\u2298",
+            lambda a, t: is_app_excluded(a, ctx.excluded_apps, title=t),
+            False,
+        ),
+        (
+            "Default-included",
+            "\u2713",
+            lambda a, t: is_app_included(a, ctx.default_included_apps, title=t),
+            True,
+        ),
+        (
+            "Default-excluded",
+            "\u2298",
+            lambda a, t: is_app_excluded(a, ctx.default_excluded_apps, title=t),
+            False,
+        ),
+    ]
+    for label, symbol, predicate, accept in _priority_rules:
+        if app_id and predicate(app_id, title):
+            log.debug("%s %s: %s", symbol, label, app_id)
+            return output if accept else None
 
     # --- Step 5: Relaxed mode — detect all non-matched apps ---
     if ctx.relaxed_mode:
         log.debug("\u2713 Relaxed mode fullscreen: %s", app_id)
         return output
 
-    # --- Step 6: Strict mode — check GPU usage via nvtop ---
+    # --- Step 6: Strict mode — connect the fullscreen window to a GPU
+    #         process via shared ancestor, direct PID, or Xwayland display.
     if gpu_pids is not None and window.pid is not None:
-        if window.pid not in gpu_pids:
-            log.debug("\u2298 No GPU activity: %s (PID %d)", app_id, window.pid)
+        if not _match_window_to_gpu(window.pid, gpu_pids):
+            log.debug(
+                "\u2298 No GPU connection: %s (PID %d, %d GPU processes active)",
+                app_id,
+                window.pid,
+                len(gpu_pids),
+            )
             return None
-        log.debug("\u2713 Fullscreen + GPU: %s (PID %d)", app_id, window.pid)
+        log.debug("\u2713 Fullscreen + GPU matched: %s (PID %d)", app_id, window.pid)
         return output
 
     # If gpu_pids is None (nvtop unavailable), default to allowing detection
@@ -760,24 +1028,14 @@ def execute_hook(
         return
     parts = hook_spec.split()
     cmd, args = parts[0], parts[1:]
-    if not shutil.which(cmd) and not Path(cmd).is_file():
-        log.warning("Hook not found/executable: %s", cmd)
-        return
     env = {
         **os.environ,
         "NIRI_OUTPUT_NAME": output_name,
         "NIRI_APP_PID": str(app_pid) if app_pid is not None else "",
     }
-    try:
-        subprocess.Popen(
-            [cmd, *args],
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+    result = _default_runner.spawn_detached([cmd, *args], env=env)
+    if result is not None:
         log.info("Executing hook: %s", hook_spec)
-    except OSError as exc:
-        log.warning("Hook execution failed (%s): %s", hook_spec, exc)
 
 
 # ===========================================================================
@@ -878,17 +1136,29 @@ class HoldPIDTracker:
     """
 
     _pids: dict[str, int] = field(default_factory=dict)  # output_name → pid
+    _pid_to_output: dict[int, str] = field(default_factory=dict)  # reverse index
+
+    def _link(self, pid: int, output_name: str) -> None:
+        """Link a PID to an output name in both indexes."""
+        self._pids[output_name] = pid
+        self._pid_to_output[pid] = output_name
+
+    def _unlink(self, output_name: str) -> None:
+        """Remove an output from both indexes."""
+        pid = self._pids.pop(output_name, None)
+        if pid is not None:
+            self._pid_to_output.pop(pid, None)
 
     def record(self, pid: int, output_name: str) -> None:
         """Record a PID for the given output."""
-        self._pids[output_name] = pid
+        self._link(pid, output_name)
 
     def has_running_pid(self, pid: int) -> bool:
         """Return True if the PID is recorded and still alive."""
-        for output_name, recorded_pid in self._pids.items():
-            if recorded_pid == pid and is_process_alive(recorded_pid):
-                return True
-        return False
+        output_name = self._pid_to_output.get(pid)
+        if output_name is None:
+            return False
+        return is_process_alive(pid)
 
     def is_output_held(self, output_name: str) -> bool:
         """Return True if the output's recorded PID is still alive."""
@@ -899,27 +1169,25 @@ class HoldPIDTracker:
 
     def evict_dead_pids(self) -> None:
         """Remove all recorded PIDs that are no longer alive."""
-        self._pids = {
-            name: pid for name, pid in self._pids.items() if is_process_alive(pid)
-        }
+        for name in [n for n, p in self._pids.items() if not is_process_alive(p)]:
+            self._unlink(name)
 
     def evict_missing_pids(self, present_pids: set[int]) -> None:
         """Remove recorded PIDs that no longer appear in the compositor window list."""
-        self._pids = {
-            name: pid for name, pid in self._pids.items() if pid in present_pids
-        }
+        for name in [n for n, p in self._pids.items() if p not in present_pids]:
+            self._unlink(name)
 
     def evict_non_matching_pids(self, valid_pids: set[int]) -> None:
         """Remove recorded PIDs that are no longer in the valid set."""
-        self._pids = {
-            name: pid for name, pid in self._pids.items() if pid in valid_pids
-        }
+        for name in [n for n, p in self._pids.items() if p not in valid_pids]:
+            self._unlink(name)
 
     def clear(self) -> None:
         self._pids.clear()
+        self._pid_to_output.clear()
 
     def clear_output(self, output_name: str) -> None:
-        self._pids.pop(output_name, None)
+        self._unlink(output_name)
 
 
 # ===========================================================================
@@ -1042,21 +1310,8 @@ class VrrOrchestrator:
         all_window_pids: set[int] = {w.pid for w in windows if w.pid is not None}
         self._hold_pid_tracker.evict_missing_pids(all_window_pids)
 
-        # Fetch GPU PIDs for strict mode (only when nvtop check is needed)
-        gpu_pids: set[int] | None = None
-        if not self.config.relaxed_mode:
-            unverified_pids = focused_pids - self._pid_cache._verified
-            if unverified_pids:
-                # Only call nvtop -s if we have unverified focused PIDs
-                fresh_gpu_pids = set(self._fetch_gpu_pids())
-                # Verify any unverified PIDs that appear in nvtop output
-                for pid in unverified_pids:
-                    if pid in fresh_gpu_pids:
-                        self._pid_cache.verify(pid)
-                gpu_pids = fresh_gpu_pids
-
-            # Use cached verified PIDs + fresh nvtop results (if called)
-            gpu_pids = self._pid_cache._verified | (gpu_pids or set())
+        # Resolve GPU PIDs (cached verified + fresh nvtop if needed)
+        gpu_pids = self._resolve_gpu_pids(focused_pids)
 
         ctx = EvalContext(
             ws_to_output=ws_to_output,
@@ -1078,9 +1333,38 @@ class VrrOrchestrator:
         }
         self._hold_pid_tracker.evict_non_matching_pids(still_included_pids)
 
-        # Log focused fullscreen apps and record hold-mode PIDs for
-        # included apps (unfocused included apps are now also detected,
-        # so we no longer skip them here).
+        # Log fullscreen apps and record hold-mode PIDs
+        self._record_fullscreen_windows(windows, ctx, desired)
+
+        return desired
+
+    def _resolve_gpu_pids(self, focused_pids: set[int]) -> set[int] | None:
+        """Resolve GPU-active PIDs, using verified cache to skip nvtop when possible.
+
+        Returns the set of GPU PIDs if strict mode is enabled and nvtop
+        is functional, or ``None`` if nvtop is unavailable.
+        """
+        if self.config.relaxed_mode:
+            return None
+
+        unverified = focused_pids - self._pid_cache._verified
+        fresh: set[int] = set()
+        if unverified:
+            # Only call nvtop -s if we have unverified focused PIDs
+            fresh = set(self._fetch_gpu_pids())
+            for pid in unverified:
+                if pid in fresh:
+                    self._pid_cache.verify(pid)
+
+        return self._pid_cache._verified | (fresh or set())
+
+    def _record_fullscreen_windows(
+        self,
+        windows: list[WindowInfo],
+        ctx: EvalContext,
+        desired: dict[str, bool],
+    ) -> None:
+        """Log focused fullscreen apps and record hold-mode PIDs for included apps."""
         for window in windows:
             output = resolve_output_for_window(window, ctx)
             if not output or not desired.get(output.name):
@@ -1112,8 +1396,6 @@ class VrrOrchestrator:
                         window.app_id,
                         output.name,
                     )
-
-        return desired
 
     @staticmethod
     def _is_included_app(
@@ -1268,13 +1550,45 @@ class VrrOrchestrator:
         self._hold_pid_tracker.clear()
 
     # ------------------------------------------------------------------
+    # Startup readiness
+    # ------------------------------------------------------------------
+
+    def _wait_for_niri(self) -> None:
+        """Poll ``pgrep -x niri`` until the compositor is running.
+
+        Replaces the old hard sleep with a lightweight readiness gate.
+        Retries up to ``config.startup_delay`` seconds (as a timeout
+        budget), checking every 1 s.  If the timeout is reached we log
+        a warning and proceed anyway — the first real ``poll_once``
+        cycle will handle failure gracefully.
+        """
+        deadline = time.monotonic() + self.config.startup_delay
+        attempt = 0
+        while time.monotonic() < deadline:
+            attempt += 1
+            if _default_runner.run_check(["pgrep", "-x", "niri"]):
+                if attempt > 1:
+                    elapsed = time.monotonic() - (deadline - self.config.startup_delay)
+                    log.info("niri ready after %.1fs (attempt %d)", elapsed, attempt)
+                return
+            if attempt == 1:
+                log.info("Waiting for niri (timeout %.0fs)…", self.config.startup_delay)
+            log.debug("Waiting for niri… (attempt %d)", attempt)
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(1, remaining))
+        log.warning(
+            "niri did not respond within %.0fs, proceeding anyway",
+            self.config.startup_delay,
+        )
+
+    # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
 
     def run(self, *, handle_signals: bool = True) -> None:
         """Run the poll loop. Set ``handle_signals=False`` for testing or embedding."""
-        log.info("Waiting %.0fs for niri...", self.config.startup_delay)
-        time.sleep(self.config.startup_delay)
+        self._wait_for_niri()
 
         if handle_signals:
 

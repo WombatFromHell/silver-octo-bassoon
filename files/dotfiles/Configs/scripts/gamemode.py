@@ -38,7 +38,7 @@ import textwrap
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 # ============================================================================
@@ -78,14 +78,11 @@ class Config:
     )
 
     # -- feature parameters ------------------------------------------------
-    scx_name: str = field(
-        default_factory=lambda: os.environ.get("SCX_SCHEDULER_NAME", "scx_lavd"),
+    scx_scheduler: str = field(
+        default_factory=lambda: os.environ.get("SCX_SCHEDULER", "lavd"),
     )
-    scx_args: str = field(
-        default_factory=lambda: os.environ.get(
-            "SCX_SCHEDULER_ARGS",
-            "--performance --preempt-shift 6 --slice-min-us 500",
-        ),
+    scx_mode: str = field(
+        default_factory=lambda: os.environ.get("SCX_SCHEDULER_MODE", "gaming"),
     )
     profile_game: str = field(
         default_factory=lambda: os.environ.get(
@@ -202,6 +199,12 @@ def setup_logging(
 # Every external command invoked by gamemode goes through this thin
 # wrapper.  In production it delegates to ``subprocess.run``; tests can
 # subclass or monkey-patch it to inject canned responses.
+#
+# Factory pattern:
+#   The ``Runner`` class now provides factory methods that produce
+#   specialised command executors.  This eliminates the repetitive
+#   ``require`` → ``run`` → ``returncode check`` boilerplate that was
+#   duplicated across every Feature class.
 # ============================================================================
 
 
@@ -214,6 +217,7 @@ class Runner:
     - ``run(args, ...)`` — thin wrapper around ``subprocess.run``.
     - ``capture(args)`` — convenience for ``run(capture_output=True, text=True)``.
     - ``pipe(input_data, args)`` — run *args* feeding *input_data* on stdin.
+    - Factory methods for common patterns (see below).
     """
 
     def __init__(self, log: logging.Logger) -> None:
@@ -274,6 +278,64 @@ class Runner:
             text=True,
         )
 
+    # -- factory methods for common patterns -------------------------------
+
+    def make_checked_runner(
+        self, cmd: str, feature: str = ""
+    ) -> "CheckedCommandRunner":
+        """Return a ``CheckedCommandRunner`` for *cmd*.
+
+        Use when you need to repeatedly run commands that must be
+        available and succeed.  The returned runner automatically logs
+        errors and checks return codes.
+        """
+        return CheckedCommandRunner(self, cmd, feature)
+
+
+class CheckedCommandRunner:
+    """Runner that enforces dependency availability and checks return codes.
+
+    Eliminates the repetitive pattern::
+
+        if not self._run.require("cmd", "feature"):
+            return FeatureResult.skip("...")
+        result = self._run.run(["cmd", "args"])
+        if result.returncode != 0:
+            return FeatureResult.error("...")
+
+    Instead::
+
+        cmd = self._run.make_checked_runner("cmd", "feature")
+        result = cmd.run_or_none(["cmd", "args"])
+        # Returns CompletedProcess or None (with logging)
+    """
+
+    def __init__(self, runner: Runner, cmd: str, feature: str = "") -> None:
+        self._runner = runner
+        self._cmd = cmd
+        self._feature = feature
+        self._available = runner.require(cmd, feature)
+
+    @property
+    def is_available(self) -> bool:
+        return self._available
+
+    def run_or_none(
+        self, args: list[str], **kwargs: Any
+    ) -> subprocess.CompletedProcess[str] | None:
+        """Run *args* if the command is available, else return ``None``."""
+        if not self._available:
+            return None
+        result = self._runner.run(args, capture_output=True, text=True, **kwargs)
+        if result.returncode != 0:
+            self._runner._log.debug(
+                "%s: %s returned %d",
+                self._feature or self._cmd,
+                self._cmd,
+                result.returncode,
+            )
+        return result
+
 
 # ============================================================================
 # Module: Dependency Validation
@@ -286,16 +348,15 @@ def validate_deps(config: Config, runner: Runner, log: logging.Logger) -> bool:
 
     Returns ``True`` if everything is present, ``False`` otherwise.
     """
-    checks: list[tuple[bool, str]] = [
+    checks = [
         (config.enable_tuned, "tuned-adm"),
         (config.enable_inhibit, "systemd-inhibit"),
         (config.enable_scx, "scxctl"),
         (config.enable_vrr, "jq"),
     ]
-    missing: list[str] = []
-    for enabled, cmd in checks:
-        if enabled and runner.resolve(cmd) is None:
-            missing.append(cmd)
+    missing = [
+        cmd for enabled, cmd in checks if enabled and runner.resolve(cmd) is None
+    ]
     if missing:
         log.error("Missing dependencies: %s", " ".join(missing))
         return False
@@ -388,6 +449,26 @@ class StateManager:
 
     # -- locking -----------------------------------------------------------
 
+    @staticmethod
+    def _try_lock(fd: int) -> bool:
+        """Attempt a non-blocking exclusive lock on *fd*.
+
+        Returns ``True`` if acquired, ``False`` if already held.
+        """
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except (BlockingIOError, OSError):
+            return False
+
+    @staticmethod
+    def _unlock(fd: int) -> None:
+        """Release a flock on *fd*, ignoring errors."""
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+
     @contextmanager
     def locked(self):
         """Context manager: acquire an exclusive, non-blocking lock.
@@ -397,16 +478,9 @@ class StateManager:
         """
         fd = os.open(str(self._config.lock_file), os.O_CREAT | os.O_WRONLY)
         try:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                yield True
-            except (BlockingIOError, OSError):
-                yield False
+            yield self._try_lock(fd)
         finally:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_UN)
-            except OSError:
-                pass
+            self._unlock(fd)
             os.close(fd)
 
     def is_lock_held(self) -> bool:
@@ -417,16 +491,9 @@ class StateManager:
         """
         fd = os.open(str(self._config.lock_file), os.O_CREAT | os.O_WRONLY)
         try:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return False  # acquired → nobody else holds it
-            except (BlockingIOError, OSError):
-                return True  # failed  → someone else holds it
+            return not self._try_lock(fd)
         finally:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_UN)
-            except OSError:
-                pass
+            self._unlock(fd)
             os.close(fd)
 
     # -- state value -------------------------------------------------------
@@ -481,6 +548,8 @@ class FeatureResult:
         Human-readable description for logging.
     """
 
+    __slots__ = ("ok", "skipped", "changed", "detail")
+
     def __init__(
         self,
         ok: bool = True,
@@ -534,6 +603,43 @@ class Feature(Protocol):
     def disable(self, output: str) -> FeatureResult: ...
 
 
+class _BaseFeature:
+    """Shared base for all feature implementations.
+
+    Provides:
+    - ``_gate(enabled, name)`` — config-check guard returning skip result.
+    - ``_log_result(name, result)`` — log a feature enable/disable outcome.
+    """
+
+    def __init__(
+        self,
+        config: Config,
+        runner: Runner,
+        log: logging.Logger,
+    ) -> None:
+        self._cfg = config
+        self._run = runner
+        self._log = log
+
+    def _gate(self, enabled: bool, name: str) -> FeatureResult | None:
+        """Return a skip result when *enabled* is ``False``, else ``None``."""
+        if not enabled:
+            return FeatureResult.skip("disabled by config")
+        return None
+
+    @staticmethod
+    def _log_result(name: str, result: FeatureResult, log: logging.Logger) -> None:
+        """Log a feature enable/disable outcome at the appropriate level."""
+        if result.skipped:
+            log.debug("%s: skipped (%s)", name, result.detail)
+        elif result.changed:
+            log.info("%s: %s", name, result.detail)
+        elif not result.ok:
+            log.warning("%s: %s", name, result.detail)
+        else:
+            log.debug("%s: no change", name)
+
+
 # ============================================================================
 # Module: Feature — VRR (niri)
 # Responsibility: Toggle VRR on a specified niri output
@@ -545,7 +651,7 @@ class Feature(Protocol):
 # ============================================================================
 
 
-class VRR:
+class VRR(_BaseFeature):
     """Toggle Variable Refresh Rate via ``niri msg`` + ``jq``.
 
     Checks VRR capability before attempting a toggle, parses niri's
@@ -560,75 +666,80 @@ class VRR:
       - ``error``  — toggle command failed
     """
 
+    _JQ_VRR_SUPPORTED = ".[$o].vrr_supported // true"
+    _JQ_VRR_ENABLED = (
+        'if .[$o].vrr_enabled == true then "true" '
+        'elif .[$o].vrr_enabled == false then "false" '
+        'else "" end'
+    )
+
     def __init__(self, config: Config, runner: Runner, log: logging.Logger) -> None:
-        self._cfg = config
-        self._run = runner
-        self._log = log
+        super().__init__(config, runner, log)
+        self._niri_cmd = runner.make_checked_runner("niri", "VRR")
 
     # -- internal helpers --------------------------------------------------
 
+    def _jq_query(self, jq_expr: str, jq_args: dict[str, str] | None) -> str | None:
+        """Run ``niri msg -j outputs`` and pipe through ``jq``.
+
+        Returns the stripped stdout string, or ``None`` on any failure.
+        """
+        if not self._run.require("jq", "VRR"):
+            return None
+
+        data_result = self._run.capture(["niri", "msg", "-j", "outputs"])
+        if data_result.returncode != 0:
+            return None
+
+        jq_argv: list[str] = ["jq", "-r"]
+        if jq_args:
+            for key, val in jq_args.items():
+                jq_argv.extend(["--arg", key, val])
+        jq_argv.append(jq_expr)
+
+        jq_result = self._run.pipe(jq_argv, data_result.stdout)
+        if jq_result.returncode != 0:
+            return None
+        return jq_result.stdout.strip()
+
     def _is_capable(self, output: str) -> bool:
         """Check whether *output* reports VRR support via niri JSON."""
-        if not self._run.require("niri", "VRR"):
-            return False
-        if not self._run.require("jq", "VRR"):
-            return False
-
-        niri_out = self._run.capture(["niri", "msg", "-j", "outputs"])
-        if niri_out.returncode != 0:
-            return False
-
-        jq_out = self._run.pipe(
-            ["jq", "-r", "--arg", "o", output, ".[$o].vrr_supported // true"],
-            niri_out.stdout,
-        )
-        return jq_out.returncode == 0 and jq_out.stdout.strip() == "true"
+        result = self._jq_query(self._JQ_VRR_SUPPORTED, {"o": output})
+        return result == "true"
 
     def _current(self, output: str) -> str:
         """Query current VRR state for *output*.
 
         Returns ``"on"``, ``"off"``, or ``""`` (not found / error).
         """
-        if not self._run.require("niri", "VRR"):
+        result = self._jq_query(self._JQ_VRR_ENABLED, {"o": output})
+        if result is None:
             return ""
-        if not self._run.require("jq", "VRR"):
-            return ""
-
-        niri_out = self._run.capture(["niri", "msg", "-j", "outputs"])
-        if niri_out.returncode != 0:
-            return ""
-
-        jq_filter = (
-            'if .[$o].vrr_enabled == true then "true" '
-            'elif .[$o].vrr_enabled == false then "false" '
-            'else "" end'
-        )
-        jq_out = self._run.pipe(
-            ["jq", "-r", "--arg", "o", output, jq_filter],
-            niri_out.stdout,
-        )
-        if jq_out.returncode != 0:
-            return ""
-
-        val = jq_out.stdout.strip()
-        if val == "true":
+        if result == "true":
             return "on"
-        if val == "false":
+        if result == "false":
             return "off"
         return ""
 
     def _set(self, output: str, state: str) -> bool:
         """Send a VRR toggle command to niri.  Returns ``True`` on success."""
-        if not self._run.require("niri", "VRR"):
+        if not self._niri_cmd.is_available:
             return False
-        result = self._run.run(["niri", "msg", "output", output, "vrr", state])
-        return result.returncode == 0
+        result = self._niri_cmd.run_or_none(
+            ["niri", "msg", "output", output, "vrr", state]
+        )
+        return result is not None and result.returncode == 0
 
     # -- Feature interface -------------------------------------------------
 
-    def enable(self, output: str) -> FeatureResult:
-        if not self._cfg.enable_vrr:
-            return FeatureResult.skip("disabled by config")
+    def _toggle(self, output: str, desired: str) -> FeatureResult:
+        """Shared enable/disable implementation.
+
+        *desired* is ``"on"`` or ``"off"``.
+        """
+        gate = self._gate(self._cfg.enable_vrr, "VRR")
+        if gate is not None:
+            return gate
         if not compositor_is_niri():
             return FeatureResult.skip("niri not running")
         if not self._is_capable(output):
@@ -637,38 +748,20 @@ class VRR:
         current = self._current(output)
         if current == "":
             return FeatureResult.skip(f"output '{output}' not found")
-        if current == "on":
+        if current == desired:
             return FeatureResult.noop()
 
-        self._log.info("VRR: %s → on on %s", current, output)
-        ok = self._set(output, "on")
-        return FeatureResult(
-            ok=ok,
-            changed=ok,
-            detail=f"{current} → on" if ok else "toggle failed",
-        )
+        self._log.info("VRR: %s → %s on %s", current, desired, output)
+        ok = self._set(output, desired)
+        if ok:
+            return FeatureResult.did_change(f"{current} → {desired}")
+        return FeatureResult.error("toggle failed")
+
+    def enable(self, output: str) -> FeatureResult:
+        return self._toggle(output, "on")
 
     def disable(self, output: str) -> FeatureResult:
-        if not self._cfg.enable_vrr:
-            return FeatureResult.skip("disabled by config")
-        if not compositor_is_niri():
-            return FeatureResult.skip("niri not running")
-        if not self._is_capable(output):
-            return FeatureResult.skip(f"output '{output}' not VRR-capable")
-
-        current = self._current(output)
-        if current == "":
-            return FeatureResult.skip(f"output '{output}' not found")
-        if current == "off":
-            return FeatureResult.noop()
-
-        self._log.info("VRR: %s → off on %s", current, output)
-        ok = self._set(output, "off")
-        return FeatureResult(
-            ok=ok,
-            changed=ok,
-            detail=f"{current} → off" if ok else "toggle failed",
-        )
+        return self._toggle(output, "off")
 
 
 # ============================================================================
@@ -677,20 +770,21 @@ class VRR:
 # ============================================================================
 
 
-class PowerProfile:
+class PowerProfile(_BaseFeature):
     """Switch tuned-adm between gaming and desktop profiles."""
 
+    _CMD = "tuned-adm"
+    _FEATURE = "Performance mode"
+
     def __init__(self, config: Config, runner: Runner, log: logging.Logger) -> None:
-        self._cfg = config
-        self._run = runner
-        self._log = log
+        super().__init__(config, runner, log)
+        # Factory runner for tuned-adm commands
+        self._tuned = runner.make_checked_runner(self._CMD, self._FEATURE)
 
     def _current(self) -> str:
         """Return the active tuned-adm profile name, or ``""``."""
-        if not self._run.require("tuned-adm", "Performance mode"):
-            return ""
-        result = self._run.capture(["tuned-adm", "active"])
-        if result.returncode != 0:
+        result = self._tuned.run_or_none([self._CMD, "active"])
+        if result is None:
             return ""
         for line in result.stdout.splitlines():
             if line.startswith("Active profile:"):
@@ -698,14 +792,13 @@ class PowerProfile:
         return ""
 
     def _set(self, profile: str) -> bool:
-        if not self._run.require("tuned-adm", "Performance mode"):
-            return False
-        result = self._run.run(["tuned-adm", "profile", profile])
-        return result.returncode == 0
+        result = self._tuned.run_or_none([self._CMD, "profile", profile])
+        return result is not None and result.returncode == 0
 
     def _ensure(self, desired: str) -> FeatureResult:
-        if not self._cfg.enable_tuned:
-            return FeatureResult.skip("disabled by config")
+        gate = self._gate(self._cfg.enable_tuned, "Performance mode")
+        if gate is not None:
+            return gate
 
         current = self._current()
         if current == desired:
@@ -734,94 +827,70 @@ class PowerProfile:
 # ============================================================================
 
 
-class SCXScheduler:
+class SCXScheduler(_BaseFeature):
     """Load, switch, and unload the sched-ext scheduler via ``scxctl``."""
 
+    _CMD = "scxctl"
+    _FEATURE = "SCX scheduler"
+
     def __init__(self, config: Config, runner: Runner, log: logging.Logger) -> None:
-        self._cfg = config
-        self._run = runner
-        self._log = log
+        super().__init__(config, runner, log)
+        # Factory runner for scxctl commands
+        self._scxctl = runner.make_checked_runner(self._CMD, self._FEATURE)
 
     def _status(self) -> str:
         """Return the current scxctl status string, or ``""``."""
-        if not self._run.require("scxctl", "SCX scheduler"):
-            return ""
-        result = self._run.capture(["scxctl", "get"])
-        if result.returncode != 0:
+        result = self._scxctl.run_or_none([self._CMD, "get"])
+        if result is None:
             return ""
         return result.stdout.strip()
 
-    def _start(self) -> FeatureResult:
-        """Start or switch to the configured scheduler."""
-        self._log.info("SCX: loading %s", self._cfg.scx_name)
-        result = self._run.run(
-            [
-                "scxctl",
-                "start",
-                "-s",
-                self._cfg.scx_name,
-                f"--args={self._cfg.scx_args}",
-            ]
+    def _apply(self) -> FeatureResult:
+        """Run ``scxctl -s <scheduler> -m <mode>`` and return a result."""
+        result = self._scxctl.run_or_none(
+            [self._CMD, "-s", self._cfg.scx_scheduler, "-m", self._cfg.scx_mode]
         )
-        ok = result.returncode == 0
-        return FeatureResult(
-            ok=ok,
-            changed=ok,
-            detail=f"loaded {self._cfg.scx_name}" if ok else "start failed",
-        )
-
-    def _switch(self, current_status: str) -> FeatureResult:
-        """Switch from the current scheduler to the configured one."""
-        self._log.info("SCX: switching %s → %s", current_status, self._cfg.scx_name)
-        result = self._run.run(
-            [
-                "scxctl",
-                "switch",
-                "-s",
-                self._cfg.scx_name,
-                f"--args={self._cfg.scx_args}",
-            ]
-        )
-        ok = result.returncode == 0
-        return FeatureResult(
-            ok=ok,
-            changed=ok,
-            detail=f"switched to {self._cfg.scx_name}" if ok else "switch failed",
-        )
+        ok = result is not None and result.returncode == 0
+        if ok:
+            return FeatureResult.did_change(
+                f"{self._cfg.scx_scheduler}/{self._cfg.scx_mode}",
+            )
+        return FeatureResult.error("scxctl failed")
 
     def enable(self, output: str) -> FeatureResult:
-        if not self._cfg.enable_scx:
-            return FeatureResult.skip("disabled by config")
-        if not self._run.require("scxctl", "SCX scheduler"):
+        gate = self._gate(self._cfg.enable_scx, "SCX scheduler")
+        if gate is not None:
+            return gate
+        if not self._scxctl.is_available:
             return FeatureResult.skip("scxctl not found")
-        if not self._run.require(self._cfg.scx_name, "SCX scheduler"):
-            return FeatureResult.skip(f"{self._cfg.scx_name} not found")
 
         status = self._status()
-        if not status or "no scx scheduler running" in status:
-            return self._start()
-        if self._cfg.scx_name in status:
+        if (
+            status
+            and self._cfg.scx_scheduler in status
+            and self._cfg.scx_mode in status
+        ):
             return FeatureResult.noop()
-        return self._switch(status)
+        self._log.info("SCX: %s/%s", self._cfg.scx_scheduler, self._cfg.scx_mode)
+        return self._apply()
 
     def disable(self, output: str) -> FeatureResult:
-        if not self._cfg.enable_scx:
-            return FeatureResult.skip("disabled by config")
-        if not self._run.require("scxctl", "SCX scheduler"):
+        gate = self._gate(self._cfg.enable_scx, "SCX scheduler")
+        if gate is not None:
+            return gate
+        if not self._scxctl.is_available:
             return FeatureResult.skip("scxctl not found")
 
         status = self._status()
         if not status or "no scx scheduler running" in status:
             return FeatureResult.noop()
 
-        self._log.info("SCX: unloading")
-        result = self._run.run(["scxctl", "stop"])
-        ok = result.returncode == 0
-        return FeatureResult(
-            ok=ok,
-            changed=ok,
-            detail="unloaded" if ok else "stop failed",
-        )
+        self._log.info("SCX: stopping")
+        result = self._scxctl.run_or_none([self._CMD, "stop"])
+        ok = result is not None and result.returncode == 0
+        if ok:
+            return FeatureResult.did_change("stopped")
+        return FeatureResult.error("stop failed")
 
 
 # ============================================================================
@@ -834,17 +903,13 @@ class SCXScheduler:
 # ============================================================================
 
 
-class AudioPriority:
+class AudioPriority(_BaseFeature):
     """Manage the ``PULSE_LATENCY_MSEC`` environment variable."""
 
-    def __init__(self, config: Config, runner: Runner, log: logging.Logger) -> None:
-        self._cfg = config
-        self._run = runner
-        self._log = log
-
     def enable(self, output: str) -> FeatureResult:
-        if not self._cfg.enable_audio:
-            return FeatureResult.skip("disabled by config")
+        gate = self._gate(self._cfg.enable_audio, "Audio priority")
+        if gate is not None:
+            return gate
 
         self._log.debug("Audio: PULSE_LATENCY_MSEC=%s", self._cfg.audio_latency)
         os.environ["PULSE_LATENCY_MSEC"] = self._cfg.audio_latency
@@ -860,8 +925,9 @@ class AudioPriority:
         )
 
     def disable(self, output: str) -> FeatureResult:
-        if not self._cfg.enable_audio:
-            return FeatureResult.skip("disabled by config")
+        gate = self._gate(self._cfg.enable_audio, "Audio priority")
+        if gate is not None:
+            return gate
 
         os.environ.pop("PULSE_LATENCY_MSEC", None)
         try:
@@ -901,77 +967,85 @@ def steam_wrapper_path(
 # ============================================================================
 
 
-class ScreenInhibit:
+class ScreenInhibit(_BaseFeature):
     """Manage idle/sleep inhibition via systemd-inhibit and DMS."""
 
+    _DMS_CMD = "dms"
+    _DMS_FEATURE = "DMS inhibit"
+
     def __init__(self, config: Config, runner: Runner, log: logging.Logger) -> None:
-        self._cfg = config
-        self._run = runner
-        self._log = log
+        super().__init__(config, runner, log)
+        # Factory runner for DMS commands
+        self._dms = runner.make_checked_runner(self._DMS_CMD, self._DMS_FEATURE)
 
     # -- DMS helpers -------------------------------------------------------
 
+    @staticmethod
+    def _dms_ok(result: subprocess.CompletedProcess[str] | None) -> bool:
+        """Return ``True`` if the DMS command succeeded."""
+        return result is not None and result.returncode == 0
+
     def _dms_inhibit_enabled(self) -> bool:
         """Return ``True`` if DMS idle inhibit is currently enabled."""
-        if not self._run.require("dms", "DMS inhibit"):
-            return False
-        result = self._run.capture(["dms", "ipc", "call", "inhibit", "status"])
-        if result.returncode != 0:
+        result = self._dms.run_or_none(
+            [self._DMS_CMD, "ipc", "call", "inhibit", "status"]
+        )
+        if result is None:
             return False
         return "Idle inhibit is disabled" not in result.stdout
 
     def _dms_inhibit_enable(self, reason: str = "gamemode.py gaming session") -> bool:
         """Enable DMS inhibit.  Returns ``True`` on success."""
-        if not self._run.require("dms", "DMS inhibit"):
+        if not self._dms.is_available:
             return False
         if self._dms_inhibit_enabled():
             self._log.debug("DMS inhibit already active")
             return True
 
-        r1 = self._run.run(["dms", "ipc", "call", "inhibit", "enable"])
-        if r1.returncode != 0:
-            self._log.error("Failed to enable DMS inhibit")
-            return False
-
-        r2 = self._run.run(["dms", "ipc", "call", "inhibit", "reason", reason])
-        if r2.returncode != 0:
-            self._log.error("Failed to set DMS inhibit reason")
-            return False
+        for cmd, desc in (
+            (["enable"], "enable DMS inhibit"),
+            (["reason", reason], "set DMS inhibit reason"),
+        ):
+            if not self._dms_ok(
+                self._dms.run_or_none([self._DMS_CMD, "ipc", "call", "inhibit", *cmd])
+            ):
+                self._log.error("Failed to %s", desc)
+                return False
 
         self._log.debug("DMS inhibit enabled")
         return True
 
     def _dms_inhibit_disable(self) -> None:
         """Disable DMS inhibit (if currently enabled)."""
-        if not self._run.require("dms", "DMS inhibit"):
+        if not self._dms.is_available:
             return
         if not self._dms_inhibit_enabled():
             self._log.debug("DMS inhibit not active, skipping disable")
             return
 
-        self._run.run(["dms", "ipc", "call", "inhibit", "disable"])
+        self._dms.run_or_none([self._DMS_CMD, "ipc", "call", "inhibit", "disable"])
         self._log.debug("DMS inhibit disabled")
 
     # -- Feature interface -------------------------------------------------
 
     def enable(self, output: str) -> FeatureResult:
         """Enable idle/sleep inhibit via DMS (niri only)."""
-        if not self._cfg.enable_inhibit:
-            return FeatureResult.skip("disabled by config")
+        gate = self._gate(self._cfg.enable_inhibit, "Screen inhibit")
+        if gate is not None:
+            return gate
         if not compositor_is_niri():
             return FeatureResult.skip("not niri compositor")
 
         ok = self._dms_inhibit_enable()
-        return FeatureResult(
-            ok=ok,
-            changed=ok,
-            detail="DMS inhibit enabled" if ok else "DMS inhibit failed",
-        )
+        if ok:
+            return FeatureResult.did_change("DMS inhibit enabled")
+        return FeatureResult.error("DMS inhibit failed")
 
     def disable(self, output: str) -> FeatureResult:
         """Disable idle/sleep inhibit via DMS (niri only)."""
-        if not self._cfg.enable_inhibit:
-            return FeatureResult.skip("disabled by config")
+        gate = self._gate(self._cfg.enable_inhibit, "Screen inhibit")
+        if gate is not None:
+            return gate
         if not compositor_is_niri():
             return FeatureResult.skip("not niri compositor")
 
@@ -1052,14 +1126,7 @@ def features_enable(
     log.debug("Enabling features for output: %s", output)
     for name, feat in features:
         result = feat.enable(output)
-        if result.skipped:
-            log.debug("%s: skipped (%s)", name, result.detail)
-        elif result.changed:
-            log.info("%s: %s", name, result.detail)
-        elif not result.ok:
-            log.warning("%s: %s", name, result.detail)
-        else:
-            log.debug("%s: no change", name)
+        _BaseFeature._log_result(name, result, log)
 
 
 def features_disable(
@@ -1071,14 +1138,7 @@ def features_disable(
     log.debug("Disabling features for output: %s", output)
     for name, feat in features:
         result = feat.disable(output)
-        if result.skipped:
-            log.debug("%s: skipped (%s)", name, result.detail)
-        elif result.changed:
-            log.info("%s: %s", name, result.detail)
-        elif not result.ok:
-            log.warning("%s: %s", name, result.detail)
-        else:
-            log.debug("%s: no change", name)
+        _BaseFeature._log_result(name, result, log)
 
 
 # ============================================================================
@@ -1087,22 +1147,20 @@ def features_disable(
 # ============================================================================
 
 
-def action_on(config: Config, runner: Runner, log: logging.Logger, *, debug: bool = False) -> int:
+def action_on(
+    config: Config, runner: Runner, log: logging.Logger, *, debug: bool = False
+) -> int:
     """Activate gaming mode.  Returns an exit code."""
     output = output_resolve(config)
     state = StateManager(config)
     state.init()
-
-    # Reconfigure logger to also write to log file (matches bash behaviour).
     setup_logging(config, to_file=debug)
 
     log.info("Activating (output: %s)", output)
 
-    # Skip if wrapper mode is active — don't interfere with running game.
     if state.is_wrapper:
         log.debug("Wrapper mode active, skipping on")
         return 0
-
     if state.is_active:
         log.info("Already active (idempotent)")
         return 0
@@ -1114,25 +1172,24 @@ def action_on(config: Config, runner: Runner, log: logging.Logger, *, debug: boo
     return 0
 
 
-def action_off(config: Config, runner: Runner, log: logging.Logger, *, debug: bool = False) -> int:
+def action_off(
+    config: Config, runner: Runner, log: logging.Logger, *, debug: bool = False
+) -> int:
     """Deactivate gaming mode.  Returns an exit code."""
     output = output_resolve(config)
     state = StateManager(config)
     state.init()
-
     setup_logging(config, to_file=debug)
 
     log.info("Deactivating (output: %s)", output)
 
-    # Check if wrapper state is stale (state says wrapper but lock is
-    # not held by anyone).
-    if state.is_wrapper and not state.is_lock_held():
-        log.debug("Stale wrapper state detected, cleaning up")
-    elif state.is_wrapper:
-        log.debug("Wrapper mode active, skipping off")
-        return 0
+    if state.is_wrapper:
+        if not state.is_lock_held():
+            log.debug("Stale wrapper state detected, cleaning up")
+        else:
+            log.debug("Wrapper mode active, skipping off")
+            return 0
 
-    # Always cleanup to handle orphaned state.
     features = collect_features(config, runner, log)
     features_disable(features, output, log)
     state.clear()
@@ -1286,10 +1343,10 @@ USAGE = textwrap.dedent("""\
     FEATURES (env-overridable):
       VRR             Toggle VRR on the active niri output
                         ENABLE_VRR=true       VRR_OUTPUT=DP-1
-      SCX Scheduler   Load/switch scx_lavd in performance mode
+      SCX Scheduler   Load/switch scx scheduler
                         ENABLE_SCX_SCHEDULER=true
-                        SCX_SCHEDULER_NAME=scx_lavd
-                        SCX_SCHEDULER_ARGS="--performance --preempt-shift 6 --slice-min-us 500"
+                        SCX_SCHEDULER=lavd
+                        SCX_SCHEDULER_MODE=gaming
       Power Profile   Switch tuned-adm profile
                         ENABLE_PERFORMANCE_MODE=false  (set to true to enable)
                         GAME_PROFILE=throughput-performance-bazzite
