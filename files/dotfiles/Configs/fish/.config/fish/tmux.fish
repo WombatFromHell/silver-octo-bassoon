@@ -133,24 +133,37 @@ function tmls -d "List sessions"
 end
 
 # --- Wayland Environment Refresh ---
-# Refresh WAYLAND_DISPLAY when switching compositors (KDE Plasma <-> Niri)
+# Refresh WAYLAND_DISPLAY and NIRI_SOCKET when switching compositors (KDE Plasma <-> Niri)
 # Called idempotently on every shell load to keep env in sync
 function __tmux_refresh_wayland -d "Refresh Wayland environment"
-    for socket in /run/user/(id -u)/wayland-*
+    set -l uid (id -u)
+
+    # Find standard wayland socket
+    for socket in /run/user/$uid/wayland-*
         if test -S "$socket"
             set -l new_display (basename "$socket")
-            # Only update if changed (idempotent)
             if test "$WAYLAND_DISPLAY" != "$new_display"
                 set -x WAYLAND_DISPLAY "$new_display"
-                # Update tmux environment for future windows
                 if set -q TMUX
                     tmux set-environment WAYLAND_DISPLAY "$new_display" 2>/dev/null
                 end
             end
-            return 0
+            break
         end
     end
-    return 1
+
+    # Find niri socket
+    for socket in /run/user/$uid/niri.wayland-*.sock
+        if test -S "$socket"
+            if test "$NIRI_SOCKET" != "$socket"
+                set -x NIRI_SOCKET "$socket"
+                if set -q TMUX
+                    tmux set-environment NIRI_SOCKET "$socket" 2>/dev/null
+                end
+            end
+            break
+        end
+    end
 end
 
 # Sync Wayland env on every shell load (idempotent, safe for non-interactive)
