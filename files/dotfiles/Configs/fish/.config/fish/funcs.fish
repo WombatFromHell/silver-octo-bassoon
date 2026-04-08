@@ -89,6 +89,9 @@ function set_editor
     if command -s nvim >/dev/null
         set -gx EDITOR nvim
         set -gx VISUAL nvim
+    else if command -s hx >/dev/null
+        set -gx EDITOR hx
+        set -gx VISUAL hx
     else if command -s nano >/dev/null
         set -gx EDITOR nano
         set -gx VISUAL nano
