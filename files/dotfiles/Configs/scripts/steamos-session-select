@@ -1,2 +1,35 @@
 #!/usr/bin/env bash
-steam -shutdown
+set -euo pipefail
+
+# ── Steam Shutdown Logic ─────────────────────────────────────────────────────
+
+wait_for_steam_exit() {
+  local timeout=15 # wait a max of 15s
+  local elapsed=0
+  while pgrep -xc steam >/dev/null 2>&1; do
+    if ((elapsed >= timeout)); then
+      # notify the user before force-killing
+      notify-send "Steam unresponsive" "Force-closing Steam after ${timeout}s timeout" 2>/dev/null || true
+      # then we go nuclear on 'steam'
+      pkill --signal 9 -x steam 2>/dev/null || true
+      return 0
+    fi
+    sleep 1
+    ((elapsed++))
+  done
+}
+
+shutdown_steam_if_running() {
+  if pgrep -x steam >/dev/null 2>&1; then
+    steam -shutdown || true
+    wait_for_steam_exit
+  fi
+}
+
+# ── Main Execution ───────────────────────────────────────────────────────────
+
+main() {
+  shutdown_steam_if_running
+}
+
+main "${@}"

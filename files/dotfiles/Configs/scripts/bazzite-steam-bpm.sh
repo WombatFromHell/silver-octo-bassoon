@@ -1,16 +1,10 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-add_if_exists() {
-  local array_name="$1"
-  local file="$2"
-  if [[ -f "$file" ]]; then
-    eval "$array_name+=(\"$file\")"
-  fi
-}
+# ── Configuration ─────────────────────────────────────────────────────────────
 
 SCRIPTS="$HOME/.local/bin/scripts"
 
-# STEAM=$(which steam)
 STEAM="$SCRIPTS/bazzite-steam.sh"
 STEAM_ARGS=(
   -steamos3
@@ -25,28 +19,75 @@ GAMESCOPE_ARGS=(
   --
 )
 
-# Local Steam-specific variables (kept as requested) as array
 LOCAL_STEAM_ENV_VARS=(
   "PROTON_ENABLE_WAYLAND=1"
 )
 
-# Add local Steam-specific variables using env
-CMD+=(
-  env "${LOCAL_STEAM_ENV_VARS[@]}"
-)
+# ── Helper Functions ──────────────────────────────────────────────────────────
 
-# include some optional wrappers conditionally
-OTHER_WRAPPERS=()
-# enable if using locally built mesa wrapper
-# add_if_exists "OTHER_WRAPPERS" "$HOME/mesa/mesa-run.sh"
-add_if_exists "OTHER_WRAPPERS" "$SCRIPTS/gamemode.py --"
+add_if_exists() {
+  local array_name="$1"
+  local file="$2"
+  if [[ -f "$file" ]]; then
+    eval "$array_name+=(\"$file\")"
+  fi
+}
 
-# Add the rest of the command chain
-CMD+=(
-  "${OTHER_WRAPPERS[@]}"
-  "${GAMESCOPE_WRAPPER}" "${GAMESCOPE_ARGS[@]}"
-  "${STEAM}" "${STEAM_ARGS[@]}"
-)
+# ── Steam Shutdown Logic ─────────────────────────────────────────────────────
 
-# Execute the full command chain
-"${CMD[@]}" "${@}"
+wait_for_steam_exit() {
+  local timeout=15
+  local elapsed=0
+  while pgrep -xc steam >/dev/null 2>&1; do
+    if ((elapsed >= timeout)); then
+      notify-send "Steam unresponsive" "Force-closing Steam after ${timeout}s timeout" 2>/dev/null || true
+      pkill --signal 9 -x steam 2>/dev/null || true
+      return 0
+    fi
+    sleep 1
+    ((elapsed++))
+  done
+}
+
+shutdown_steam_if_running() {
+  if pgrep -x steam >/dev/null 2>&1; then
+    steam -shutdown || true
+    wait_for_steam_exit
+  fi
+}
+
+# ── Command Chain Builder ────────────────────────────────────────────────────
+
+build_command() {
+  local CMD=()
+
+  # Environment variables
+  CMD+=(
+    env "${LOCAL_STEAM_ENV_VARS[@]}"
+  )
+
+  # Optional wrappers
+  local OTHER_WRAPPERS=()
+  add_if_exists "OTHER_WRAPPERS" "$SCRIPTS/gamemode.py --"
+
+  CMD+=(
+    "${OTHER_WRAPPERS[@]}"
+    "${GAMESCOPE_WRAPPER}" "${GAMESCOPE_ARGS[@]}"
+    "${STEAM}" "${STEAM_ARGS[@]}"
+  )
+
+  echo "${CMD[@]}"
+}
+
+# ── Main Execution ───────────────────────────────────────────────────────────
+
+main() {
+  shutdown_steam_if_running
+
+  local CMD
+  read -ra CMD <<<"$(build_command)"
+
+  "${CMD[@]}" "${@}"
+}
+
+main "${@}"
