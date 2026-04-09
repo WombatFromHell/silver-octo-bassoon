@@ -163,7 +163,7 @@ binds {
     }
     //
     Mod+Shift+Alt+P hotkey-overlay-title="Switch Kanshi Display Profile" {
-        spawn-sh "toggle-kanshi-outputs.sh"
+        spawn-sh "~/.local/bin/scripts/toggle-kanshi-outputs.sh"
     }
     //
     Super+Ctrl+Shift+P hotkey-overlay-title="Hyprpicker" {

@@ -1,11 +1,9 @@
-profile tv {
-    output HDMI-A-1 enable mode 2560x1440@120.000 position 0,0
-    output DP-1 disable
-}
 profile notv {
     output DP-1 enable mode 2560x1440@144.000 position 0,0
     output HDMI-A-1 disable
 }
-profile desktop {
-    output DP-1 enable mode 2560x1440@144.000 position 0,0
+profile tv {
+    output HDMI-A-1 enable mode 2560x1440@120.000 position 0,0
+    output DP-1 disable
+    exec /var/home/josh/.local/bin/scripts/bazzite-steam-bpm.sh
 }

@@ -27,6 +27,8 @@ Usage
 
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
 import fcntl
 import logging
 import os
@@ -38,7 +40,7 @@ import textwrap
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Callable, Iterator, Protocol, runtime_checkable
 
 
 # ============================================================================
@@ -126,6 +128,10 @@ class Config:
     @property
     def lock_file(self) -> Path:
         return self.state_dir / "lock"
+
+    @property
+    def pid_file(self) -> Path:
+        return self.state_dir / "wrapper.pid"
 
     @property
     def log_file(self) -> Path:
@@ -351,6 +357,7 @@ def validate_deps(config: Config, runner: Runner, log: logging.Logger) -> bool:
     checks = [
         (config.enable_tuned, "tuned-adm"),
         (config.enable_inhibit, "systemd-inhibit"),
+        (config.enable_inhibit, "dbus-send"),
         (config.enable_scx, "scxctl"),
         (config.enable_vrr, "jq"),
     ]
@@ -373,11 +380,16 @@ def validate_deps(config: Config, runner: Runner, log: logging.Logger) -> bool:
 # ============================================================================
 
 
-def compositor_is_niri() -> bool:
-    """Return ``True`` if the niri compositor is active."""
+def _session_contains(substring: str) -> bool:
+    """Return ``True`` if *substring* appears in session env vars (case-insensitive)."""
     session = os.environ.get("XDG_SESSION_DESKTOP", "")
     current = os.environ.get("XDG_CURRENT_DESKTOP", "")
-    if "niri" in (session + current).lower():
+    return substring in (session + current).lower()
+
+
+def compositor_is_niri() -> bool:
+    """Return ``True`` if the niri compositor is active."""
+    if _session_contains("niri"):
         return True
     # Fallback: process table
     if shutil.which("pgrep") is None:
@@ -394,10 +406,7 @@ def compositor_is_niri() -> bool:
 
 def session_is_kde() -> bool:
     """Return ``True`` if the session is KDE Plasma."""
-    session = os.environ.get("XDG_SESSION_DESKTOP", "")
-    current = os.environ.get("XDG_CURRENT_DESKTOP", "")
-    combined = (session + current).lower()
-    return "kde" in combined
+    return _session_contains("kde")
 
 
 # ============================================================================
@@ -474,11 +483,13 @@ class StateManager:
         """Context manager: acquire an exclusive, non-blocking lock.
 
         Yields ``True`` if the lock was acquired, ``False`` if it was
-        already held by another process.
+        already held by another process.  The lock is held for the
+        entire duration of the ``with`` block.
         """
         fd = os.open(str(self._config.lock_file), os.O_CREAT | os.O_WRONLY)
+        acquired = self._try_lock(fd)
         try:
-            yield self._try_lock(fd)
+            yield acquired
         finally:
             self._unlock(fd)
             os.close(fd)
@@ -524,6 +535,39 @@ class StateManager:
             self._config.state_file.unlink()
         except FileNotFoundError:
             pass
+        try:
+            self._config.pid_file.unlink()
+        except FileNotFoundError:
+            pass
+
+    # -- PID tracking ------------------------------------------------------
+
+    def write_pid(self) -> None:
+        """Write the current process PID to the pid file."""
+        self._config.pid_file.write_text(f"{os.getpid()}\n")
+
+    def wrapper_pid(self) -> int | None:
+        """Read the stored wrapper PID, or ``None`` if absent."""
+        try:
+            return int(self._config.pid_file.read_text().strip())
+        except (FileNotFoundError, ValueError):
+            return None
+
+    @staticmethod
+    def _pid_alive(pid: int) -> bool:
+        """Return ``True`` if a process with *pid* exists."""
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    def wrapper_alive(self) -> bool:
+        """Return ``True`` if the stored wrapper PID is still alive."""
+        pid = self.wrapper_pid()
+        if pid is None:
+            return False
+        return self._pid_alive(pid)
 
 
 # ============================================================================
@@ -626,6 +670,24 @@ class _BaseFeature:
         if not enabled:
             return FeatureResult.skip("disabled by config")
         return None
+
+    def _guarded(
+        self, enabled: bool, name: str, fn: "Callable[[], FeatureResult]"
+    ) -> FeatureResult:
+        """Call *fn* only when *enabled* is ``True``, returning a skip result otherwise.
+
+        Eliminates the repetitive::
+
+            gate = self._gate(...)
+            if gate is not None:
+                return gate
+
+        pattern used across every feature's enable/disable methods.
+        """
+        gate = self._gate(enabled, name)
+        if gate is not None:
+            return gate
+        return fn()
 
     @staticmethod
     def _log_result(name: str, result: FeatureResult, log: logging.Logger) -> None:
@@ -848,7 +910,14 @@ class SCXScheduler(_BaseFeature):
     def _apply(self) -> FeatureResult:
         """Run ``scxctl start -s <scheduler> -m <mode>`` and return a result."""
         result = self._scxctl.run_or_none(
-            [self._CMD, "start", "-s", self._cfg.scx_scheduler, "-m", self._cfg.scx_mode]
+            [
+                self._CMD,
+                "start",
+                "-s",
+                self._cfg.scx_scheduler,
+                "-m",
+                self._cfg.scx_mode,
+            ]
         )
         ok = result is not None and result.returncode == 0
         if ok:
@@ -857,40 +926,40 @@ class SCXScheduler(_BaseFeature):
             )
         return FeatureResult.error("scxctl failed")
 
-    def enable(self, output: str) -> FeatureResult:
-        gate = self._gate(self._cfg.enable_scx, "SCX scheduler")
-        if gate is not None:
-            return gate
+    def _toggle(self, desired: str) -> FeatureResult:
+        return self._guarded(
+            self._cfg.enable_scx, "SCX scheduler", lambda: self._set(desired)
+        )
+
+    def _set(self, desired: str) -> FeatureResult:
         if not self._scxctl.is_available:
             return FeatureResult.skip("scxctl not found")
 
         status = self._status()
-        if (
-            status
-            and self._cfg.scx_scheduler in status
-            and self._cfg.scx_mode in status
-        ):
-            return FeatureResult.noop()
-        self._log.info("SCX: %s/%s", self._cfg.scx_scheduler, self._cfg.scx_mode)
-        return self._apply()
+        if desired == "on":
+            if (
+                status
+                and self._cfg.scx_scheduler in status
+                and self._cfg.scx_mode in status
+            ):
+                return FeatureResult.noop()
+            self._log.info("SCX: %s/%s", self._cfg.scx_scheduler, self._cfg.scx_mode)
+            return self._apply()
+        else:
+            if not status or "no scx scheduler running" in status:
+                return FeatureResult.noop()
+            self._log.info("SCX: stopping")
+            result = self._scxctl.run_or_none([self._CMD, "stop"])
+            ok = result is not None and result.returncode == 0
+            if ok:
+                return FeatureResult.did_change("stopped")
+            return FeatureResult.error("stop failed")
+
+    def enable(self, output: str) -> FeatureResult:
+        return self._toggle("on")
 
     def disable(self, output: str) -> FeatureResult:
-        gate = self._gate(self._cfg.enable_scx, "SCX scheduler")
-        if gate is not None:
-            return gate
-        if not self._scxctl.is_available:
-            return FeatureResult.skip("scxctl not found")
-
-        status = self._status()
-        if not status or "no scx scheduler running" in status:
-            return FeatureResult.noop()
-
-        self._log.info("SCX: stopping")
-        result = self._scxctl.run_or_none([self._CMD, "stop"])
-        ok = result is not None and result.returncode == 0
-        if ok:
-            return FeatureResult.did_change("stopped")
-        return FeatureResult.error("stop failed")
+        return self._toggle("off")
 
 
 # ============================================================================
@@ -906,35 +975,35 @@ class SCXScheduler(_BaseFeature):
 class AudioPriority(_BaseFeature):
     """Manage the ``PULSE_LATENCY_MSEC`` environment variable."""
 
+    def _toggle(self, desired: str) -> FeatureResult:
+        return self._guarded(
+            self._cfg.enable_audio, "Audio priority", lambda: self._set(desired)
+        )
+
+    def _set(self, desired: str) -> FeatureResult:
+        if desired == "on":
+            self._log.debug("Audio: PULSE_LATENCY_MSEC=%s", self._cfg.audio_latency)
+            os.environ["PULSE_LATENCY_MSEC"] = self._cfg.audio_latency
+            self._cfg.audio_env_file.parent.mkdir(parents=True, exist_ok=True)
+            self._cfg.audio_env_file.write_text(
+                f"export PULSE_LATENCY_MSEC={self._cfg.audio_latency}\n",
+            )
+            return FeatureResult.did_change(
+                f"PULSE_LATENCY_MSEC={self._cfg.audio_latency}",
+            )
+        else:
+            os.environ.pop("PULSE_LATENCY_MSEC", None)
+            try:
+                self._cfg.audio_env_file.unlink()
+            except FileNotFoundError:
+                pass
+            return FeatureResult.did_change("cleared PULSE_LATENCY_MSEC")
+
     def enable(self, output: str) -> FeatureResult:
-        gate = self._gate(self._cfg.enable_audio, "Audio priority")
-        if gate is not None:
-            return gate
-
-        self._log.debug("Audio: PULSE_LATENCY_MSEC=%s", self._cfg.audio_latency)
-        os.environ["PULSE_LATENCY_MSEC"] = self._cfg.audio_latency
-
-        # Persist for external consumers (wrapper mode also writes for
-        # consistency with the bash version).
-        self._cfg.audio_env_file.parent.mkdir(parents=True, exist_ok=True)
-        self._cfg.audio_env_file.write_text(
-            f"export PULSE_LATENCY_MSEC={self._cfg.audio_latency}\n",
-        )
-        return FeatureResult.did_change(
-            f"PULSE_LATENCY_MSEC={self._cfg.audio_latency}",
-        )
+        return self._toggle("on")
 
     def disable(self, output: str) -> FeatureResult:
-        gate = self._gate(self._cfg.enable_audio, "Audio priority")
-        if gate is not None:
-            return gate
-
-        os.environ.pop("PULSE_LATENCY_MSEC", None)
-        try:
-            self._cfg.audio_env_file.unlink()
-        except FileNotFoundError:
-            pass
-        return FeatureResult.did_change("cleared PULSE_LATENCY_MSEC")
+        return self._toggle("off")
 
 
 # ============================================================================
@@ -961,6 +1030,8 @@ def steam_wrapper_path(
 # Responsibility: Run command with idle/sleep inhibition
 #
 # When niri is the compositor, DMS inhibit is used directly (enable/disable).
+# The freedesktop ScreenSaver DBus API is used as a universal fallback
+# (acquire/release an inhibition cookie via dbus-send).
 # ``systemd-inhibit`` wraps the child command for all compositors.
 # On KDE, ``kde-inhibit --colorCorrect`` is also invoked as a one-shot
 # setup step (it is not a command wrapper and cannot be chained).
@@ -968,22 +1039,24 @@ def steam_wrapper_path(
 
 
 class ScreenInhibit(_BaseFeature):
-    """Manage idle/sleep inhibition via systemd-inhibit and DMS."""
+    """Manage idle/sleep inhibition via systemd-inhibit, DMS, and DBus ScreenSaver."""
 
     _DMS_CMD = "dms"
     _DMS_FEATURE = "DMS inhibit"
+    _DBUS_SERVICE = "org.freedesktop.ScreenSaver"
+    _DBUS_PATH = "/ScreenSaver"
+    _DBUS_IFACE = "org.freedesktop.ScreenSaver"
 
     def __init__(self, config: Config, runner: Runner, log: logging.Logger) -> None:
         super().__init__(config, runner, log)
         # Factory runner for DMS commands
         self._dms = runner.make_checked_runner(self._DMS_CMD, self._DMS_FEATURE)
+        # Resolve dbus-send once (used in enable/disable for ScreenSaver cookies).
+        self._dbus_send: str | None = runner.resolve("dbus-send")
+        # DBus ScreenSaver cookie (uint32), acquired on enable, released on disable.
+        self._screensaver_cookie: int | None = None
 
     # -- DMS helpers -------------------------------------------------------
-
-    @staticmethod
-    def _dms_ok(result: subprocess.CompletedProcess[str] | None) -> bool:
-        """Return ``True`` if the DMS command succeeded."""
-        return result is not None and result.returncode == 0
 
     def _dms_inhibit_enabled(self) -> bool:
         """Return ``True`` if DMS idle inhibit is currently enabled."""
@@ -1006,9 +1079,8 @@ class ScreenInhibit(_BaseFeature):
             (["enable"], "enable DMS inhibit"),
             (["reason", reason], "set DMS inhibit reason"),
         ):
-            if not self._dms_ok(
-                self._dms.run_or_none([self._DMS_CMD, "ipc", "call", "inhibit", *cmd])
-            ):
+            r = self._dms.run_or_none([self._DMS_CMD, "ipc", "call", "inhibit", *cmd])
+            if r is None or r.returncode != 0:
                 self._log.error("Failed to %s", desc)
                 return False
 
@@ -1026,31 +1098,133 @@ class ScreenInhibit(_BaseFeature):
         self._dms.run_or_none([self._DMS_CMD, "ipc", "call", "inhibit", "disable"])
         self._log.debug("DMS inhibit disabled")
 
+    # -- DBus ScreenSaver cookie management --------------------------------
+
+    def _screensaver_inhibit_enable(
+        self, reason: str = "gamemode.py gaming session"
+    ) -> bool:
+        """Acquire a ScreenSaver inhibition cookie via DBus.
+
+        Returns ``True`` if a cookie was successfully acquired and stored.
+        """
+        if self._screensaver_cookie is not None:
+            self._log.debug("ScreenSaver cookie already acquired")
+            return True
+
+        if self._dbus_send is None:
+            self._log.debug("dbus-send not found, cannot use ScreenSaver inhibit")
+            return False
+
+        result = self._run.capture(
+            [
+                self._dbus_send,
+                "--session",
+                f"--dest={self._DBUS_SERVICE}",
+                "--type=method_call",
+                "--print-reply=literal",
+                self._DBUS_PATH,
+                f"{self._DBUS_IFACE}.Inhibit",
+                "string:gamemode.py",
+                f"string:{reason}",
+            ]
+        )
+        if result.returncode != 0:
+            self._log.warning(
+                "ScreenSaver.Inhibit failed: %s",
+                result.stderr.strip(),
+            )
+            return False
+
+        cookie_str = result.stdout.strip()
+        try:
+            self._screensaver_cookie = int(cookie_str)
+        except ValueError:
+            self._log.warning("Unexpected cookie value: %r", cookie_str)
+            return False
+
+        self._log.debug("ScreenSaver cookie acquired: %d", self._screensaver_cookie)
+        return True
+
+    def _screensaver_inhibit_disable(self) -> None:
+        """Release the ScreenSaver inhibition cookie if held."""
+        if self._screensaver_cookie is None:
+            self._log.debug("No ScreenSaver cookie to release")
+            return
+
+        if self._dbus_send is None:
+            self._log.warning("dbus-send not found, cannot release ScreenSaver cookie")
+            return
+
+        result = self._run.capture(
+            [
+                self._dbus_send,
+                "--session",
+                f"--dest={self._DBUS_SERVICE}",
+                "--type=method_call",
+                "--print-reply",
+                self._DBUS_PATH,
+                f"{self._DBUS_IFACE}.UnInhibit",
+                f"uint32:{self._screensaver_cookie}",
+            ]
+        )
+        if result.returncode != 0:
+            self._log.warning(
+                "ScreenSaver.UnInhibit failed (cookie=%d): %s",
+                self._screensaver_cookie,
+                result.stderr.strip(),
+            )
+        else:
+            self._log.debug(
+                "ScreenSaver cookie released: %d",
+                self._screensaver_cookie,
+            )
+        self._screensaver_cookie = None
+
     # -- Feature interface -------------------------------------------------
 
-    def enable(self, output: str) -> FeatureResult:
-        """Enable idle/sleep inhibit via DMS (niri only)."""
-        gate = self._gate(self._cfg.enable_inhibit, "Screen inhibit")
-        if gate is not None:
-            return gate
-        if not compositor_is_niri():
-            return FeatureResult.skip("not niri compositor")
+    def _toggle(self, desired: str) -> FeatureResult:
+        return self._guarded(
+            self._cfg.enable_inhibit, "Screen inhibit", lambda: self._set(desired)
+        )
 
-        ok = self._dms_inhibit_enable()
-        if ok:
-            return FeatureResult.did_change("DMS inhibit enabled")
-        return FeatureResult.error("DMS inhibit failed")
+    def _set(self, desired: str) -> FeatureResult:
+        results: list[str] = []
+
+        if desired == "on":
+            # Try DMS inhibit (niri only).
+            if compositor_is_niri():
+                ok = self._dms_inhibit_enable()
+                if ok:
+                    results.append("DMS inhibit enabled")
+                else:
+                    self._log.warning("DMS inhibit failed, falling back to DBus")
+
+            # Always try DBus ScreenSaver inhibit as a universal mechanism.
+            if self._screensaver_inhibit_enable():
+                results.append("ScreenSaver cookie acquired")
+
+            if not results:
+                return FeatureResult.error("all inhibit mechanisms failed")
+            return FeatureResult.did_change("; ".join(results))
+        else:
+            # Disable DMS inhibit (niri only).
+            if compositor_is_niri():
+                self._dms_inhibit_disable()
+                results.append("DMS inhibit disabled")
+
+            # Release DBus ScreenSaver cookie.
+            self._screensaver_inhibit_disable()
+            results.append("ScreenSaver cookie released")
+
+            return FeatureResult(changed=True, detail="; ".join(results))
+
+    def enable(self, output: str) -> FeatureResult:
+        """Enable idle/sleep inhibit via DMS (niri) and/or DBus ScreenSaver."""
+        return self._toggle("on")
 
     def disable(self, output: str) -> FeatureResult:
-        """Disable idle/sleep inhibit via DMS (niri only)."""
-        gate = self._gate(self._cfg.enable_inhibit, "Screen inhibit")
-        if gate is not None:
-            return gate
-        if not compositor_is_niri():
-            return FeatureResult.skip("not niri compositor")
-
-        self._dms_inhibit_disable()
-        return FeatureResult(changed=True, detail="DMS inhibit disabled")
+        """Disable idle/sleep inhibit via DMS (niri) and/or DBus ScreenSaver."""
+        return self._toggle("off")
 
     # -- inhibit wrapper for child commands --------------------------------
 
@@ -1117,16 +1291,25 @@ def collect_features(
     ]
 
 
+def _apply_features(
+    features: list[tuple[str, Feature]],
+    output: str,
+    log: logging.Logger,
+    method: str,
+) -> None:
+    """Run *method* (``"enable"`` or ``"disable"``) on every feature, logging results."""
+    log.debug("%sing features for output: %s", method.capitalize(), output)
+    for name, feat in features:
+        result = getattr(feat, method)(output)
+        _BaseFeature._log_result(name, result, log)
+
+
 def features_enable(
     features: list[tuple[str, Feature]],
     output: str,
     log: logging.Logger,
 ) -> None:
-    """Run ``enable`` on every feature, logging results."""
-    log.debug("Enabling features for output: %s", output)
-    for name, feat in features:
-        result = feat.enable(output)
-        _BaseFeature._log_result(name, result, log)
+    _apply_features(features, output, log, "enable")
 
 
 def features_disable(
@@ -1134,11 +1317,7 @@ def features_disable(
     output: str,
     log: logging.Logger,
 ) -> None:
-    """Run ``disable`` on every feature, logging results."""
-    log.debug("Disabling features for output: %s", output)
-    for name, feat in features:
-        result = feat.disable(output)
-        _BaseFeature._log_result(name, result, log)
+    _apply_features(features, output, log, "disable")
 
 
 # ============================================================================
@@ -1147,14 +1326,35 @@ def features_disable(
 # ============================================================================
 
 
-def action_on(
-    config: Config, runner: Runner, log: logging.Logger, *, debug: bool = False
-) -> int:
-    """Activate gaming mode.  Returns an exit code."""
+def _prepare_action(
+    config: Config,
+    runner: Runner,
+    log: logging.Logger,
+    *,
+    debug: bool = False,
+) -> tuple[str, list[tuple[str, Feature]], StateManager]:
+    """Common setup shared by ``action_on`` and ``action_off``.
+
+    Returns the resolved output name, collected features, and state manager.
+    """
     output = output_resolve(config)
     state = StateManager(config)
     state.init()
     setup_logging(config, to_file=debug)
+    features = collect_features(config, runner, log)
+    return output, features, state
+
+
+def action_on(
+    config: Config, runner: Runner, log: logging.Logger, *, debug: bool = False
+) -> int:
+    """Activate gaming mode.  Returns an exit code."""
+    output, features, state = _prepare_action(
+        config,
+        runner,
+        log,
+        debug=debug,
+    )
 
     log.info("Activating (output: %s)", output)
 
@@ -1166,33 +1366,96 @@ def action_on(
         return 0
 
     state.mark_active()
-    features = collect_features(config, runner, log)
     features_enable(features, output, log)
     log.info("Activation complete")
     return 0
 
 
 def action_off(
-    config: Config, runner: Runner, log: logging.Logger, *, debug: bool = False
+    config: Config,
+    runner: Runner,
+    log: logging.Logger,
+    *,
+    debug: bool = False,
+    force: bool = False,
 ) -> int:
     """Deactivate gaming mode.  Returns an exit code."""
-    output = output_resolve(config)
-    state = StateManager(config)
-    state.init()
-    setup_logging(config, to_file=debug)
+    output, features, state = _prepare_action(
+        config,
+        runner,
+        log,
+        debug=debug,
+    )
 
-    log.info("Deactivating (output: %s)", output)
+    log.debug("Checking state for deactivation (output: %s)", output)
 
     if state.is_wrapper:
-        if not state.is_lock_held():
-            log.debug("Stale wrapper state detected, cleaning up")
-        else:
+        # Check if the wrapper process is still alive.
+        if state.wrapper_alive():
+            # Wrapper is running — normal case, skip off (let wrapper handle cleanup).
             log.debug("Wrapper mode active, skipping off")
             return 0
+        else:
+            # Stale state: wrapper process is dead, force cleanup.
+            pid = state.wrapper_pid()
+            log.warning(
+                "Stale wrapper state detected (PID %s dead), forcing cleanup",
+                pid if pid is not None else "unknown",
+            )
+    elif force:
+        log.info("Force cleanup requested (state: %r)", state.value())
+    elif not state.value():
+        log.info("Nothing active, skipping")
+        return 0
+    elif state.is_active:
+        log.info("Deactivating manual activation (output: %s)", output)
+    else:
+        log.debug("Unknown state %r, cleaning up anyway", state.value())
 
-    features = collect_features(config, runner, log)
-    features_disable(features, output, log)
-    state.clear()
+    if state.is_wrapper or force or state.is_active or state.value():
+        features_disable(features, output, log)
+        state.clear()
+        log.info("Cleanup complete")
+
+    return 0
+
+
+def action_status(config: Config, runner: Runner, log: logging.Logger) -> int:
+    """Print current state for diagnostics.  Returns 0."""
+    state = StateManager(config)
+    state.init()
+
+    value = state.value()
+    pid = state.wrapper_pid()
+    lock_held = state.is_lock_held()
+    alive = state.wrapper_alive() if pid is not None else False
+
+    # Compositor info
+    niri = compositor_is_niri()
+    kde = session_is_kde()
+    session = os.environ.get("XDG_SESSION_DESKTOP", "(unset)")
+    current_desktop = os.environ.get("XDG_CURRENT_DESKTOP", "(unset)")
+
+    output = output_resolve(config)
+
+    lines = [
+        f"State:            {value or '(none)'}",
+        f"Wrapper PID:      {pid if pid is not None else '(none)'}",
+        f"PID alive:        {alive if pid is not None else 'N/A'}",
+        f"Lock held:        {lock_held}",
+        f"Stale state:      {value == 'wrapper' and pid is not None and not alive}",
+        "",
+        f"Compositor:       {'niri' if niri else 'kde' if kde else 'unknown'}",
+        f"  XDG_SESSION_DESKTOP:    {session}",
+        f"  XDG_CURRENT_DESKTOP:    {current_desktop}",
+        f"Target output:    {output}",
+        "",
+        f"State dir:        {config.state_dir}",
+        f"State file:       {config.state_file}",
+        f"Lock file:        {config.lock_file}",
+        f"PID file:         {config.pid_file}",
+    ]
+    print("\n".join(lines))
     return 0
 
 
@@ -1218,6 +1481,92 @@ def _build_cleanup_closure(
     return _cleanup
 
 
+@contextmanager
+def _signal_guard(
+    log: logging.Logger,
+    child_proc: list[subprocess.Popen | None],
+) -> "Iterator[int]":
+    """Context manager: install SIGTERM/SIGINT/SIGHUP handlers that kill *child_proc*.
+
+    Yields a mutable cell (``pending_signal[0]``) that will be set to the
+    received signal number if one arrives.  On exit, original handlers are
+    restored.
+
+    Usage::
+        pending = [0]
+        child: list[subprocess.Popen | None] = [None]
+        with _signal_guard(log, child) as pending:
+            child[0] = subprocess.Popen(cmd, start_new_session=True)
+            retcode = child[0].wait()
+        if pending[0]:
+            sys.exit(128 + pending[0])
+    """
+    pending_signal = [0]
+    _orig_term = signal.getsignal(signal.SIGTERM)
+    _orig_int = signal.getsignal(signal.SIGINT)
+    _orig_hup = signal.getsignal(signal.SIGHUP) if hasattr(signal, "SIGHUP") else None
+
+    def _handler(signum: int, _frame: object) -> None:
+        log.info("Received signal %s, terminating child and cleaning up", signum)
+        pending_signal[0] = signum
+        if child_proc[0] is not None:
+            try:
+                child_proc[0].kill()
+            except OSError:
+                pass
+
+    try:
+        signal.signal(signal.SIGTERM, _handler)
+        signal.signal(signal.SIGINT, _handler)
+        if hasattr(signal, "SIGHUP"):
+            signal.signal(signal.SIGHUP, _handler)
+    except (ValueError, OSError):
+        # Not the main thread — signals cannot be installed.
+        pending_signal[0] = 0
+        _orig_term = None
+        _orig_int = None
+        _orig_hup = None
+
+    try:
+        yield pending_signal[0]
+    finally:
+        if _orig_term is not None:
+            try:
+                signal.signal(signal.SIGTERM, _orig_term)
+                signal.signal(signal.SIGINT, _orig_int)
+            except (ValueError, OSError):
+                pass
+        if _orig_hup is not None and hasattr(signal, "SIGHUP"):
+            try:
+                signal.signal(signal.SIGHUP, _orig_hup)
+            except (ValueError, OSError):
+                pass
+
+
+def _watch_parent(log: logging.Logger) -> None:
+    """Install a PR_SET_PDEATHSIG so the kernel kills us if our parent dies.
+
+    This prevents orphaned gamemode.py processes from holding locks or
+    state files when the launching shell script exits unexpectedly.
+
+    Uses SIGTERM so the _signal_guard cleanup handlers still fire.
+    """
+    PR_SET_PDEATHSIG = 1
+    libc_path = ctypes.util.find_library("c")
+    if libc_path is None:
+        log.warning("Cannot find libc for PR_SET_PDEATHSIG")
+        return
+    try:
+        libc = ctypes.CDLL(libc_path)
+        ret = libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+        if ret != 0:
+            log.warning(
+                "prctl(PR_SET_PDEATHSIG) failed: %s", os.strerror(ctypes.get_errno())
+            )
+    except (OSError, AttributeError) as exc:
+        log.warning("prctl unavailable for parent-death detection: %s", exc)
+
+
 def action_wrapper(
     config: Config,
     runner: Runner,
@@ -1240,6 +1589,10 @@ def action_wrapper(
 
     log.info("Wrapper mode (output: %s, command: %s)", output, " ".join(command))
 
+    # If the parent shell (bazzite-steam-bpm.sh) dies, we get SIGTERM and
+    # run the same cleanup path as a normal exit.
+    _watch_parent(log)
+
     with state.locked() as acquired:
         if not acquired:
             log.debug("Another wrapper instance holds the lock, skipping")
@@ -1248,6 +1601,7 @@ def action_wrapper(
         setup_logging(config, to_file=debug)
 
         state.mark_wrapper()
+        state.write_pid()
         features = collect_features(config, runner, log)
         features_enable(features, output, log)
 
@@ -1264,60 +1618,26 @@ def action_wrapper(
         inhibit = ScreenInhibit(config, runner, log)
         exec_cmd = inhibit.inhibit_argv(exec_cmd)
 
-        # Install signal handlers on the main thread so that SIGTERM /
-        # SIGINT received while waiting for the child trigger cleanup.
-        _pending_signal = [0]  # 0 = none, signal.SIGTERM, or signal.SIGINT
-        _child_proc: list[subprocess.Popen | None] = [None]
+        # Run the child process with signal-guarded cleanup.
+        child_proc: list[subprocess.Popen | None] = [None]
 
-        def _signal_handler(signum: int, _frame: object) -> None:
-            log.info("Received signal %s, terminating child and cleaning up", signum)
-            _pending_signal[0] = signum
-            # Kill the child so proc.wait() returns and the finally block
-            # can run cleanup.  The child is in its own session, so we
-            # must kill the whole process group.
-            if _child_proc[0] is not None:
-                try:
-                    _child_proc[0].kill()
-                except OSError:
-                    pass
-
-        try:
-            _orig_term = signal.getsignal(signal.SIGTERM)
-            _orig_int = signal.getsignal(signal.SIGINT)
-            signal.signal(signal.SIGTERM, _signal_handler)
-            signal.signal(signal.SIGINT, _signal_handler)
-        except (ValueError, OSError):
-            # Not the main thread (e.g. called from a test thread).
-            # Signals cannot be installed; cleanup will still happen
-            # via the finally block when the child exits.
-            _orig_term = None
-            _orig_int = None
-
-        try:
+        with _signal_guard(log, child_proc) as pending_signal:
             try:
                 # start_new_session isolates the child into its own
                 # process group so signals don't cross the boundary.
-                _child_proc[0] = subprocess.Popen(exec_cmd, start_new_session=True)
-                retcode = _child_proc[0].wait()
+                child_proc[0] = subprocess.Popen(exec_cmd, start_new_session=True)
+                retcode = child_proc[0].wait()
             except OSError as exc:
                 log.error("Failed to execute command: %s", exc)
                 return 1
             finally:
                 cleanup()
 
-            # After cleanup, exit with the signal number if one arrived.
-            if _pending_signal[0]:
-                sys.exit(128 + _pending_signal[0])
+        # After cleanup, exit with the signal number if one arrived.
+        if pending_signal:
+            sys.exit(128 + pending_signal)
 
-            return retcode
-        finally:
-            # Restore original signal handlers.
-            if _orig_term is not None:
-                try:
-                    signal.signal(signal.SIGTERM, _orig_term)
-                    signal.signal(signal.SIGINT, _orig_int)
-                except (ValueError, OSError):
-                    pass
+        return retcode
 
 
 # ============================================================================
@@ -1334,6 +1654,8 @@ USAGE = textwrap.dedent("""\
     MODES:
       on              Activate gaming mode (VRR, scheduler, profile, etc.)
       off             Deactivate gaming mode, restore desktop defaults
+      off --force     Force cleanup even if state looks corrupted
+      status          Show current state and diagnostics
       <command>       Wrapper mode: enable features, then run <command>
                       (auto-cleanup on exit)
 
@@ -1371,6 +1693,8 @@ USAGE = textwrap.dedent("""\
     EXAMPLES:
       python3 gamemode.py on                          # Toggle on
       python3 gamemode.py off                         # Toggle off
+      python3 gamemode.py off --force                 # Force cleanup stale state
+      python3 gamemode.py status                      # Show current state
       python3 gamemode.py -- steam                    # Wrapper: launch steam with gaming features
       python3 gamemode.py -- ~/Games/hero/main.sh     # Wrapper: run a game directly
       ENABLE_VRR=false python3 gamemode.py on         # Toggle on without VRR
@@ -1384,11 +1708,12 @@ USAGE = textwrap.dedent("""\
 
 
 def cli_parse(argv: list[str] | None = None) -> tuple[str | None, list[str]]:
-    """Parse CLI arguments and return ``(mode, command)``.
+    """Parse CLI arguments and return ``(mode, command, force)``.
 
     Modes returned:
       ``"on"``      — activate
       ``"off"``     — deactivate
+      ``"status"``   — show diagnostics
       ``"wrapper"`` — wrapper mode (command follows ``--``)
       ``None``       — help was printed or error occurred
     """
@@ -1401,8 +1726,10 @@ def cli_parse(argv: list[str] | None = None) -> tuple[str | None, list[str]]:
 
     mode = argv[0]
 
-    if mode in ("on", "off"):
-        return mode, []
+    if mode in ("on", "off", "status"):
+        # Check for --force flag after 'off'
+        force = "--force" in argv[1:]
+        return mode, ["--force"] if force else []
 
     if mode == "--":
         command = argv[1:]
@@ -1445,7 +1772,10 @@ def main(argv: list[str] | None = None) -> int:
     if mode == "on":
         return action_on(config, runner, log, debug=debug)
     if mode == "off":
-        return action_off(config, runner, log, debug=debug)
+        force = "--force" in command
+        return action_off(config, runner, log, debug=debug, force=force)
+    if mode == "status":
+        return action_status(config, runner, log)
     if mode == "wrapper":
         return action_wrapper(config, runner, log, command, debug=debug)
 
