@@ -1,7 +1,4 @@
-# MediaTek Bluetooth Radio (MT7922)
+# Enable wakeups from MediaTek Bluetooth Radio (MT7922)
 ACTION=="add|change", DRIVERS=="usb", SUBSYSTEM=="usb", \
   ATTR{idVendor}=="0e8d", ATTR{idProduct}=="0616", \
-  TEST=="power/wakeup", ATTR{power/wakeup}="enabled"
-# Enable wakeup on usb1 root as well
-ACTION=="add|change", SUBSYSTEM=="usb", KERNEL=="usb1", \
   TEST=="power/wakeup", ATTR{power/wakeup}="enabled"

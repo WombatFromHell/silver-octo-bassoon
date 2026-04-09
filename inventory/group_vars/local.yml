@@ -63,4 +63,4 @@ install_brave: true
 install_firefox: false
 install_peazip: true
 install_arpc_fix: false
-enable_fix_wakeups: true
+enable_fix_wakeups: false

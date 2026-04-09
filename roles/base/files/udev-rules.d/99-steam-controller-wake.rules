@@ -1,1 +1,2 @@
+# Enable wakeups from wireless Steam Controller
 ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="28de", ATTRS{idProduct}=="1142", ATTR{power/wakeup}="enabled"

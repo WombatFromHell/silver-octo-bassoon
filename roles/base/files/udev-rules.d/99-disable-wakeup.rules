@@ -1,0 +1,5 @@
+# Disable Mouse wakeup
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1d57", ATTR{idProduct}=="fa60", ATTR{power/wakeup}="disabled"
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1d57", ATTR{idProduct}=="fa61", ATTR{power/wakeup}="disabled"
+# Disable Keyboard wakeup
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0c45", ATTR{idProduct}=="8006", ATTR{power/wakeup}="disabled"
