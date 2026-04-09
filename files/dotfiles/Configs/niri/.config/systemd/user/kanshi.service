@@ -1,6 +1,5 @@
 [Unit]
 Description=Kanshi Service
-After=graphical-session.target
 PartOf=niri.service
 After=niri.service
 ConditionEnvironment=!DESKTOP_SESSION=plasma
@@ -10,7 +9,7 @@ Type=simple
 ExecStart=/usr/bin/kanshi
 ExecReload=/usr/bin/pkill --signal HUP -x kanshi
 Restart=on-failure
-RestartSec=2
+RestartSec=1.23
 TimeoutStop=10
 
 [Install]
