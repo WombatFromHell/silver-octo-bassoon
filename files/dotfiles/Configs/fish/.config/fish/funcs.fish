@@ -209,3 +209,15 @@ function update_wayland_env_vars -d "Update NIRI_SOCKET and WAYLAND_DISPLAY to m
         end
     end
 end
+
+function nix_collect_garbage
+    if contains -- --sudo $argv
+        # strip '--sudo' from argv
+        set args (string match -v '--sudo' $argv)
+        command sudo -i nix-collect-garbage $argv
+        command sudo -i nix-store --optimize
+    else
+        command nix-collect-garbage $argv
+        command nix-store --optimize
+    end
+end

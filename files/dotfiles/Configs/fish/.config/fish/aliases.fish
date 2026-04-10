@@ -1,38 +1,35 @@
 if command -q nix
+    set _host (hostname)
     set NIX_FLAKE_OS_ROOT $HOME/.nix
+    set FLAKE_ROOT "$NIX_FLAKE_OS_ROOT#$_host"
     alias nixconf='$EDITOR $NIX_FLAKE_OS_ROOT'
     #
-    set _host (hostname)
-    alias _nhos='nh os switch -H $_host'
-    alias nhu='_nhos $NIX_FLAKE_OS_ROOT'
-    alias nhb='nh os build -H $_host --dry $NIX_FLAKE_OS_ROOT'
-    alias nhuu='_nh -u $NIX_FLAKE_OS_ROOT'
-    alias nhc='nh_clean'
-    alias nls='sudo nixos-rebuild list-generations'
-    alias nrbb='sudo nixos-rebuild boot --flake $NIX_FLAKE_OS_ROOT#$_host'
-    alias nrrb='sudo nixos-rebuild switch --rollback'
-    alias ncg='sudo nix-collect-garbage'
+    alias hmb='nh home build --dry $FLAKE_ROOT'
+    alias hms='nh home switch $FLAKE_ROOT'
+    alias hcu='nh clean user'
+    alias hca='nh clean all'
     #
-    set _hmpath (realpath $NIX_FLAKE_OS_ROOT)
-    set _hmsuf --flake $_hmpath#$_host
-    alias _hmnix='nix run home-manager/master -- init'
-    alias hmb='home-manager build --dry-run $_hmsuf'
-    alias hms='home-manager switch $_hmsuf'
+    alias hmnix='nix run home-manager/master -- init'
     alias hmls='home-manager generations'
     alias hmrm='home-manager remove-generations'
     #
-    alias drbu='sudo darwin-rebuild switch --flake $NIX_FLAKE_OS_ROOT#$_host'
-    alias drbb='sudo darwin-rebuild build --dry-run --flake $NIX_FLAKE_OS_ROOT#$_host'
+    alias nhb='nh os build --dry $FLAKE_ROOT'
+    alias nhs='nh os switch $FLAKE_ROOT'
+    alias nls='nh os info'
+    alias nrb='nh os rollback'
+    #
+    alias drb='nh darwin build --dry-run $FLAKE_ROOT'
+    alias drs='nh darwin switch $FLAKE_ROOT'
     alias drbls='sudo darwin-rebuild --list-generations'
     alias drbrm='sudo nix-env -p /nix/var/nix/profiles/system --delete-generations'
     #
-    alias nix_hist='sudo nix profile history --profile /nix/var/nix/profiles/system'
-    alias nix_rb='sudo nix profile rollback --profile /nix/var/nix/profile/system'
+    alias nix_hist='sudo -i nix profile history --profile /nix/var/nix/profiles/system'
+    alias nix_rb='sudo -i nix profile rollback --profile /nix/var/nix/profile/system'
     alias nix_act='sudo /nix/var/nix/profile/system/bin/switch-to-configuration switch'
     alias nix_roots='nix-store --gc --print-roots'
     #
-    alias nixosopt='sudo nix-store --gc && sudo nix-store --optimize'
-    alias nixopt='nix-store --gc && nix-store --optimize'
+    alias nixopt='nix_collect_garbage'
+    alias nixopts='nix_collect_garbage --sudo'
 end
 
 if command -q eza
