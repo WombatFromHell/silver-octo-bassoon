@@ -49,6 +49,20 @@ end
 
 # Attach to a session, or switch-client if already inside tmux.
 function __tmux_attach -d "Attach or switch to a session"
+    # Update Wayland env vars in the tmux server before attaching
+    if set -q XDG_RUNTIME_DIR
+        set -l niri_sockets (ls -t $XDG_RUNTIME_DIR/niri.*.sock 2>/dev/null)
+        if test -n "$niri_sockets"
+            set -l new_socket $niri_sockets[1]
+            tmux set-environment -g NIRI_SOCKET $new_socket
+
+            set -l display_name (basename $new_socket | string replace -r '^niri\.(.*)\.[0-9]+\.sock$' '$1')
+            if test -n "$display_name" -a "$display_name" != (basename $new_socket)
+                tmux set-environment -g WAYLAND_DISPLAY $display_name
+            end
+        end
+    end
+
     if set -q TMUX
         tmux switch-client -t $argv[1]
     else
@@ -131,43 +145,6 @@ end
 function tmls -d "List sessions"
     tmux list-sessions
 end
-
-# --- Wayland Environment Refresh ---
-# Refresh WAYLAND_DISPLAY and NIRI_SOCKET when switching compositors (KDE Plasma <-> Niri)
-# Called idempotently on every shell load to keep env in sync
-function __tmux_refresh_wayland -d "Refresh Wayland environment"
-    set -l uid (id -u)
-
-    # Find standard wayland socket
-    for socket in /run/user/$uid/wayland-*
-        if test -S "$socket"
-            set -l new_display (basename "$socket")
-            if test "$WAYLAND_DISPLAY" != "$new_display"
-                set -x WAYLAND_DISPLAY "$new_display"
-                if set -q TMUX
-                    tmux set-environment WAYLAND_DISPLAY "$new_display" 2>/dev/null
-                end
-            end
-            break
-        end
-    end
-
-    # Find niri socket
-    for socket in /run/user/$uid/niri.wayland-*.sock
-        if test -S "$socket"
-            if test "$NIRI_SOCKET" != "$socket"
-                set -x NIRI_SOCKET "$socket"
-                if set -q TMUX
-                    tmux set-environment NIRI_SOCKET "$socket" 2>/dev/null
-                end
-            end
-            break
-        end
-    end
-end
-
-# Sync Wayland env on every shell load (idempotent, safe for non-interactive)
-__tmux_refresh_wayland
 
 # --- Auto-Start Logic ---
 # Only runs in interactive shells not currently in tmux.

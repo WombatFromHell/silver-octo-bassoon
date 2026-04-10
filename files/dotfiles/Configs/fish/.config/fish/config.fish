@@ -43,6 +43,7 @@ if status is-interactive
 
     set_editor
     setup_podman_sock
+    update_wayland_env_vars
 
     # functions and evals that can be loaded after everything else
     set SOURCES_FISH_SRC "$HOME/.config/fish/sources.fish"

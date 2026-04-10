@@ -179,7 +179,7 @@ function clean_fish
     end
 
     # 2. Run fisher update in a fresh subshell.
-    # Because we put fisher.fish inside conf.d/, the new `fish` shell 
+    # Because we put fisher.fish inside conf.d/, the new `fish` shell
     # will automatically load it before executing "fisher update".
     echo "Running fisher update..."
     if not fish -c "fisher update"
@@ -189,5 +189,23 @@ function clean_fish
     # clean up if we have a valid 'fish_plugins'
     if test -f "$FISH_HOME"/fish_plugins
         rm -f "$FISH_HOME"/fish_plugins.bak
+    end
+end
+
+function update_wayland_env_vars -d "Update NIRI_SOCKET and WAYLAND_DISPLAY to match current session"
+    if test -n "$XDG_RUNTIME_DIR"
+        # Find the most recent niri socket
+        set -l niri_sockets (ls -t $XDG_RUNTIME_DIR/niri.*.sock 2>/dev/null)
+        if test -n "$niri_sockets"
+            set -l new_socket $niri_sockets[1]
+            set -gx NIRI_SOCKET $new_socket
+
+            # Extract WAYLAND_DISPLAY from the socket filename
+            # Format: niri.{WAYLAND_DISPLAY}.{PID}.sock
+            set -l display_name (basename $new_socket | string replace -r '^niri\.(.*)\.[0-9]+\.sock$' '$1')
+            if test -n "$display_name" -a "$display_name" != (basename $new_socket)
+                set -gx WAYLAND_DISPLAY $display_name
+            end
+        end
     end
 end
