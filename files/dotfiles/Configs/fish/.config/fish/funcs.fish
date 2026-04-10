@@ -221,3 +221,14 @@ function nix_collect_garbage
         command nix-store --optimize
     end
 end
+
+function sudoe -d "Run command with sudo, preserving user env and including Nix paths"
+    set -l nix_path $HOME/.nix-profile/bin
+    set -l new_path "$nix_path"
+    for dir in (string split : $PATH)
+        if not contains $dir $new_path
+            set -a new_path $dir
+        end
+    end
+    sudo -E env PATH=(string join : $new_path) $argv
+end

@@ -131,4 +131,16 @@ if [[ $- == *i* ]]; then
   alias nixopt='nix-store --gc && nix-store --optimize'
 
   alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
+
+  function sudoe() {
+    local nix_path="$HOME/.nix-profile/bin"
+    local new_path="$nix_path"
+    IFS=':' read -ra path_dirs <<< "$PATH"
+    for dir in "${path_dirs[@]}"; do
+      if [[ ":$new_path:" != *":$dir:"* ]]; then
+        new_path="$new_path:$dir"
+      fi
+    done
+    sudo -E env PATH="$new_path" "$@"
+  }
 fi

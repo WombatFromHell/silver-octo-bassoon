@@ -85,7 +85,6 @@ alias yz='yazi'
 alias edit='$EDITOR'
 alias sedit='sudo -E $EDITOR'
 alias mkdir='mkdir -pv'
-alias sudoe='sudo -E env PATH=$PATH'
 
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
 alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
