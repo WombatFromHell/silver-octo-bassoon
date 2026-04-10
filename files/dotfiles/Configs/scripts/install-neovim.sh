@@ -31,13 +31,15 @@ usage() {
 Usage: $(basename "$0") [OPTIONS]
 
 Options:
-  --install <version>    Install Neovim version (e.g., stable, nightly)
-  --uninstall <version>  Remove a specific Neovim version
+  --install [version]    Install Neovim version (e.g., stable, nightly). Default: stable
+  --uninstall [version]  Remove a specific Neovim version. Default: stable
   --help                 Show this help message
 
 Examples:
+  $(basename "$0") --install
   $(basename "$0") --install stable
   $(basename "$0") --install nightly
+  $(basename "$0") --uninstall
   $(basename "$0") --uninstall stable
   $(basename "$0") --uninstall nightly
 EOF
@@ -258,15 +260,13 @@ main() {
     case "$1" in
     --install)
       action="install"
-      if [[ -z "${2:-}" ]]; then die "Missing argument for --install"; fi
-      version="$2"
-      shift 2
+      version="${2:-stable}"
+      if [[ -n "${2:-}" ]]; then shift 2; else shift; fi
       ;;
     --uninstall)
       action="uninstall"
-      if [[ -z "${2:-}" ]]; then die "Missing argument for --uninstall"; fi
-      version="$2"
-      shift 2
+      version="${2:-stable}"
+      if [[ -n "${2:-}" ]]; then shift 2; else shift; fi
       ;;
     --help)
       usage
