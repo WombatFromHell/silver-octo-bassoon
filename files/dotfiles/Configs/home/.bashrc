@@ -39,11 +39,17 @@ function update_wayland_env_vars() {
       export NIRI_SOCKET="$niri_socket"
 
       # Extract WAYLAND_DISPLAY from the socket filename
-      # Format: niri.{WAYLAND_DISPLAY}.{PID}.sock
-      local basename
-      basename=$(basename "$niri_socket")
-      if [[ "$basename" =~ ^niri\.(.+)\.[0-9]+\.sock$ ]]; then
-        export WAYLAND_DISPLAY="${BASH_REMATCH[1]}"
+      # Format: niri.{WAYLAND_DISPLAY}.{PID}.sock (e.g., niri.wayland-1.35831.sock)
+      local filename
+      filename=$(basename "$niri_socket")
+      # Remove 'niri.' prefix and '.sock' suffix to get 'wayland-1.35831'
+      local display_with_pid="${filename#niri.}"
+      display_with_pid="${display_with_pid%.sock}"
+      # Remove the trailing '.{PID}' part to get just 'wayland-1'
+      local display_name="${display_with_pid%.[0-9]*}"
+
+      if [[ -n "$display_name" && "$display_name" != "$filename" ]]; then
+        export WAYLAND_DISPLAY="$display_name"
       fi
     fi
   fi

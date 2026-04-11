@@ -50,17 +50,14 @@ end
 # Attach to a session, or switch-client if already inside tmux.
 function __tmux_attach -d "Attach or switch to a session"
     # Update Wayland env vars in the tmux server before attaching
-    if set -q XDG_RUNTIME_DIR
-        set -l niri_sockets (ls -t $XDG_RUNTIME_DIR/niri.*.sock 2>/dev/null)
-        if test -n "$niri_sockets"
-            set -l new_socket $niri_sockets[1]
-            tmux set-environment -g NIRI_SOCKET $new_socket
-
-            set -l display_name (basename $new_socket | string replace -r '^niri\.(.*)\.[0-9]+\.sock$' '$1')
-            if test -n "$display_name" -a "$display_name" != (basename $new_socket)
-                tmux set-environment -g WAYLAND_DISPLAY $display_name
-            end
-        end
+    if functions -q update_wayland_env_vars
+        update_wayland_env_vars
+    end
+    if set -q NIRI_SOCKET
+        tmux set-environment -g NIRI_SOCKET $NIRI_SOCKET
+    end
+    if set -q WAYLAND_DISPLAY
+        tmux set-environment -g WAYLAND_DISPLAY $WAYLAND_DISPLAY
     end
 
     if set -q TMUX

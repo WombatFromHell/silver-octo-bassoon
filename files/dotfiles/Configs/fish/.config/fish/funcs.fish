@@ -194,16 +194,24 @@ end
 
 function update_wayland_env_vars -d "Update NIRI_SOCKET and WAYLAND_DISPLAY to match current session"
     if test -n "$XDG_RUNTIME_DIR"
-        # Find the most recent niri socket
-        set -l niri_sockets (ls -t $XDG_RUNTIME_DIR/niri.*.sock 2>/dev/null)
-        if test -n "$niri_sockets"
-            set -l new_socket $niri_sockets[1]
+        # Find the most recent niri socket (sorted by modification time)
+        # Use string escape to prevent fish glob expansion
+        set -l glob_pattern "$XDG_RUNTIME_DIR/niri.*.sock"
+        set -l socket_listing (command ls -t $glob_pattern 2>/dev/null)
+
+        if test -n "$socket_listing"
+            set -l new_socket $socket_listing[1]
             set -gx NIRI_SOCKET $new_socket
 
             # Extract WAYLAND_DISPLAY from the socket filename
-            # Format: niri.{WAYLAND_DISPLAY}.{PID}.sock
-            set -l display_name (basename $new_socket | string replace -r '^niri\.(.*)\.[0-9]+\.sock$' '$1')
-            if test -n "$display_name" -a "$display_name" != (basename $new_socket)
+            # Format: niri.{WAYLAND_DISPLAY}.{PID}.sock (e.g., niri.wayland-1.35831.sock)
+            set -l filename (basename $new_socket)
+            # Remove 'niri.' prefix and '.sock' suffix to get 'wayland-1.35831'
+            set -l display_name (echo $filename | string replace -r '^niri\.(.*)\.sock$' '$1')
+            # Remove the trailing '.{PID}' part to get just 'wayland-1'
+            set -l display_name (echo $display_name | string replace -r '\.[0-9]+$' '')
+
+            if test -n "$display_name" -a "$display_name" != "$filename"
                 set -gx WAYLAND_DISPLAY $display_name
             end
         end
