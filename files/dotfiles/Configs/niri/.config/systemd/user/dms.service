@@ -2,7 +2,6 @@
 Description=DMS Service
 PartOf=niri.service
 After=niri.service
-ConditionEnvironment=!DESKTOP_SESSION=plasma
 
 [Service]
 Type=simple
@@ -13,4 +12,4 @@ RestartSec=1.23
 TimeoutStopSec=10
 
 [Install]
-WantedBy=graphical-session.target
+WantedBy=niri.service
