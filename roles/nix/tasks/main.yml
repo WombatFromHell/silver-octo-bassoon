@@ -35,7 +35,7 @@
       register: nix_installer_download
 
     - name: Install Nix via Determinate Systems installer
-      ansible.builtin.command: /tmp/nix-install.sh install
+      ansible.builtin.command: /tmp/nix-install.sh install --no-confirm
       when:
         - nix_installer_download is changed
         - nix_installed.rc is defined and nix_installed.rc != 0
