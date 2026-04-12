@@ -126,48 +126,47 @@
         state: absent
       notify: reload_user_systemd
 
-    - name: Verify enabled systemd user units exist
+    - name: Enable configured systemd user units
       when: enabled_systemd_units is defined and enabled_systemd_units | length > 0
-      ansible.builtin.stat:
-        path: "{{ dotfiles_systemd_user_dir }}/{{ item }}"
-      register: dotfiles_unit_stat
+      ansible.builtin.shell:
+        cmd: |
+          unit_path="{{ dotfiles_systemd_user_dir }}/{{ item }}"
+          if [ -f "$unit_path" ] || [ -L "$unit_path" ]; then
+            systemctl --user enable "{{ item }}"
+          else
+            echo "Skipping {{ item }}: unit file not found at $unit_path"
+          fi
+        executable: /bin/bash
       loop: "{{ enabled_systemd_units }}"
       loop_control:
         label: "{{ item }}"
+      register: dotfiles_enable_result
+      changed_when: dotfiles_enable_result.stdout is not search('Skipping')
+      failed_when: false
 
-    - name: Re-link systemd units via tuckr if any are missing
+    - name: Re-link via tuckr if any units were missing
       when:
-        - dotfiles_unit_stat is defined
-        - dotfiles_unit_stat.results | selectattr('stat.exists', 'false') | list | length > 0
+        - dotfiles_enable_result is defined
+        - dotfiles_enable_result.results | selectattr('stdout', 'search', 'Skipping') | list | length > 0
       ansible.builtin.command: tuckr add -f -y systemd
       register: dotfiles_tuckr_retry
       changed_when: "'linked' in dotfiles_tuckr_retry.stdout | lower"
       failed_when: false
       notify: reload_user_systemd
 
-    - name: Re-verify enabled systemd user units after tuckr retry
+    - name: Re-enable configured systemd user units after tuckr retry
       when:
-        - dotfiles_unit_stat is defined
-        - dotfiles_unit_stat.results | selectattr('stat.exists', 'false') | list | length > 0
-      ansible.builtin.stat:
-        path: "{{ dotfiles_systemd_user_dir }}/{{ item }}"
-      register: dotfiles_unit_stat_retry
+        - dotfiles_tuckr_retry is defined and dotfiles_tuckr_retry is changed
+      ansible.builtin.shell:
+        cmd: |
+          unit_path="{{ dotfiles_systemd_user_dir }}/{{ item }}"
+          if [ -f "$unit_path" ] || [ -L "$unit_path" ]; then
+            systemctl --user enable "{{ item }}"
+          fi
+        executable: /bin/bash
       loop: "{{ enabled_systemd_units }}"
       loop_control:
         label: "{{ item }}"
-
-    - name: Enable configured systemd user units
-      when:
-        - enabled_systemd_units is defined
-        - enabled_systemd_units | length > 0
-        - (dotfiles_unit_stat_retry is defined or dotfiles_unit_stat is defined)
-        - item.stat is defined
-        - item.stat.exists
-      ansible.builtin.systemd:
-        name: "{{ item.item }}"
-        scope: user
-        enabled: true
-        daemon_reload: true
-      loop: "{{ dotfiles_unit_stat_retry.results | default(dotfiles_unit_stat.results) }}"
-      loop_control:
-        label: "{{ item.item }}"
+      register: dotfiles_enable_retry
+      changed_when: true
+      failed_when: false
