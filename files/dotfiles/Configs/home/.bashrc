@@ -32,9 +32,10 @@ function yy() {
 
 function update_wayland_env_vars() {
   if [[ -n "$XDG_RUNTIME_DIR" ]]; then
-    # Find the most recent niri socket
+    # Find the most recent niri socket (sorted by modification time)
+    # NOTE: Use 'command ls' to bypass eza alias; unquoted glob for shell expansion
     local niri_socket
-    niri_socket=$(ls -t "$XDG_RUNTIME_DIR"/niri.*.sock 2>/dev/null | head -n1)
+    niri_socket=$(command ls -t "$XDG_RUNTIME_DIR"/niri.*.sock 2>/dev/null | head -n1)
     if [[ -n "$niri_socket" ]]; then
       export NIRI_SOCKET="$niri_socket"
 
@@ -42,11 +43,9 @@ function update_wayland_env_vars() {
       # Format: niri.{WAYLAND_DISPLAY}.{PID}.sock (e.g., niri.wayland-1.35831.sock)
       local filename
       filename=$(basename "$niri_socket")
-      # Remove 'niri.' prefix and '.sock' suffix to get 'wayland-1.35831'
-      local display_with_pid="${filename#niri.}"
-      display_with_pid="${display_with_pid%.sock}"
-      # Remove the trailing '.{PID}' part to get just 'wayland-1'
-      local display_name="${display_with_pid%.[0-9]*}"
+      # Single regex: strip 'niri.' prefix, '.{PID}.sock' suffix, keep middle
+      local display_name="${filename#niri.}"
+      display_name="${display_name%.[0-9]*.sock}"
 
       if [[ -n "$display_name" && "$display_name" != "$filename" ]]; then
         export WAYLAND_DISPLAY="$display_name"
@@ -113,8 +112,13 @@ if [[ $- == *i* ]]; then
   fi
 
   alias mkdir='mkdir -pv'
-  alias tma='tmux attach-session -t "main"'
   alias tmls='tmux ls'
+
+  function tma() {
+    # Update env vars BEFORE attaching so tmux captures the current values
+    update_wayland_env_vars
+    tmux attach-session -t "main"
+  }
 
   alias _rsync='rsync -avL --partial --update'
   alias _rsyncd='_rsync --dry-run'
@@ -141,7 +145,7 @@ if [[ $- == *i* ]]; then
   function sudoe() {
     local nix_path="$HOME/.nix-profile/bin"
     local new_path="$nix_path"
-    IFS=':' read -ra path_dirs <<< "$PATH"
+    IFS=':' read -ra path_dirs <<<"$PATH"
     for dir in "${path_dirs[@]}"; do
       if [[ ":$new_path:" != *":$dir:"* ]]; then
         new_path="$new_path:$dir"
