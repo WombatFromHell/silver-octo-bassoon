@@ -7,8 +7,6 @@
         paths: "{{ role_path }}/files/etc"
         file_type: file
         recurse: false
-        # conditionally exclude nvidia related configs
-        excludes: "{{ ['nvidia-pm.conf', 'veridian-controller.toml'] if not nvidia_exists | default(false) else [] }}"
       register: base_etc_files
 
     - name: Copy files to /etc with proper permissions

@@ -4,7 +4,6 @@
   become: true
   vars:
     base_nvidia_enabled: "{{ nvidia_exists | default(false) }}"
-    base_fix_wakeups_enabled: "{{ enable_fix_wakeups | default(false) }}"
   block:
     - name: Ensure /etc/systemd/system directory exists
       ansible.builtin.file:
@@ -12,13 +11,12 @@
         state: directory
         mode: "0755"
 
-    # Copy generic unit files (excludes NVIDIA and fix-wakeups which are managed conditionally)
+    # Copy generic unit files
     - name: Find all unit files in role's files/units directory
       ansible.builtin.find:
         paths: "{{ role_path }}/files/units"
         file_type: file
         recurse: false
-        excludes: "{{ (['nvidia-tdp.*', 'veridian-controller.service'] if not base_nvidia_enabled else []) + ['fix-wakeups.service'] }}"
       register: base_unit_files
 
     - name: Copy unit files to /etc/systemd/system
@@ -35,43 +33,6 @@
       when: base_unit_files.matched > 0
       notify: reload_global_systemd
 
-    # Manage fix-wakeups.service
-    - name: Copy fix-wakeups.service when enabled
-      ansible.builtin.copy:
-        src: "{{ role_path }}/files/units/fix-wakeups.service"
-        dest: /etc/systemd/system/fix-wakeups.service
-        mode: "0644"
-        remote_src: false
-        backup: true
-      when: base_fix_wakeups_enabled
-      notify:
-        - reload_global_systemd
-        - enable_fix_wakeups
-
-    - name: Check if fix-wakeups.service exists
-      ansible.builtin.stat:
-        path: /etc/systemd/system/fix-wakeups.service
-      register: base_fix_wakeups_service_stat
-
-    - name: Stop and disable fix-wakeups.service when disabled
-      ansible.builtin.systemd:
-        name: fix-wakeups.service
-        enabled: false
-        state: stopped
-      when:
-        - not ansible_check_mode
-        - base_fix_wakeups_service_stat.stat.exists
-        - not base_fix_wakeups_enabled
-
-    - name: Remove fix-wakeups.service when disabled
-      ansible.builtin.file:
-        path: /etc/systemd/system/fix-wakeups.service
-        state: absent
-      when:
-        - base_fix_wakeups_service_stat.stat.exists
-        - not base_fix_wakeups_enabled
-      notify: reload_global_systemd
-
     # Cleanup: remove NVIDIA unit files when NVIDIA is disabled
     - name: Check if NVIDIA-related unit files exist (for cleanup)
       ansible.builtin.stat:
@@ -80,7 +41,6 @@
       loop:
         - nvidia-tdp.service
         - nvidia-tdp.timer
-        - veridian-controller.service
       when: not base_nvidia_enabled
 
     - name: Stop and disable NVIDIA-related services if present
@@ -105,6 +65,19 @@
         - item.stat is defined
         - item.stat.exists
         - not base_nvidia_enabled
+      notify: reload_global_systemd
+
+    # Always remove deprecated unit files regardless of NVIDIA state
+    - name: Remove deprecated veridian-controller.service unit file
+      ansible.builtin.file:
+        path: /etc/systemd/system/veridian-controller.service
+        state: absent
+      notify: reload_global_systemd
+
+    - name: Remove deprecated fix-wakeups.service unit file
+      ansible.builtin.file:
+        path: /etc/systemd/system/fix-wakeups.service
+        state: absent
       notify: reload_global_systemd
 
     # Configure scx_loader if service exists

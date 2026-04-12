@@ -4,7 +4,6 @@
   become: true
   vars:
     base_nvidia_enabled: "{{ nvidia_exists | default(false) }}"
-    base_fix_wakeups_enabled: "{{ enable_fix_wakeups | default(false) }}"
   block:
     - name: Ensure /usr/local/bin directory exists
       ansible.builtin.file:
@@ -12,17 +11,12 @@
         state: directory
         mode: "0755"
 
-    # Copy generic binaries (excludes NVIDIA and fix-wakeups conditionally)
+    # Copy generic binaries
     - name: Find all binary files in role's files/bin directory
       ansible.builtin.find:
         paths: "{{ role_path }}/files/bin"
         file_type: file
         recurse: false
-        excludes: >-
-          {{
-            (['nvidia-pm.py', 'veridian-controller'] if not base_nvidia_enabled else [])
-            + (['fix-wakeups.sh'] if not base_fix_wakeups_enabled else [])
-          }}
       register: base_bin_files
 
     - name: Copy binary files to /usr/local/bin with proper permissions
@@ -37,13 +31,6 @@
         loop_var: file_item
         label: "Copying {{ file_item.path | basename }}"
       when: base_bin_files.matched > 0
-
-    # Cleanup: remove fix-wakeups.sh when disabled
-    - name: Ensure fix-wakeups.sh is removed when disabled
-      ansible.builtin.file:
-        path: /usr/local/bin/fix-wakeups.sh
-        state: absent
-      when: not base_fix_wakeups_enabled
 
     # Cleanup: remove NVIDIA binaries when NVIDIA is disabled
     - name: Check if NVIDIA-related binaries exist (for cleanup)
@@ -65,10 +52,18 @@
         - item.stat.exists
         - not base_nvidia_enabled
 
-    # Manage fix-wakeups tmpfiles configuration
-    - name: Manage fix-wakeups tmpfiles configuration via script
-      ansible.builtin.script:
-        cmd: "{{ role_path }}/files/bin/fix-wakeups.sh {{ 'install' if base_fix_wakeups_enabled else 'uninstall' }}"
-      register: base_fix_wakeups_script_result
-      changed_when: "'CHANGED' in base_fix_wakeups_script_result.stdout"
-      when: base_fix_wakeups_script_result is not defined or base_fix_wakeups_script_result.rc is defined
+    # Always remove deprecated binaries regardless of NVIDIA state
+    - name: Remove deprecated veridian-controller binary
+      ansible.builtin.file:
+        path: /usr/local/bin/veridian-controller
+        state: absent
+
+    - name: Remove deprecated nvidia-pm.py binary
+      ansible.builtin.file:
+        path: /usr/local/bin/nvidia-pm.py
+        state: absent
+
+    - name: Remove deprecated fix-wakeups.sh binary
+      ansible.builtin.file:
+        path: /usr/local/bin/fix-wakeups.sh
+        state: absent
