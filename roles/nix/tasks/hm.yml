@@ -1,35 +1,37 @@
 ---
 - name: Install Home-Manager for Nix
-  tags: [extra, nix, home_manager]
+  tags: [extra, home_manager]
   when:
     - enable_nix | default(false)
     - (nix_installed.rc is defined and nix_installed.rc == 0) or
       (nix_installation is defined and nix_installation.rc is defined and nix_installation.rc == 0)
   vars:
     hm_binary: "{{ home_realpath }}/.nix-profile/bin/home-manager"
-    home_manager_installer: "run home-manager/master"
-    hm_args: "-- init --switch {{ home_realpath }}/.config/home-manager"
     git_repo: "git@github.com:WombatFromHell/automatic-palm-tree.git"
 
   block:
-    - name: Check for existing 'nix' binary
-      ansible.builtin.command: which nix
-      ignore_errors: true
-      changed_when: false
-      register: nix_exists
-
     - name: Check for existing home-manager binary
       ansible.builtin.command: which home-manager
       ignore_errors: true
       changed_when: false
       register: nix_hm_exists
 
-    - name: Install home-manager
+    - name: Add home-manager channel
       ansible.builtin.command:
-        cmd: "nix {{ home_manager_installer }} {{ hm_args }}"
-      when:
-        - nix_exists.rc is defined and nix_exists.rc == 0
-        - nix_hm_exists.rc is defined and nix_hm_exists.rc != 0
+        cmd: nix-channel --add https://github.com/nix-community/home-manager/archive/master.tar.gz home-manager
+      when: nix_hm_exists.rc is defined and nix_hm_exists.rc != 0
+      changed_when: true
+
+    - name: Update nix channels
+      ansible.builtin.command:
+        cmd: nix-channel --update
+      when: nix_hm_exists.rc is defined and nix_hm_exists.rc != 0
+      changed_when: true
+
+    - name: Install home-manager standalone binary
+      ansible.builtin.command:
+        cmd: nix-shell '<home-manager>' -A install
+      when: nix_hm_exists.rc is defined and nix_hm_exists.rc != 0
       register: nix_hm_install_result
       changed_when: nix_hm_install_result.rc is defined and nix_hm_install_result.rc == 0
 
@@ -37,6 +39,22 @@
       ansible.builtin.stat:
         path: "{{ hm_binary }}"
       register: nix_stat_hm_binary
+
+    - name: Check if '~/.config/home-manager' exists
+      ansible.builtin.stat:
+        path: "{{ home_realpath }}/.config/home-manager"
+      register: nix_stat_hm_config
+
+    - name: Initialize home-manager config
+      ansible.builtin.command:
+        cmd: home-manager init --switch
+      when:
+        - nix_stat_hm_binary.stat is defined
+        - nix_stat_hm_binary.stat.exists and nix_stat_hm_binary.stat.executable
+        - nix_stat_hm_config.stat is defined
+        - not nix_stat_hm_config.stat.exists
+      register: nix_hm_init_result
+      changed_when: nix_hm_init_result.rc is defined and nix_hm_init_result.rc == 0
 
     - name: Check if '~/.nix' exists
       ansible.builtin.stat:
@@ -46,10 +64,27 @@
     - name: Clone personal config
       ansible.builtin.git:
         repo: "{{ git_repo }}"
-        version: c03ee4930a9a68c65d9f871fe93e622d66393a5d # pin to 03-24-25
+        version: main
         dest: "{{ home_realpath }}/.nix"
       when:
         - nix_stat_home.stat is defined
         - not nix_stat_home.stat.exists
         - nix_stat_hm_binary.stat is defined
         - nix_stat_hm_binary.stat.exists and nix_stat_hm_binary.stat.executable
+
+    - name: Re-check ~/.nix after clone
+      ansible.builtin.stat:
+        path: "{{ home_realpath }}/.nix"
+      register: nix_stat_home_after
+
+    - name: Run home-manager switch
+      ansible.builtin.command:
+        cmd: "home-manager switch --flake {{ home_realpath }}/.nix#{{ ansible_hostname }}"
+      tags: [hm_deploy]
+      when:
+        - nix_stat_hm_binary.stat is defined
+        - nix_stat_hm_binary.stat.exists and nix_stat_hm_binary.stat.executable
+        - nix_stat_home_after.stat is defined
+        - nix_stat_home_after.stat.exists
+      register: nix_hm_switch_result
+      changed_when: nix_hm_switch_result.rc is defined and nix_hm_switch_result.rc == 0

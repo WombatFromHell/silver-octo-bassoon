@@ -44,7 +44,4 @@
 
     - name: Include 'home-manager' tasks
       ansible.builtin.import_tasks: hm.yml
-      tags: [extra, nix, home_manager]
-      when: >
-        (nix_installed.rc is defined and nix_installed.rc == 0) or
-        (nix_installation is defined and nix_installation.rc is defined and nix_installation.rc == 0)
+      tags: [home_manager]
