@@ -33,7 +33,6 @@ enable_nix: true
 enable_brew: true
 enable_btrfs_snapper: false
 enable_vfio: false
-enable_distrobox: false
 
 install_brave: "distrobox"
 

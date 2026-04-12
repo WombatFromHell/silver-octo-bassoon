@@ -1,9 +1,0 @@
----
-# Default values for distrobox role
-
-# Feature toggle
-enable_distrobox: false
-
-# Container toggles
-enable_cursor: false
-enable_devbox: false

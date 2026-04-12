@@ -28,7 +28,7 @@ for arg in "$@"; do
             echo "Usage: $0 [role_name] [options]"
             echo ""
             echo "Roles:"
-            echo "  base, flatpak, btrfs, dotfiles, nix, vfio, distrobox, arpcbridge, all"
+            echo "  base, flatpak, btrfs, dotfiles, nix, vfio, arpcbridge, all"
             echo "  idempotency  - Run idempotency test (all roles twice)"
             echo ""
             echo "Options:"

@@ -26,7 +26,6 @@
     enable_btrfs_snapper: false
     enable_nix: false
     enable_vfio: false
-    enable_distrobox: false
     enable_lazyvim: false
 
   pre_tasks:
@@ -45,7 +44,6 @@
     - dotfiles
     - mounts
     - flatpak
-    - distrobox
     - vfio
     - arpcbridge
     - nix
@@ -75,7 +73,6 @@
     enable_btrfs_snapper: false
     enable_nix: false
     enable_vfio: false
-    enable_distrobox: false
     enable_lazyvim: false
 
   pre_tasks:
@@ -94,7 +91,6 @@
     - dotfiles
     - mounts
     - flatpak
-    - distrobox
     - vfio
     - arpcbridge
     - nix

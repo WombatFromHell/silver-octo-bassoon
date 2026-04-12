@@ -16,7 +16,6 @@
     - dotfiles
     - mounts
     - flatpak
-    - distrobox
     - vfio
     - arpcbridge
     - nix

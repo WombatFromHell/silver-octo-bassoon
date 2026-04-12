@@ -8,7 +8,6 @@ base_packages:
   - base-devel
   - bat
   - curl
-  - distrobox
   - earlyoom
   - eza
   - fd
@@ -79,7 +78,6 @@ enable_nix: false
 enable_brew: false
 enable_btrfs_snapper: true
 enable_vfio: false
-enable_distrobox: false
 
 install_brave: "flatpak"
 
