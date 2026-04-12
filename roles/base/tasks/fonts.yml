@@ -38,6 +38,17 @@
         creates: "{{ home_realpath }}/.local/share/fonts/.fonts-extracted"
       notify: refresh_user_font_cache
 
+    - name: Restore SELinux contexts on fonts directory
+      when:
+        - not ansible_check_mode
+        - not base_fonts_extracted.stat.exists
+        - os_release_id is defined
+        - os_release_id in ['bazzite', 'fedora']
+      ansible.builtin.command: restorecon -R "{{ home_realpath }}/.local/share/fonts"
+      become: true
+      changed_when: true
+      failed_when: false
+
     - name: Create marker file after extraction
       when:
         - not ansible_check_mode
