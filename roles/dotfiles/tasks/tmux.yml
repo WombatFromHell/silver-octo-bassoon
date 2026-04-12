@@ -11,11 +11,6 @@
     - name: Configure tmux if installed
       when: dotfiles_tmux_check.rc is defined and dotfiles_tmux_check.rc == 0
       block:
-        - name: Manage tmux config with tuckr
-          tuckr_manage:
-            name: "tmux"
-            state: present
-
         - name: Check existing tmux.conf symlink
           ansible.builtin.stat:
             path: "{{ home_realpath }}/.tmux.conf"
@@ -51,14 +46,21 @@
             update: true
           when: not dotfiles_tpm_repo.stat.exists
 
+        - name: Re-check TPM repository status after clone
+          ansible.builtin.stat:
+            path: "{{ home_realpath }}/.config/tmux/plugins/tpm/.git"
+          register: dotfiles_tpm_repo_after
+
         - name: Set permissions for TPM executables
           ansible.builtin.file:
             path: "{{ item.path }}"
             mode: "0755"
+            state: file
           loop:
             - { path: "{{ home_realpath }}/.config/tmux/plugins/tpm/tpm" }
             - { path: "{{ home_realpath }}/.config/tmux/plugins/tpm/bindings" }
             - { path: "{{ home_realpath }}/.config/tmux/plugins/tpm/scripts/install_plugins.sh" }
             - { path: "{{ home_realpath }}/.config/tmux/plugins/tpm/scripts/update_plugin.sh" }
             - { path: "{{ home_realpath }}/.config/tmux/plugins/tpm/scripts/clean_plugins.sh" }
-          when: dotfiles_tpm_repo.stat.exists
+          when: dotfiles_tpm_repo_after.stat.exists
+          failed_when: false
