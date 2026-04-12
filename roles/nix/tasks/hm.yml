@@ -3,9 +3,9 @@
   tags: [extra, nix, home_manager]
   when:
     - enable_nix | default(false)
-    - nix_installed.rc is defined and nix_installed.rc == 0
+    - (nix_installed.rc is defined and nix_installed.rc == 0) or
+      (nix_installation is defined and nix_installation.rc is defined and nix_installation.rc == 0)
   vars:
-    nix_binary: "/nix/var/nix/profiles/default/bin/nix"
     hm_binary: "{{ home_realpath }}/.nix-profile/bin/home-manager"
     home_manager_installer: "run home-manager/master"
     hm_args: "-- init --switch {{ home_realpath }}/.config/home-manager"
@@ -29,7 +29,7 @@
         cmd: "nix {{ home_manager_installer }} {{ hm_args }}"
       when:
         - nix_exists.rc is defined and nix_exists.rc == 0
-        - nix_hm_exists.rc is defined and nix_hm_exists.rc != 0 # only if home-manager doesn't exist
+        - nix_hm_exists.rc is defined and nix_hm_exists.rc != 0
       register: nix_hm_install_result
       changed_when: nix_hm_install_result.rc is defined and nix_hm_install_result.rc == 0
 
