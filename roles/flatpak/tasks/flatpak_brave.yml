@@ -1,38 +1,24 @@
 ---
 - name: Handle Brave browser installation
-  when:
-    - enable_flatpak
-    - install_brave | default(false)
+  when: install_brave is defined and install_brave in ['flatpak', 'distrobox']
   tags: [extra, flatpak, flatpak_extra, flatpak_brave]
   vars:
     brave_app: com.brave.Browser
+
   block:
-    - name: Check for install-brave.sh on Bazzite
-      when: os_variant_id == "bazzite"
-      ansible.builtin.command: which install-brave.sh
-      register: brave_script_check
-      changed_when: false
-      failed_when: false
-
-    - name: Install Brave using install-brave.sh (Bazzite)
-      when:
-        - os_variant_id == "bazzite"
-        - brave_script_check.rc == 0
-      ansible.builtin.command: install-brave.sh --recreate --install stable
-      register: brave_install_result
-      changed_when: "'installed' in brave_install_result.stdout or 'recreated' in brave_install_result.stdout"
-      failed_when: false
-
-    - name: Install Brave browser via Flatpak (non-Bazzite or script not found)
-      when:
-        - os_variant_id != "bazzite" or brave_script_check.rc != 0
+    # ===========================
+    # Flatpak installation path
+    # ===========================
+    - name: Install Brave browser via Flatpak
+      when: install_brave == "flatpak"
       community.general.flatpak:
         name: "{{ brave_app }}"
         state: present
         method: user
 
-    - name: Install libva-nvidia-driver on Arch
+    - name: Install libva-nvidia-driver on Arch (Flatpak Brave)
       when:
+        - install_brave == "flatpak"
         - os_release_id == "archlinux"
         - nvidia_exists | default(false)
       become: true
@@ -40,8 +26,9 @@
         name: "libva-nvidia-driver"
         state: present
 
-    - name: Apply Chrome VAAPI fix
+    - name: Apply Chrome VAAPI fix (Flatpak Brave)
       when:
+        - install_brave == "flatpak"
         - chrome_vaapi_fix | default(false)
         - nvidia_exists | default(false)
       block:
@@ -90,3 +77,62 @@
           register: flatpak_chromium_vaapi_fix
           ignore_errors: true
           changed_when: flatpak_chromium_vaapi_fix.rc == 0
+
+    # ===========================
+    # Distrobox installation path
+    # ===========================
+    - name: Install Brave via distrobox installer helper
+      when: install_brave == "distrobox"
+      block:
+        - name: Check for install-brave.sh helper
+          ansible.builtin.command: which install-brave.sh
+          register: brave_installer_check
+          changed_when: false
+          failed_when: false
+
+        - name: Assert install-brave.sh is available
+          ansible.builtin.assert:
+            that:
+              - brave_installer_check.rc == 0
+            fail_msg: "install-brave.sh not found in PATH. Ensure the dotfiles scripts directory is on your PATH."
+            success_msg: "Found install-brave.sh at {{ brave_installer_check.stdout }}"
+
+        - name: Run install-brave.sh to set up Brave in distrobox
+          ansible.builtin.command: install-brave.sh --install stable
+          register: brave_distrobox_install
+          changed_when: >
+            'installed' in brave_distrobox_install.stdout or
+            'created' in brave_distrobox_install.stdout or
+            'recreated' in brave_distrobox_install.stdout or
+            'Export successful' in brave_distrobox_install.stdout
+          failed_when: false
+
+        - name: Apply Chrome VAAPI fix (Distrobox Brave)
+          when:
+            - chrome_vaapi_fix | default(false)
+            - nvidia_exists | default(false)
+          block:
+            - name: Check Brave VAAPI fix script
+              ansible.builtin.stat:
+                path: "{{ dotfiles_root }}/Configs/scripts/fix-vaapi-chromium-flatpak.sh"
+              register: brave_distrobox_vaapi_script
+              ignore_errors: true
+
+            - name: Set executable permission for Brave fix script
+              ansible.builtin.file:
+                path: "{{ brave_distrobox_vaapi_script.stat.path }}"
+                mode: "0755"
+              when:
+                - brave_distrobox_vaapi_script.stat.exists is defined
+                - brave_distrobox_vaapi_script.stat.exists
+                - not brave_distrobox_vaapi_script.stat.isdir
+
+            - name: Apply Brave VAAPI fix via script
+              when:
+                - brave_distrobox_vaapi_script.stat.exists is defined
+                - brave_distrobox_vaapi_script.stat.exists
+                - not brave_distrobox_vaapi_script.stat.isdir
+              ansible.builtin.script: "{{ brave_distrobox_vaapi_script.stat.path }}"
+              register: brave_vaapi_fix_applied
+              ignore_errors: true
+              changed_when: brave_vaapi_fix_applied.rc == 0

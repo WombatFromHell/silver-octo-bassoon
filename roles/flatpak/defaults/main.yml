@@ -10,11 +10,15 @@ system_flatpaks: []
 user_flatpaks: []
 skip_flatpaks: []
 
-# Optional installations
+# Optional installations — accepts:
+#   "flatpak"   – install via flatpak
+#   "distrobox" – install via distrobox installer helper (install-*.sh)
+#   false       – do not install
 install_brave: false
 install_firefox: false
 install_peazip: false
 install_obs: false
 
-# VAAPI fix
+# VAAPI fixes (apply regardless of install method)
 chrome_vaapi_fix: false
+firefox_vaapi_fix: false

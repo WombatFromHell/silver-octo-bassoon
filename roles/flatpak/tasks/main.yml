@@ -52,6 +52,12 @@
         state: present
         remove_extra: "{{ remove_existing_flatpaks | default(false) }}"
         skip_packages: "{{ skip_flatpaks | default([]) }}"
+      register: system_flatpak_result
+
+    - name: Show system flatpak changes
+      when: system_flatpak_result is defined and system_flatpak_result.changed
+      ansible.builtin.debug:
+        msg: "System Flatpak changes: {{ system_flatpak_result }}"
 
     - name: Install user packages
       when:
@@ -63,6 +69,12 @@
         state: present
         remove_extra: "{{ remove_existing_flatpaks | default(false) }}"
         skip_packages: "{{ skip_flatpaks | default([]) }}"
+      register: user_flatpak_result
+
+    - name: Show user flatpak changes
+      when: user_flatpak_result is defined and user_flatpak_result.changed
+      ansible.builtin.debug:
+        msg: "User Flatpak changes: {{ user_flatpak_result }}"
 
     - name: Handle flatpak extra packages and workarounds
       block:

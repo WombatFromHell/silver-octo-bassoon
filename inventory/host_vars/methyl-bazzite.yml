@@ -35,6 +35,8 @@ enable_btrfs_snapper: false
 enable_vfio: false
 enable_distrobox: false
 
+install_brave: "distrobox"
+
 # Brew Packages (Bazzite-specific)
 brew_packages:
   - ansible

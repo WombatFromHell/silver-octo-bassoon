@@ -59,7 +59,6 @@ program_handlers:
 enable_lazyvim: true
 enable_flatpak: true
 remove_existing_flatpaks: true
-install_brave: true
 install_firefox: false
 install_peazip: true
 install_arpc_fix: false

@@ -80,3 +80,5 @@ enable_brew: false
 enable_btrfs_snapper: true
 enable_vfio: false
 enable_distrobox: false
+
+install_brave: "flatpak"
