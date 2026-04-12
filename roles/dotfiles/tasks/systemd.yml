@@ -137,6 +137,7 @@
             src: "{{ dotfiles_root }}/Configs/systemd/niri-watcher.service"
             state: link
             force: true
+            follow: false
           when: not (dotfiles_niri_watcher_stat.stat.islnk is defined and dotfiles_niri_watcher_stat.stat.lnk_source == dotfiles_root + '/Configs/systemd/niri-watcher.service')
           notify: reload_user_systemd
 
