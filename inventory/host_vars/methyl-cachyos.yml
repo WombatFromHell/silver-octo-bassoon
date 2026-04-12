@@ -82,3 +82,6 @@ enable_vfio: false
 enable_distrobox: false
 
 install_brave: "flatpak"
+
+enabled_systemd_units:
+  ["nasmount-sshfs.service", "openrgb-lightsout.service", "syncthingy.service"]

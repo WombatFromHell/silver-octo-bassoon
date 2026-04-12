@@ -57,3 +57,15 @@ brew_packages:
   - yazi
   - zellij
   - zoxide
+
+enabled_systemd_units:
+  [
+    "dms.service",
+    "kanshi.service",
+    "nasmount-sshfs.service",
+    "niri-watcher.service",
+    "openrgb-lightsout.service",
+    "syncthingy.service",
+    "topgrade.timer",
+    "vdirsyncer.timer",
+  ]
