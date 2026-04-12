@@ -1,14 +1,16 @@
 if command -q nix
     set _host (hostname)
-    set FLAKE_ROOT "$HOME/.nix"
+    set FLAKE_ROOT "$HOME/.config/flakeroot"
     alias nixconf='$EDITOR $FLAKE_ROOT'
     #
-    alias hmb='nh home switch -n $FLAKE_ROOT'
-    alias hms='nh home switch $FLAKE_ROOT'
-    alias hcu='nh clean user'
-    alias hca='nh clean all'
+    alias nhmb='nh home switch -n $FLAKE_ROOT'
+    alias nhms='nh home switch $FLAKE_ROOT'
+    alias nhcu='nh clean user'
+    alias nhca='nh clean all'
     #
     alias hmnix='nix run home-manager/master -- init'
+    alias hmb='home-manager build --flake $FLAKE_ROOT'
+    alias hms='home-manager switch --flake $FLAKE_ROOT'
     alias hmls='home-manager generations'
     alias hmrm='home-manager remove-generations'
     #

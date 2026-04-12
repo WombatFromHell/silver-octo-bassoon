@@ -61,33 +61,21 @@
       register: nix_hm_init_result
       changed_when: nix_hm_init_result.rc is defined and nix_hm_init_result.rc == 0
 
-    - name: Check if '~/.nix' exists
-      ansible.builtin.stat:
-        path: "{{ home_realpath }}/.nix"
-      register: nix_stat_home
-
     - name: Clone personal config
       ansible.builtin.git:
         repo: "{{ git_repo }}"
         version: main
-        dest: "{{ home_realpath }}/.nix"
+        dest: "{{ nix_flake_root }}"
       when:
-        - nix_stat_home.stat is defined
-        - not nix_stat_home.stat.exists
         - nix_hm_binary_stat.stat.exists
-
-    - name: Re-check ~/.nix after clone
-      ansible.builtin.stat:
-        path: "{{ home_realpath }}/.nix"
-      register: nix_stat_home_after
+      register: nix_clone_result
+      changed_when: nix_clone_result is changed
 
     - name: Run home-manager switch
       ansible.builtin.command:
-        cmd: "{{ hm_binary }} switch --flake {{ home_realpath }}/.nix#{{ ansible_hostname }}"
+        cmd: "{{ hm_binary }} switch --flake {{ nix_flake_root }}#{{ ansible_hostname }}"
       tags: [hm_deploy]
       when:
         - nix_hm_binary_stat.stat.exists
-        - nix_stat_home_after.stat is defined
-        - nix_stat_home_after.stat.exists
       register: nix_hm_switch_result
       changed_when: nix_hm_switch_result.rc is defined and nix_hm_switch_result.rc == 0

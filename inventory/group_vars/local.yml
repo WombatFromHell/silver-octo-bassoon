@@ -9,6 +9,7 @@ graphics_card: amd
 project_root: "{{ inventory_dir | dirname }}"
 support_dir: "{{ project_root }}/files/support"
 dotfiles_root: "{{ project_root }}/files/dotfiles"
+nix_flake_root: "{{ home_realpath }}/.config/flakeroot"
 
 # User Configuration
 vault_file: "{{ support_dir }}/gpg_vault.yml"
@@ -63,3 +64,6 @@ install_firefox: false
 install_peazip: true
 install_arpc_fix: false
 enable_fix_wakeups: false
+
+# Systemd user services to enable (by unit name, not full path)
+enabled_systemd_units: []
