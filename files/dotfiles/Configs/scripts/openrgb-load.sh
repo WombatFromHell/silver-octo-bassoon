@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
+# Loads OpenRGB "lightsout" profile asynchronously.
 
-if which openrgb &>/dev/null; then
-  OPENRGB="$(which openrgb)"
-elif [ -e "$HOME/AppImages/openrgb.appimage" ]; then
-  OPENRGB="$HOME/AppImages/openrgb.appimage"
-elif which flatpak &>/dev/null; then
-  OPENRGB="$(which flatpak) run org.openrgb.OpenRGB"
-else
-  echo "Error: OpenRGB cannot be found in PATH, aborting!"
-  exit 1
-fi
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID}"
+LOG_FILE="$RUNTIME_DIR/openrgb-lightsout.log"
 
-do_lightsout() {
-  NUM_DEVICES=$("$OPENRGB" --noautoconnect --list-devices | grep -cE '^[0-9]+: ')
-
-  for i in $(seq 0 $((NUM_DEVICES - 1))); do
-    "$OPENRGB" --noautoconnect --device "$i" --mode static --color 000000
-  done
+# Resolve OpenRGB binary
+find_openrgb() {
+  if command -v openrgb &>/dev/null; then
+    command -v openrgb
+  elif [[ -e "$HOME/AppImages/openrgb.appimage" ]]; then
+    echo "$HOME/AppImages/openrgb.appimage"
+  elif command -v flatpak &>/dev/null; then
+    echo "flatpak run org.openrgb.OpenRGB"
+  else
+    return 1
+  fi
 }
 
-if [ "$1" == "--fallback" ]; then
-  do_lightsout
-else
-  eval "$OPENRGB" --noautoconnect -p lightsout
-fi
+OPENRGB="$(find_openrgb)" || { echo "openrgb-load: OpenRGB not found, skipping" >&2; exit 0; }
+
+nohup bash -c "
+  $OPENRGB --noautoconnect -p lightsout
+" </dev/null >"$LOG_FILE" 2>&1 & disown
+
+exit 0

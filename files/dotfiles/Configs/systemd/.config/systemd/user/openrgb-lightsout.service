@@ -4,6 +4,8 @@ Description=OpenRGB Profile Service (lightsout)
 [Service]
 Type=oneshot
 ExecStart=%h/.local/bin/scripts/openrgb-load.sh
+TimeoutStartSec=5
+RemainAfterExit=yes
 
 [Install]
 WantedBy=graphical-session.target
