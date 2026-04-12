@@ -36,7 +36,6 @@
         dest: "{{ home_realpath }}/.local/share/fonts"
         remote_src: false
         creates: "{{ home_realpath }}/.local/share/fonts/.fonts-extracted"
-      notify: refresh_user_font_cache
 
     - name: Restore SELinux contexts on fonts directory
       when:
@@ -48,6 +47,7 @@
       become: true
       changed_when: true
       failed_when: false
+      notify: refresh_user_font_cache
 
     - name: Create marker file after extraction
       when:
