@@ -1,13 +1,14 @@
 [Unit]
-Description=Provide Lock/Unlock Script Event Functionality for KDE Plasma 6
+Description=Session State Monitor (Lock/Unlock Events)
+ConditionEnvironment=XDG_CURRENT_DESKTOP=KDE
 
 [Service]
 Type=simple
 Environment="PATH=%h/.local/bin:%h/.local/bin/scripts:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin"
 ExecStartPre=mkdir -p %h/.local/bin/monitor-session
 ExecStart=%h/.local/bin/scripts/monitor-dbus-session-state.sh
-ExecStop=/usr/bin/pkill -9 -f monitor-dbus-session-state.sh
-RemainAfterExit=yes
+ExecStop=/usr/bin/pkill -TERM -f monitor-dbus-session-state.sh
+TimeoutStopSec=10
 
 [Install]
 WantedBy=graphical-session.target

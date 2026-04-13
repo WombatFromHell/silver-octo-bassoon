@@ -2,10 +2,10 @@
 Description=OpenRGB Profile Service (lightsout)
 
 [Service]
-Type=oneshot
+Type=simple
 ExecStart=%h/.local/bin/scripts/openrgb-load.sh
-TimeoutStartSec=5
-RemainAfterExit=yes
+ExecStop=/usr/bin/pkill -TERM -f "openrgb" || true
+TimeoutStopSec=10
 
 [Install]
 WantedBy=graphical-session.target

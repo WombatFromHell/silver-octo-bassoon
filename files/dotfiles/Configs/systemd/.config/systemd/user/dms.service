@@ -1,6 +1,6 @@
 [Unit]
 Description=DMS Service
-PartOf=niri.service
+BindsTo=niri.service
 After=niri.service
 
 [Service]

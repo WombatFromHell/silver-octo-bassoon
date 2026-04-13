@@ -8,6 +8,7 @@ Type=oneshot
 ExecStart=%h/.local/bin/scripts/nasmount-sshfs.sh mount
 ExecStop=%h/.local/bin/scripts/nasmount-sshfs.sh unmount
 RemainAfterExit=yes
+TimeoutStopSec=10
 
 [Install]
 WantedBy=default.target

@@ -1,17 +1,18 @@
 [Unit]
 Description=Niri VRR/Fullscreen Watcher
 Documentation=man:niri(1)
+BindsTo=niri.service
 After=niri.service
-PartOf=niri.service
 
 [Service]
 Type=simple
+ExecStartPre=/usr/bin/systemctl --user import-environment WAYLAND_DISPLAY
 ExecStart=/usr/local/bin/niri-watcher
 Restart=on-failure
 RestartSec=5
-KillMode=mixed
-TimeoutStopSec=10
-Environment=WAYLAND_DISPLAY=%E{WAYLAND_DISPLAY}
+KillMode=control-group
+TimeoutStopSec=5
+ExecStop=/usr/bin/pkill -TERM -f "gamemode.py" || true
 Environment=WATCHER_HOOK_ON="%h/.local/bin/scripts/gamemode.py on"
 Environment=WATCHER_HOOK_OFF="%h/.local/bin/scripts/gamemode.py off"
 
