@@ -1,26 +1,8 @@
 [mgr]
 show_hidden = true
 
-[[mgr.prepend_keymap]]
-on = "!"
-for = "unix"
-run = 'shell "$SHELL" --block'
-desc = "Open $SHELL here"
-
-[[mgr.prepend_keymap]]
-on = ["t", "t"]
-run = "plugin smart-tab"
-desc = "Create a tab and enter the hovered directory"
-
-[[mgr.prepend_keymap]]
-on = "2"
-run = "plugin smart-switch 1"
-desc = "Switch or create tab 2"
-
 [opener]
-play = [
-  { run = "flatpak run org.viodelan.VLC %s", orphan = true, for = "unix" },
-]
+play = [{ run = "xdg-open %s", orphan = true, for = "unix" }]
 
 [open]
 prepend_rules = [{ mime = "video/*", use = ["play"] }]

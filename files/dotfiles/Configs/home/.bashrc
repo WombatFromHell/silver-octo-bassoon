@@ -29,6 +29,14 @@ function yy() {
   fi
   rm -f "$tmp"
 }
+function yz() {
+  if [ $# -eq 0 ]; then
+    command yazi
+  else
+    # Arguments were passed: Disable session, pass arguments directly
+    command env YAZI_NO_SESSION=1 yazi "$@"
+  fi
+}
 
 function update_wayland_env_vars() {
   if [[ -n "$XDG_RUNTIME_DIR" ]]; then
@@ -104,7 +112,6 @@ if [[ $- == *i* ]]; then
   fi
 
   alias lg='lazygit'
-  alias yz='yazi'
 
   if command -v bat &>/dev/null; then
     alias cat='bat'

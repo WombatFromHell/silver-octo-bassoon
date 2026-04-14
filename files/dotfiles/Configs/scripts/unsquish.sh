@@ -3,13 +3,19 @@
 set -euo pipefail
 
 SCRIPT_NAME=$(basename "$0")
-VERSION="1.4.0"
+VERSION="1.4.1"
 BASE_UNSQUASHFS_ARGS=(
   -no-xattrs
 )
 
 log_info() { echo "[INFO] $*"; }
 log_error() { echo "[ERROR] $*" >&2; }
+
+# Global flag: skip checksum verification before extracting (-y)
+SKIP_CHECKSUM=0
+
+# Global flag: pipe mode — machine-readable progress to stdout, all else to stderr
+PIPE_MODE=0
 
 check_dependencies() {
   if ! command -v unsquashfs &>/dev/null; then
@@ -88,64 +94,68 @@ check_archive() {
 parse_arguments() {
   INPUT_FILE=""
   OUTPUT_DIR=""
-  SKIP_CHECKSUM=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-    -y | --yes)
-      SKIP_CHECKSUM=1
-      shift
-      ;;
-    -o | --output)
-      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-        OUTPUT_DIR="$2"
+      -y | --yes)
+        SKIP_CHECKSUM=1
         shift
-      else
-        log_error "Argument for $1 is missing or invalid."
-        exit 1
-      fi
-      shift
-      ;;
-    --check)
-      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-        check_archive "$2"
+        ;;
+      -o | --output)
+        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+          OUTPUT_DIR="$2"
+          shift
+        else
+          log_error "Argument for $1 is missing or invalid."
+          exit 1
+        fi
+        shift
+        ;;
+      --check)
+        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+          check_archive "$2"
+          exit 0
+        else
+          log_error "Argument for $1 is missing or invalid."
+          exit 1
+        fi
+        ;;
+      --list | --ls)
+        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+          list_archive "$2"
+          exit 0
+        else
+          log_error "Argument for $1 is missing or invalid."
+          exit 1
+        fi
+        ;;
+      -h | --help)
+        echo "SquashFS Extractor (unsquish) v${VERSION}"
+        echo ""
+        echo "Usage:"
+        echo "  $SCRIPT_NAME <archive.sqsh> [-o output_dir] [-y]   Extract archive"
+        echo "  $SCRIPT_NAME --check <archive_file>                Verify archive integrity"
+        echo "  $SCRIPT_NAME --list <archive_file>                 List archive contents"
+        echo ""
+        echo "Options:"
+        echo "  -o, --output <dir>     Specify extraction directory (default: archive stem)"
+        echo "  -y, --yes              Skip checksum verification errors"
+        echo "  --pipe                 Machine-readable mode: percentages to stdout, logs to stderr"
+        echo "  -h, --help             Show this help message"
         exit 0
-      else
-        log_error "Argument for $1 is missing or invalid."
-        exit 1
-      fi
-      ;;
-    --list | --ls)
-      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-        list_archive "$2"
-        exit 0
-      else
-        log_error "Argument for $1 is missing or invalid."
-        exit 1
-      fi
-      ;;
-    -h | --help)
-      echo "SquashFS Extractor (unsquish) v${VERSION}"
-      echo ""
-      echo "Usage:"
-      echo "  $SCRIPT_NAME <archive.sqsh> [-o output_dir] [-y]   Extract archive"
-      echo "  $SCRIPT_NAME --check <archive_file>                Verify archive integrity"
-      echo "  $SCRIPT_NAME --list <archive_file>                 List archive contents"
-      echo ""
-      echo "Options:"
-      echo "  -o, --output <dir>     Specify extraction directory (default: archive stem)"
-      echo "  -y, --yes              Skip checksum verification errors"
-      echo "  -h, --help             Show this help message"
-      exit 0
-      ;;
-    *)
-      if [[ -n $INPUT_FILE ]]; then
-        log_error "Unexpected argument: '$1'. Only one archive file may be specified."
-        exit 1
-      fi
-      INPUT_FILE="$(realpath "$1")"
-      shift
-      ;;
+        ;;
+      --pipe)
+        PIPE_MODE=1
+        shift
+        ;;
+      *)
+        if [[ -n $INPUT_FILE ]]; then
+          log_error "Unexpected argument: '$1'. Only one archive file may be specified."
+          exit 1
+        fi
+        INPUT_FILE="$(realpath "$1")"
+        shift
+        ;;
     esac
   done
 
@@ -204,8 +214,8 @@ _run_unsquashfs_gui() {
       -d "$target_dir" \
       "$INPUT_FILE" 2>&1
     echo "$?" >"$status_file"
-  ) | tee >(grep -v -E '^[0-9]+$' >/dev/tty) |
-    grep --line-buffered -E '^[0-9]+$' >"$fifo" &
+  ) | tee >(grep -v -E '^[0-9]+$' >/dev/tty) \
+    | grep --line-buffered -E '^[0-9]+$' >"$fifo" &
 
   UNSQ_PIPE_PID=$!
 }
@@ -277,18 +287,74 @@ extract_cli() {
     "$INPUT_FILE"
 }
 
+# Pipe mode: emit bare integer percentages to stdout, all other output to stderr.
+# Designed for embedding in tools like Yazi that parse stdout for progress.
+extract_pipe() {
+  local target_dir="$1"
+
+  local unsq_status_file
+  unsq_status_file=$(mktemp)
+
+  (
+    unsquashfs \
+      "${BASE_UNSQUASHFS_ARGS[@]}" \
+      -percentage \
+      -d "$target_dir" \
+      "$INPUT_FILE" 2>&1 \
+      | awk '/[0-9]+%/ { gsub(/[^0-9]/, ""); print; fflush() }'
+    echo "$?" >"$unsq_status_file"
+  ) &
+  local unsq_pid=$!
+
+  wait "$unsq_pid"
+  local unsq_exit
+  unsq_exit=$(cat "$unsq_status_file" 2>/dev/null || echo "1")
+  rm -f "$unsq_status_file"
+
+  return "$unsq_exit"
+}
+
 main() {
   check_dependencies
   parse_arguments "$@"
+
+  # In pipe mode, override all log functions to stderr before any other code runs.
+  # This prevents log_info from leaking to stdout and corrupting the percentage stream.
+  if [[ $PIPE_MODE -eq 1 ]]; then
+    log_info()  { echo "[INFO] $*"  >&2; }
+    log_error() { echo "[ERROR] $*" >&2; }
+
+    # Suppress all stderr for the entire script so nothing leaks into the
+    # caller's terminal (e.g. Yazi's TUI). We only want bare integers on
+    # stdout; real errors are reported via the exit code.
+    exec 2>/dev/null
+  fi
+
   determine_output_dir
 
   # Verify checksum before extracting; -y skips hard failure but still warns
   if ! check_archive "$INPUT_FILE"; then
     if [[ $SKIP_CHECKSUM -eq 1 ]]; then
-      log_info "Checksum verification failed but -y was passed; continuing anyway."
+      log_info "Checksum verification failed but -y was passed; continuing anyway." >&2
     else
       exit 1
     fi
+  fi
+
+  # In pipe mode, skip GUI detection entirely — designed for TUI/embedded use.
+  if [[ $PIPE_MODE -eq 1 ]]; then
+    local exit_code=0
+    extract_pipe "$OUTPUT_DIR" || exit_code=$?
+
+    if [[ $exit_code -ne 0 ]]; then
+      log_error "Extraction failed or was cancelled (exit code: $exit_code)." >&2
+      [[ -d $OUTPUT_DIR ]] && rm -rf "$OUTPUT_DIR"
+      exit "$exit_code"
+    fi
+
+    log_info "Successfully extracted '$INPUT_FILE' to '$OUTPUT_DIR'." >&2
+    echo "100"
+    exit 0
   fi
 
   local exit_code=0

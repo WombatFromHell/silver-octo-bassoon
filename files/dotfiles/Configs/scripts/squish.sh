@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_NAME=$(basename "$0")
-VERSION="1.4.0"
+VERSION="1.4.1"
 BASE_MKSQUASHFS_ARGS=(
   -comp zstd
   -Xcompression-level 19
@@ -18,6 +18,9 @@ log_error() { echo "[ERROR] $*" >&2; }
 
 # Global flag: skip checksum verification before mounting (-y)
 SKIP_VERIFY=0
+
+# Global flag: pipe mode — machine-readable progress to stdout, all else to stderr
+PIPE_MODE=0
 
 check_dependencies() {
   if ! command -v mksquashfs &>/dev/null; then
@@ -345,68 +348,73 @@ parse_arguments() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-    -o | --output)
-      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-        OUTPUT_FILE="$2"
+      -o | --output)
+        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+          OUTPUT_FILE="$2"
+          shift
+        else
+          log_error "Argument for $1 is missing or invalid."
+          exit 1
+        fi
         shift
-      else
-        log_error "Argument for $1 is missing or invalid."
-        exit 1
-      fi
-      shift
-      ;;
-    --check)
-      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-        check_archive "$2"
+        ;;
+      --check)
+        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+          check_archive "$2"
+          exit 0
+        else
+          log_error "Argument for $1 is missing or invalid."
+          exit 1
+        fi
+        ;;
+      -y | --yes | --skip-verify)
+        SKIP_VERIFY=1
+        shift
+        ;;
+      -m | --mount)
+        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+          check_squashfuse
+          mount_archive "$2"
+          exit 0
+        else
+          log_error "Argument for $1 is missing or invalid."
+          exit 1
+        fi
+        ;;
+      -u | --unmount)
+        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+          check_squashfuse
+          unmount_archive "$2"
+          exit 0
+        else
+          log_error "Argument for $1 is missing or invalid."
+          exit 1
+        fi
+        ;;
+      -h | --help)
+        echo "SquashFS Archiver (squish) v${VERSION}"
+        echo ""
+        echo "Usage:"
+        echo "  $SCRIPT_NAME <source1> [source2...] [-o output.sqsh]   Create a new archive"
+        echo "  $SCRIPT_NAME --check <archive_file>                  Verify archive integrity"
+        echo "  $SCRIPT_NAME -m <archive_file> [-y]                  Mount archive to managed directory"
+        echo "  $SCRIPT_NAME -u <archive_file | mountpoint>          Unmount archive and cleanup"
+        echo ""
+        echo "Options:"
+        echo "  -o, --output <file>    Specify output filename (default: <first_source>.sqsh)"
+        echo "  -y, --skip-verify      Skip SHA-256 verification before mounting"
+        echo "  --pipe                 Machine-readable mode: percentages to stdout, logs to stderr"
+        echo "  -h, --help             Show this help message"
         exit 0
-      else
-        log_error "Argument for $1 is missing or invalid."
-        exit 1
-      fi
-      ;;
-    -y | --yes | --skip-verify)
-      SKIP_VERIFY=1
-      shift
-      ;;
-    -m | --mount)
-      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-        check_squashfuse
-        mount_archive "$2"
-        exit 0
-      else
-        log_error "Argument for $1 is missing or invalid."
-        exit 1
-      fi
-      ;;
-    -u | --unmount)
-      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-        check_squashfuse
-        unmount_archive "$2"
-        exit 0
-      else
-        log_error "Argument for $1 is missing or invalid."
-        exit 1
-      fi
-      ;;
-    -h | --help)
-      echo "SquashFS Archiver (squish) v${VERSION}"
-      echo ""
-      echo "Usage:"
-      echo "  $SCRIPT_NAME <source1> [source2...] [-o output.sqsh]   Create a new archive"
-      echo "  $SCRIPT_NAME --check <archive_file>                  Verify archive integrity"
-      echo "  $SCRIPT_NAME -m <archive_file> [-y]                  Mount archive to managed directory"
-      echo "  $SCRIPT_NAME -u <archive_file | mountpoint>          Unmount archive and cleanup"
-      echo ""
-      echo "Options:"
-      echo "  -o, --output <file>    Specify output filename (default: <first_source>.sqsh)"
-      echo "  -y, --skip-verify      Skip SHA-256 verification before mounting"
-      echo "  -h, --help             Show this help message"
-      exit 0
-      ;;
-    *)
-      SOURCES+=("$(realpath "$1")")
-      shift
-      ;;
+        ;;
+      --pipe)
+        PIPE_MODE=1
+        shift
+        ;;
+      *)
+        SOURCES+=("$(realpath "$1")")
+        shift
+        ;;
     esac
   done
 
@@ -464,8 +472,8 @@ _run_mksquashfs_gui() {
       -info \
       -percentage 2>&1
     echo "$?" >"$status_file"
-  ) | tee >(grep -v -E '^[0-9]+$' >/dev/tty) |
-    grep --line-buffered -E '^[0-9]+$' >"$fifo" &
+  ) | tee >(grep -v -E '^[0-9]+$' >/dev/tty) \
+    | grep --line-buffered -E '^[0-9]+$' >"$fifo" &
 
   MKSQ_PIPE_PID=$!
 }
@@ -539,10 +547,72 @@ compress_cli() {
     -progress
 }
 
+# Pipe mode: emit bare integer percentages to stdout, all other output to stderr.
+# Designed for embedding in tools like Yazi that parse stdout for progress.
+compress_pipe() {
+  local target_file="$1"
+  shift
+  local sources=("$@")
+
+  local mksq_status_file
+  mksq_status_file=$(mktemp)
+
+  (
+    mksquashfs "${sources[@]}" "$target_file" \
+      "${BASE_MKSQUASHFS_ARGS[@]}" \
+      -percentage 2>&1 \
+      | awk '/[0-9]+%/ { gsub(/[^0-9]/, ""); print; fflush() }'
+    echo "$?" >"$mksq_status_file"
+  ) &
+  local mksq_pid=$!
+
+  wait "$mksq_pid"
+  local mksq_exit
+  mksq_exit=$(cat "$mksq_status_file" 2>/dev/null || echo "1")
+  rm -f "$mksq_status_file"
+
+  return "$mksq_exit"
+}
+
 main() {
   check_dependencies
   parse_arguments "$@"
+
+  # In pipe mode, override all log functions to stderr before any other code runs.
+  # This prevents log_info from leaking to stdout and corrupting the percentage stream.
+  if [[ $PIPE_MODE -eq 1 ]]; then
+    log_info()  { echo "[INFO] $*"  >&2; }
+    log_warn()  { echo "[WARN] $*"  >&2; }
+    log_error() { echo "[ERROR] $*" >&2; }
+
+    # Save original stderr (fd 3) so compress_pipe can redirect mksquashfs
+    # progress output to stdout. Then suppress fd 2 so no log output leaks
+    # into the caller's terminal (e.g. Yazi's TUI).
+    exec 3>&2 2>/dev/null
+  fi
+
   determine_output_filename
+
+  # In pipe mode, skip GUI detection entirely — designed for TUI/embedded use.
+  if [[ $PIPE_MODE -eq 1 ]]; then
+    local exit_code=0
+    compress_pipe "$OUTPUT_FILE" "${SOURCES[@]}" || exit_code=$?
+
+    if [[ $exit_code -ne 0 ]]; then
+      log_error "Compression failed or was cancelled (exit code: $exit_code)." >&2
+      [[ -f $OUTPUT_FILE ]] && rm -f "$OUTPUT_FILE"
+      exit "$exit_code"
+    fi
+
+    log_info "Generating checksum..." >&2
+    pushd "$(dirname "$OUTPUT_FILE")" >/dev/null
+    sha256sum "$(basename "$OUTPUT_FILE")" >"$(basename "$OUTPUT_FILE").sha256" 2>/dev/null
+    popd >/dev/null
+    log_info "Checksum written to '${OUTPUT_FILE}.sha256'." >&2
+    log_info "Successfully created '$OUTPUT_FILE'." >&2
+    echo "100"
+    exit 0
+  fi
 
   local exit_code=0
 

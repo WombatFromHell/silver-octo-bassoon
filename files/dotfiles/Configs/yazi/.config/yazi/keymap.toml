@@ -1,4 +1,15 @@
 [[mgr.prepend_keymap]]
+on = "!"
+for = "unix"
+run = 'shell "$SHELL" --block'
+desc = "Open $SHELL here"
+
+[[mgr.prepend_keymap]]
+on = ["t"]
+run = "plugin smart-tab"
+desc = "Create a smart tab on the hovered dir"
+
+[[mgr.prepend_keymap]]
 on = ["M", "m"]
 run = "plugin gvfs -- select-then-mount"
 desc = "Select device then mount"
@@ -68,10 +79,6 @@ on = ["M", "T"]
 run = "plugin gvfs -- automount-when-cd --disabled"
 desc = "Disable automount when cd to device under cwd"
 
-[[mgr.prepend_keymap]]
-on = ["q"]
-run = "plugin smart-quit"
-desc = "Save session and quit (autosession)"
 
 [[mgr.prepend_keymap]]
 on = "y"
@@ -83,3 +90,47 @@ run = [
 [[mgr.prepend_keymap]]
 on = "<C-p>"
 run = ['plugin clipboard -- --action=paste']
+
+[[mgr.prepend_keymap]]
+on = ["n", "b"]
+run = "plugin squish -- build"
+desc = "Squash Build"
+
+[[mgr.prepend_keymap]]
+on = ["n", "x"]
+run = "plugin squish -- extract"
+desc = "Squash Extract"
+
+[[mgr.prepend_keymap]]
+on = ["n", "X"]
+run = "plugin squish -- extract-pick"
+desc = "Squash Extract (pick path)"
+
+[[mgr.prepend_keymap]]
+on = ["n", "m"]
+run = "plugin squish -- mount"
+desc = "Squash Mount"
+
+[[mgr.prepend_keymap]]
+on = ["n", "u"]
+run = "plugin squish -- unmount"
+desc = "Squash Unmount"
+
+[[mgr.prepend_keymap]]
+on = ["Q"]
+run = "quit"
+
+[[mgr.prepend_keymap]]
+on = ["q", "q"]
+run = "plugin session-mgr -- save-and-quit"
+desc = "Save session and quit"
+
+[[mgr.prepend_keymap]]
+on = ["q", "s"]
+run = "plugin session-mgr -- save"
+desc = "Save session"
+
+[[mgr.prepend_keymap]]
+on = ["q", "c"]
+run = "plugin session-mgr -- chooser"
+desc = "Session chooser"

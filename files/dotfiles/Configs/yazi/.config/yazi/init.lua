@@ -1,7 +1,7 @@
 require("gvfs"):setup({})
 
 if not os.getenv("YAZI_NO_SESSION") then
-	require("autosession"):setup()
+	require("session-mgr"):setup()
 end
 
 -- show link status

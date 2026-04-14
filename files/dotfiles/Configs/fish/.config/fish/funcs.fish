@@ -36,12 +36,19 @@ end
 
 function yy -d "Yazi with cwd tracking on exit"
     set -l tmp (mktemp -t "yazi-cwd.XXXXXX")
-    env YAZI_NO_SESSION=1 yazi $argv --cwd-file=$tmp
+    command env YAZI_NO_SESSION=1 yazi $argv --cwd-file=$tmp
     set cwd (cat -- $tmp)
     if test -n "$cwd" -a "$cwd" != "$PWD"
         cd -- "$cwd"
     end
     rm -f -- $tmp
+end
+function yz -d "Smarter session handling for Yazi"
+    if test (count $argv) -eq 0
+        command yazi
+    else
+        command env YAZI_NO_SESSION=1 yazi $argv
+    end
 end
 
 function to_clip
