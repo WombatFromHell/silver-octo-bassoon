@@ -1,11 +1,12 @@
 [Unit]
 Description=Niri VRR/Fullscreen Watcher
-Documentation=man:niri(1)
-BindsTo=niri.service
-After=niri.service
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
 
 [Service]
 Type=simple
+ExecCondition=/usr/bin/sh -c '[ "$XDG_CURRENT_DESKTOP" = "niri" ]'
 ExecStartPre=/usr/bin/systemctl --user import-environment WAYLAND_DISPLAY
 ExecStart=/usr/local/bin/niri-watcher
 Restart=on-failure
@@ -17,5 +18,4 @@ Environment=WATCHER_HOOK_ON="%h/.local/bin/scripts/gamemode.py on"
 Environment=WATCHER_HOOK_OFF="%h/.local/bin/scripts/gamemode.py off"
 
 [Install]
-# Only wanted when niri.service is wanted
-WantedBy=niri.service
+WantedBy=graphical-session.target

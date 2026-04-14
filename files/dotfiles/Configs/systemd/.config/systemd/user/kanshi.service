@@ -1,13 +1,17 @@
 [Unit]
 Description=Kanshi Service
-BindsTo=niri.service
-After=niri.service
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
+
 
 [Service]
 Type=simple
+ExecCondition=/usr/bin/sh -c '[ "$XDG_CURRENT_DESKTOP" = "niri" ]'
 ExecStart=/usr/bin/kanshi
 ExecReload=/usr/bin/pkill --signal HUP -x kanshi
+Restart=on-failure
 TimeoutStopSec=10
 
 [Install]
-WantedBy=niri.service
+WantedBy=graphical-session.target
