@@ -57,12 +57,12 @@ end)
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Helpers
 -- ─────────────────────────────────────────────────────────────────────────────
-local function notify(content, level, id)
+local function notify(content, level, id, timeout)
 	ya.notify({
 		title = PLUGIN_NAME,
 		content = content,
 		level = level or "info",
-		timeout = CONFIG.timeout,
+		timeout = timeout or CONFIG.timeout,
 		id = id,
 	})
 end
@@ -120,9 +120,9 @@ end
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Command Execution
 -- ─────────────────────────────────────────────────────────────────────────────
-local function run_with_pipe_progress(cmd, notify_id, title_start)
-	local handle = io.popen(cmd, "r")
-	if not handle then
+local function run_with_pipe_progress(cmd_str, notify_id, title_start)
+	local child, err = Command("sh"):arg({ "-c", cmd_str }):stdout(Command.PIPED):stderr(Command.PIPED):spawn()
+	if not child then
 		notify(MESSAGES.CMD_FAILED, "error", notify_id)
 		return false
 	end
@@ -130,26 +130,35 @@ local function run_with_pipe_progress(cmd, notify_id, title_start)
 	local last_pct = -1
 
 	while true do
-		local line = handle:read("*l")
-		if not line then
+		local line, event = child:read_line()
+		if event == 2 then
 			break
 		end
 
 		local pct = tonumber(line)
 		if pct and pct >= 0 and pct <= 100 then
-			notify(string.format("%s %d%%", title_start, pct), "info", notify_id)
-			last_pct = pct
+			local display_pct = math.floor(pct / 20) * 20
+			if (display_pct > last_pct and display_pct > 0) or pct == 100 then
+				notify(string.format("%s %d%%", title_start, pct == 100 and 100 or display_pct), "info", notify_id, 2)
+				last_pct = display_pct
+			end
 		end
 	end
 
-	local ok = handle:close()
-	return ok and (last_pct == 100 or last_pct == -1)
+	local status = child:wait()
+	return status and status.success and (last_pct == 100 or last_pct == -1)
 end
 
-local function run_simple_command(cmd, notify_id, success_msg, error_msg)
+local function run_simple_command(cmd_str, notify_id, success_msg, error_msg)
 	notify(success_msg .. "...", "info", notify_id)
-	local result = os.execute(cmd .. " >/dev/null 2>&1")
-	local success = (result == 0 or result == true)
+	local child, err = Command("sh"):arg({ "-c", cmd_str }):stdout(Command.PIPED):stderr(Command.PIPED):spawn()
+	if not child then
+		notify(error_msg, "error", notify_id)
+		return false
+	end
+
+	local status = child:wait()
+	local success = status and status.success
 
 	if success then
 		notify(success_msg, "info", notify_id)
@@ -161,72 +170,48 @@ local function run_simple_command(cmd, notify_id, success_msg, error_msg)
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Result Handler
--- ─────────────────────────────────────────────────────────────────────────────
-local function handle_result(success, success_msg, error_msg, id, opts)
-	opts = opts or {}
-	if success then
-		notify(success_msg, "info", id)
-		if opts.refresh then
-			ya.emit("refresh", {})
-		end
-	else
-		notify(error_msg, "error", id)
-	end
-	return success
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- Progress Operation Abstraction
--- ─────────────────────────────────────────────────────────────────────────────
-local function run_progress_operation(opts)
-	notify(opts.start_msg, "info", opts.notify_id)
-	local cmd = opts.build_cmd()
-	local success = run_with_pipe_progress(cmd, opts.notify_id, opts.progress_prefix)
-	return handle_result(success, opts.success_msg, opts.error_msg, opts.notify_id, { refresh = opts.refresh })
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- Operations (composed functions)
+-- Operations
 -- ─────────────────────────────────────────────────────────────────────────────
 local function run_build(dir_url)
-	local target = dir_url .. ".sqsh"
-	run_progress_operation({
-		notify_id = NOTIFY_IDS.BUILD,
-		start_msg = MESSAGES.START_BUILD,
-		progress_prefix = "Building:",
-		build_cmd = function() return build_squish_cmd(dir_url, target) end,
-		success_msg = MESSAGES.BUILD_SUCCESS(target),
-		error_msg = MESSAGES.BUILD_ERROR,
-		refresh = true,
-	})
+  local target = dir_url .. ".sqsh"
+  local cmd = build_squish_cmd(dir_url, target)
+  notify(MESSAGES.START_BUILD, "info", NOTIFY_IDS.BUILD)
+
+  local success = run_with_pipe_progress(cmd, NOTIFY_IDS.BUILD, "Building:")
+  if success then
+    notify(MESSAGES.BUILD_SUCCESS(target), "info", NOTIFY_IDS.BUILD)
+    ya.emit("refresh", {})
+  else
+    notify(MESSAGES.BUILD_ERROR, "error", NOTIFY_IDS.BUILD)
+  end
 end
 
 local function run_extract(file_url, extract_path)
-	run_progress_operation({
-		notify_id = NOTIFY_IDS.EXTRACT,
-		start_msg = MESSAGES.START_EXTRACT,
-		progress_prefix = "Extracting:",
-		build_cmd = function() return build_unsquish_cmd(file_url, extract_path) end,
-		success_msg = MESSAGES.EXTRACT_SUCCESS,
-		error_msg = MESSAGES.EXTRACT_ERROR,
-		refresh = true,
-	})
+  local cmd = build_unsquish_cmd(file_url, extract_path)
+  notify(MESSAGES.START_EXTRACT, "info", NOTIFY_IDS.EXTRACT)
+
+  local success = run_with_pipe_progress(cmd, NOTIFY_IDS.EXTRACT, "Extracting:")
+  if success then
+    notify(MESSAGES.EXTRACT_SUCCESS, "info", NOTIFY_IDS.EXTRACT)
+    ya.emit("refresh", {})
+  else
+    notify(MESSAGES.EXTRACT_ERROR, "error", NOTIFY_IDS.EXTRACT)
+  end
 end
 
 local function run_extract_pick(file_url)
-	local default_path = file_url:gsub("%.[^.]+$", "")
-	local value, event = ya.input({
-		title = "Extract to:",
-		pos = { "center", w = 50 },
-		value = default_path,
-	})
+  local default_path = file_url:gsub("%.[^.]+$", "")
+  local value, event = ya.input({
+    title = "Extract to:",
+    pos = { "center", w = 50 },
+    value = default_path,
+  })
 
-	if event ~= 1 or not value or value == "" then
-		return
-	end
+  if event ~= 1 or not value or value == "" then
+    return
+  end
 
-	run_extract(file_url, value)
+  run_extract(file_url, value)
 end
 
 local function run_mount(file_url)
@@ -245,11 +230,11 @@ end
 -- Action dispatcher (composition pattern)
 -- ─────────────────────────────────────────────────────────────────────────────
 local ACTIONS = {
-	build = function(h) run_build(h.url) end,
-	extract = function(h, args) run_extract(h.url, args[2]) end,
-	["extract-pick"] = function(h) run_extract_pick(h.url) end,
-	mount = function(h) run_mount(h.url) end,
-	unmount = function(h) run_unmount(h.url) end,
+  build = function(h) run_build(h.url) end,
+  extract = function(h, args) run_extract(h.url, args[2]) end,
+  ["extract-pick"] = function(h) run_extract_pick(h.url) end,
+  mount = function(h) run_mount(h.url) end,
+  unmount = function(h) run_unmount(h.url) end,
 }
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -258,32 +243,32 @@ local ACTIONS = {
 local M = {}
 
 function M.setup(_, opts)
-	opts = opts or {}
-	CONFIG.timeout = opts.timeout or DEFAULT_TIMEOUT
-	CONFIG.squish_cmd = opts.squish_cmd or DEFAULT_SQUISH_CMD
-	CONFIG.unsquish_cmd = opts.unsquish_cmd or DEFAULT_UNSQUISH_CMD
+  opts = opts or {}
+  CONFIG.timeout = opts.timeout or DEFAULT_TIMEOUT
+  CONFIG.squish_cmd = opts.squish_cmd or DEFAULT_SQUISH_CMD
+  CONFIG.unsquish_cmd = opts.unsquish_cmd or DEFAULT_UNSQUISH_CMD
 end
 
 function M.entry(_, job)
-	local action = job.args and job.args[1]
-	if not action then
-		notify(MESSAGES.USAGE, "error")
-		return
-	end
+  local action = job.args and job.args[1]
+  if not action then
+    notify(MESSAGES.USAGE, "error")
+    return
+  end
 
-	local h = get_hovered()
-	local ok, err = validate_hovered(action, h)
-	if not ok then
-		notify(err, "error")
-		return
-	end
+  local h = get_hovered()
+  local ok, err = validate_hovered(action, h)
+  if not ok then
+    notify(err, "error")
+    return
+  end
 
-	local handler = ACTIONS[action]
-	if handler then
-		handler(h, job.args)
-	else
-		notify(MESSAGES.UNKNOWN_ACTION(action), "error")
-	end
+  local handler = ACTIONS[action]
+  if handler then
+    handler(h, job)
+  else
+    notify(MESSAGES.UNKNOWN_ACTION(action), "error")
+  end
 end
 
 return M

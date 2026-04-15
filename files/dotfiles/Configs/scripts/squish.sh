@@ -12,26 +12,34 @@ BASE_MKSQUASHFS_ARGS=(
   -no-xattrs
 )
 
-log_info() { echo "[INFO] $*"; }
-log_warn() { echo "[WARN] $*" >&2; }
-log_error() { echo "[ERROR] $*" >&2; }
-
-# Global flag: skip checksum verification before mounting (-y)
+# Global flags
 SKIP_VERIFY=0
-
-# Global flag: pipe mode — machine-readable progress to stdout, all else to stderr
 PIPE_MODE=0
+
+# Unified logging: checks PIPE_MODE at call time
+# In pipe mode, all output goes to stderr
+log() {
+  local level="$1"
+  shift
+  if [[ $PIPE_MODE -eq 1 ]]; then
+    echo "[${level^^}] $*" >&2
+  elif [[ $level == "info" ]]; then
+    echo "[INFO] $*"
+  else
+    echo "[${level^^}] $*" >&2
+  fi
+}
 
 check_dependencies() {
   if ! command -v mksquashfs &>/dev/null; then
-    log_error "'mksquashfs' is not installed!"
+    log error "'mksquashfs' is not installed!"
     exit 1
   fi
 }
 
 check_squashfuse() {
   if ! command -v squashfuse &>/dev/null; then
-    log_error "'squashfuse' is not installed! It is required for mount/unmount operations."
+    log error "'squashfuse' is not installed! It is required for mount/unmount operations."
     exit 1
   fi
 }
@@ -43,16 +51,16 @@ verify_archive_checksum() {
   local archive_abs="$1"
 
   if [[ $SKIP_VERIFY -eq 1 ]]; then
-    log_warn "Checksum verification skipped (-y). Mounting without integrity check."
+    log warn "Checksum verification skipped (-y). Mounting without integrity check."
     return 0
   fi
 
   local checksum_abs="${archive_abs}.sha256"
 
   if [[ ! -f $checksum_abs ]]; then
-    log_error "No checksum file found at '$checksum_abs'."
-    log_error "Cannot verify archive integrity before mounting."
-    log_error "If you want to skip verification, use the -y flag: $SCRIPT_NAME -y -m '$archive_abs'"
+    log error "No checksum file found at '$checksum_abs'."
+    log error "Cannot verify archive integrity before mounting."
+    log error "If you want to skip verification, use the -y flag: $SCRIPT_NAME -y -m '$archive_abs'"
     exit 1
   fi
 
@@ -61,7 +69,7 @@ verify_archive_checksum() {
   target_basename="$(basename "$archive_abs")"
   checksum_file="$(basename "$checksum_abs")"
 
-  log_info "Verifying '$target_basename' against '$checksum_file' before mounting..."
+  log info "Verifying '$target_basename' against '$checksum_file' before mounting..."
 
   pushd "$target_dir" >/dev/null
   sha256sum -c "$checksum_file"
@@ -69,11 +77,11 @@ verify_archive_checksum() {
   popd >/dev/null
 
   if [[ $exit_code -ne 0 ]]; then
-    log_error "Checksum verification FAILED for '$target_basename'. Refusing to mount."
+    log error "Checksum verification FAILED for '$target_basename'. Refusing to mount."
     exit "$exit_code"
   fi
 
-  log_info "Checksum verification passed."
+  log info "Checksum verification passed."
 }
 
 # Tracker file format (two lines):
@@ -106,7 +114,7 @@ alloc_tracker_file() {
       return 0
     fi
   done
-  log_error "All 99 tracker slots for stem '$stem' are in use. Cannot mount."
+  log error "All 99 tracker slots for stem '$stem' are in use. Cannot mount."
   exit 1
 }
 
@@ -139,16 +147,16 @@ resolve_tracker_file() {
     done < <(find_tracker_files_by_stem "$stem")
 
     if [[ ${#matches[@]} -eq 0 ]]; then
-      log_error "No tracker file found for archive '$input_abs'. Is it currently mounted?"
+      log error "No tracker file found for archive '$input_abs'. Is it currently mounted?"
       exit 1
     fi
     # Multiple trackers pointing at the same archive path should never happen,
     # but guard against it just in case.
     if [[ ${#matches[@]} -gt 1 ]]; then
-      log_error "Unexpected: ${#matches[@]} tracker files all reference archive '$input_abs':"
+      log error "Unexpected: ${#matches[@]} tracker files all reference archive '$input_abs':"
       local m
-      for m in "${matches[@]}"; do log_error "  $m"; done
-      log_error "Remove stale tracker files manually and retry."
+      for m in "${matches[@]}"; do log error "  $m"; done
+      log error "Remove stale tracker files manually and retry."
       exit 1
     fi
     TRACKER_FILE="${matches[0]}"
@@ -166,21 +174,21 @@ resolve_tracker_file() {
     done
 
     if [[ ${#matches[@]} -eq 0 ]]; then
-      log_error "No tracker file in /tmp found referencing mountpoint '$input_abs'."
+      log error "No tracker file in /tmp found referencing mountpoint '$input_abs'."
       exit 1
     fi
     # Each mountpoint directory is unique, so more than one match is corrupt state.
     if [[ ${#matches[@]} -gt 1 ]]; then
-      log_error "Corrupt tracker state: ${#matches[@]} tracker files all reference mountpoint '$input_abs':"
+      log error "Corrupt tracker state: ${#matches[@]} tracker files all reference mountpoint '$input_abs':"
       local m
-      for m in "${matches[@]}"; do log_error "  $m"; done
-      log_error "Remove stale tracker files manually and retry."
+      for m in "${matches[@]}"; do log error "  $m"; done
+      log error "Remove stale tracker files manually and retry."
       exit 1
     fi
     TRACKER_FILE="${matches[0]}"
 
   else
-    log_error "Cannot resolve tracker: '$input_abs' is neither a .sqsh file nor a directory."
+    log error "Cannot resolve tracker: '$input_abs' is neither a .sqsh file nor a directory."
     exit 1
   fi
 }
@@ -191,7 +199,7 @@ mount_archive() {
   archive_abs="$(realpath "$input")"
 
   if [[ ! -f $archive_abs ]]; then
-    log_error "Archive file not found: '$archive_abs'"
+    log error "Archive file not found: '$archive_abs'"
     exit 1
   fi
 
@@ -211,8 +219,8 @@ mount_archive() {
   if [[ ${#candidates[@]} -gt 0 ]]; then
     local existing_mount
     existing_mount="$(read_tracker_mountpoint "${candidates[0]}")"
-    log_error "Archive is already mounted at '$existing_mount' (tracker: '${candidates[0]}')."
-    log_error "Unmount first with: $SCRIPT_NAME -u '$archive_abs'"
+    log error "Archive is already mounted at '$existing_mount' (tracker: '${candidates[0]}')."
+    log error "Unmount first with: $SCRIPT_NAME -u '$archive_abs'"
     exit 1
   fi
 
@@ -227,10 +235,10 @@ mount_archive() {
   verify_archive_checksum "$archive_abs"
 
   mkdir -p "$mountpoint"
-  log_info "Mounting '$archive_abs' -> '$mountpoint'..."
+  log info "Mounting '$archive_abs' -> '$mountpoint'..."
 
   if ! squashfuse "$archive_abs" "$mountpoint"; then
-    log_error "squashfuse failed to mount '$archive_abs'."
+    log error "squashfuse failed to mount '$archive_abs'."
     # Clean up empty mountpoint dir if we just created it
     rmdir "$mountpoint" 2>/dev/null || true
     exit 1
@@ -238,10 +246,10 @@ mount_archive() {
 
   # Write mountpoint (line 1) and archive path (line 2) to tracker file
   write_tracker_file "$tracker_file" "$mountpoint" "$archive_abs"
-  log_info "Mounted successfully."
-  log_info "Mountpoint : $mountpoint"
-  log_info "Archive    : $archive_abs"
-  log_info "Tracker    : $tracker_file"
+  log info "Mounted successfully."
+  log info "Mountpoint : $mountpoint"
+  log info "Archive    : $archive_abs"
+  log info "Tracker    : $tracker_file"
 }
 
 unmount_archive() {
@@ -253,7 +261,7 @@ unmount_archive() {
   resolve_tracker_file "$input_abs"
 
   if [[ ! -f $TRACKER_FILE ]]; then
-    log_error "No tracker file found at '$TRACKER_FILE'. Is the archive currently mounted?"
+    log error "No tracker file found at '$TRACKER_FILE'. Is the archive currently mounted?"
     exit 1
   fi
 
@@ -262,23 +270,23 @@ unmount_archive() {
   archive_abs="$(read_tracker_archive "$TRACKER_FILE")"
 
   if [[ -z $mountpoint ]]; then
-    log_error "Tracker file '$TRACKER_FILE' has no mountpoint entry. Cannot unmount."
+    log error "Tracker file '$TRACKER_FILE' has no mountpoint entry. Cannot unmount."
     exit 1
   fi
 
-  log_info "Unmounting '$mountpoint'..."
-  [[ -n $archive_abs ]] && log_info "Archive    : $archive_abs"
+  log info "Unmounting '$mountpoint'..."
+  [[ -n $archive_abs ]] && log info "Archive    : $archive_abs"
 
   if ! fusermount -u "$mountpoint" 2>/dev/null && ! umount "$mountpoint" 2>/dev/null; then
-    log_error "Failed to unmount '$mountpoint'. Is it still in use?"
+    log error "Failed to unmount '$mountpoint'. Is it still in use?"
     exit 1
   fi
 
   # Remove the now-empty mountpoint directory.
   if rmdir "$mountpoint" 2>/dev/null; then
-    log_info "Removed mountpoint directory '$mountpoint'."
+    log info "Removed mountpoint directory '$mountpoint'."
   else
-    log_warn "Mountpoint directory '$mountpoint' is not empty; leaving it in place."
+    log warn "Mountpoint directory '$mountpoint' is not empty; leaving it in place."
   fi
 
   # Remove the mounts/ parent only if it is now empty (other archives may still
@@ -287,14 +295,14 @@ unmount_archive() {
   mounts_dir="$(dirname "$mountpoint")"
   if [[ -d $mounts_dir ]]; then
     if rmdir "$mounts_dir" 2>/dev/null; then
-      log_info "Removed empty mounts directory '$mounts_dir'."
+      log info "Removed empty mounts directory '$mounts_dir'."
     else
-      log_info "WARNING: '$mounts_dir' is not empty; leaving it in place."
+      log info "WARNING: '$mounts_dir' is not empty; leaving it in place."
     fi
   fi
 
   rm -f "$TRACKER_FILE"
-  log_info "Unmounted successfully. Tracker '$TRACKER_FILE' removed."
+  log info "Unmounted successfully. Tracker '$TRACKER_FILE' removed."
 }
 
 check_archive() {
@@ -313,12 +321,12 @@ check_archive() {
   fi
 
   if [[ ! -f $archive_abs ]]; then
-    log_error "Archive file not found: '$archive_abs'"
+    log error "Archive file not found: '$archive_abs'"
     exit 1
   fi
 
   if [[ ! -f $checksum_abs ]]; then
-    log_error "No paired checksum file found: '$checksum_abs'"
+    log error "No paired checksum file found: '$checksum_abs'"
     exit 1
   fi
 
@@ -327,7 +335,7 @@ check_archive() {
   target_basename="$(basename "$archive_abs")"
   checksum_file="$(basename "$checksum_abs")"
 
-  log_info "Verifying '$target_basename' against '$checksum_file'..."
+  log info "Verifying '$target_basename' against '$checksum_file'..."
 
   pushd "$target_dir" >/dev/null
   sha256sum -c "$checksum_file"
@@ -335,16 +343,24 @@ check_archive() {
   popd >/dev/null
 
   if [[ $exit_code -ne 0 ]]; then
-    log_error "Checksum verification FAILED for '$target_basename'."
+    log error "Checksum verification FAILED for '$target_basename'."
     exit "$exit_code"
   fi
 
-  log_info "Checksum verification passed for '$target_basename'."
+  log info "Checksum verification passed for '$target_basename'."
 }
 
 parse_arguments() {
   SOURCES=()
   OUTPUT_FILE=""
+
+  # Pre-scan for --pipe to set PIPE_MODE before any logging
+  for arg in "$@"; do
+    if [[ $arg == "--pipe" ]]; then
+      PIPE_MODE=1
+      break
+    fi
+  done
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -353,7 +369,7 @@ parse_arguments() {
           OUTPUT_FILE="$2"
           shift
         else
-          log_error "Argument for $1 is missing or invalid."
+          log error "Argument for $1 is missing or invalid."
           exit 1
         fi
         shift
@@ -363,12 +379,15 @@ parse_arguments() {
           check_archive "$2"
           exit 0
         else
-          log_error "Argument for $1 is missing or invalid."
+          log error "Argument for $1 is missing or invalid."
           exit 1
         fi
         ;;
       -y | --yes | --skip-verify)
         SKIP_VERIFY=1
+        shift
+        ;;
+      --pipe)
         shift
         ;;
       -m | --mount)
@@ -377,7 +396,7 @@ parse_arguments() {
           mount_archive "$2"
           exit 0
         else
-          log_error "Argument for $1 is missing or invalid."
+          log error "Argument for $1 is missing or invalid."
           exit 1
         fi
         ;;
@@ -387,7 +406,7 @@ parse_arguments() {
           unmount_archive "$2"
           exit 0
         else
-          log_error "Argument for $1 is missing or invalid."
+          log error "Argument for $1 is missing or invalid."
           exit 1
         fi
         ;;
@@ -395,21 +414,17 @@ parse_arguments() {
         echo "SquashFS Archiver (squish) v${VERSION}"
         echo ""
         echo "Usage:"
-        echo "  $SCRIPT_NAME <source1> [source2...] [-o output.sqsh]   Create a new archive"
-        echo "  $SCRIPT_NAME --check <archive_file>                  Verify archive integrity"
-        echo "  $SCRIPT_NAME -m <archive_file> [-y]                  Mount archive to managed directory"
-        echo "  $SCRIPT_NAME -u <archive_file | mountpoint>          Unmount archive and cleanup"
+        echo " $SCRIPT_NAME <source1> [source2...] [-o output.sqsh] Create a new archive"
+        echo " $SCRIPT_NAME --check <archive_file> Verify archive integrity"
+        echo " $SCRIPT_NAME -m <archive_file> [-y] Mount archive to managed directory"
+        echo " $SCRIPT_NAME -u <archive_file | mountpoint> Unmount archive and cleanup"
         echo ""
         echo "Options:"
-        echo "  -o, --output <file>    Specify output filename (default: <first_source>.sqsh)"
-        echo "  -y, --skip-verify      Skip SHA-256 verification before mounting"
-        echo "  --pipe                 Machine-readable mode: percentages to stdout, logs to stderr"
-        echo "  -h, --help             Show this help message"
+        echo " -o, --output <file>  Specify output filename (default: <first_source>.sqsh)"
+        echo " -y, --skip-verify    Skip SHA-256 verification before mounting"
+        echo " --pipe               Machine-readable mode: percentages to stdout, logs to stderr"
+        echo " -h, --help           Show this help message"
         exit 0
-        ;;
-      --pipe)
-        PIPE_MODE=1
-        shift
         ;;
       *)
         SOURCES+=("$(realpath "$1")")
@@ -419,11 +434,11 @@ parse_arguments() {
   done
 
   if [[ ${#SOURCES[@]} -eq 0 ]]; then
-    log_error "No source directories specified."
+    log error "No source directories specified."
     echo "Usage: $SCRIPT_NAME <source1> [source2 ...] [-o output_file]"
-    echo "       $SCRIPT_NAME --check <archive_file>"
-    echo "       $SCRIPT_NAME [-y] -m|--mount <archive_file>"
-    echo "       $SCRIPT_NAME -u|--unmount <archive_file>"
+    echo " $SCRIPT_NAME --check <archive_file>"
+    echo " $SCRIPT_NAME [-y] -m|--mount <archive_file>"
+    echo " $SCRIPT_NAME -u|--unmount <archive_file>"
     exit 1
   fi
 }
@@ -435,7 +450,7 @@ determine_output_filename() {
     OUTPUT_FILE="${first_source_basename}.sqsh"
 
     if [[ -e $OUTPUT_FILE ]]; then
-      log_info "Conflict detected: '$OUTPUT_FILE' already exists."
+      log info "Conflict detected: '$OUTPUT_FILE' already exists."
       local date_stamp
       date_stamp=$(date +%Y%m%d)
       local counter=1
@@ -452,8 +467,8 @@ determine_output_filename() {
   fi
 
   OUTPUT_FILE="$(realpath -m "$OUTPUT_FILE")"
-  log_info "Output file: '$OUTPUT_FILE'"
-  log_info "Sources: ${SOURCES[*]}"
+  log info "Output file: '$OUTPUT_FILE'"
+  log info "Sources: ${SOURCES[*]}"
 }
 
 # Shared pipeline used by both GUI modes: runs mksquashfs, tees non-integer
@@ -554,91 +569,60 @@ compress_pipe() {
   shift
   local sources=("$@")
 
-  local mksq_status_file
-  mksq_status_file=$(mktemp)
-
-  (
-    mksquashfs "${sources[@]}" "$target_file" \
-      "${BASE_MKSQUASHFS_ARGS[@]}" \
-      -percentage 2>&1 \
-      | awk '/[0-9]+%/ { gsub(/[^0-9]/, ""); print; fflush() }'
-    echo "$?" >"$mksq_status_file"
-  ) &
-  local mksq_pid=$!
-
-  wait "$mksq_pid"
-  local mksq_exit
-  mksq_exit=$(cat "$mksq_status_file" 2>/dev/null || echo "1")
-  rm -f "$mksq_status_file"
-
-  return "$mksq_exit"
+  mksquashfs "${sources[@]}" "$target_file" \
+    "${BASE_MKSQUASHFS_ARGS[@]}" \
+    -percentage 2>&1 | awk '/^[0-9]+$/{print; fflush(); next} {print > "/dev/stderr"}'
 }
 
 main() {
   check_dependencies
   parse_arguments "$@"
-
-  # In pipe mode, override all log functions to stderr before any other code runs.
-  # This prevents log_info from leaking to stdout and corrupting the percentage stream.
-  if [[ $PIPE_MODE -eq 1 ]]; then
-    log_info()  { echo "[INFO] $*"  >&2; }
-    log_warn()  { echo "[WARN] $*"  >&2; }
-    log_error() { echo "[ERROR] $*" >&2; }
-
-    # Save original stderr (fd 3) so compress_pipe can redirect mksquashfs
-    # progress output to stdout. Then suppress fd 2 so no log output leaks
-    # into the caller's terminal (e.g. Yazi's TUI).
-    exec 3>&2 2>/dev/null
-  fi
-
   determine_output_filename
+
+  local exit_code=0
 
   # In pipe mode, skip GUI detection entirely — designed for TUI/embedded use.
   if [[ $PIPE_MODE -eq 1 ]]; then
-    local exit_code=0
     compress_pipe "$OUTPUT_FILE" "${SOURCES[@]}" || exit_code=$?
 
     if [[ $exit_code -ne 0 ]]; then
-      log_error "Compression failed or was cancelled (exit code: $exit_code)." >&2
+      log error "Compression failed (exit code: $exit_code)."
       [[ -f $OUTPUT_FILE ]] && rm -f "$OUTPUT_FILE"
       exit "$exit_code"
     fi
 
-    log_info "Generating checksum..." >&2
+    log info "Generating checksum..."
     pushd "$(dirname "$OUTPUT_FILE")" >/dev/null
     sha256sum "$(basename "$OUTPUT_FILE")" >"$(basename "$OUTPUT_FILE").sha256" 2>/dev/null
     popd >/dev/null
-    log_info "Checksum written to '${OUTPUT_FILE}.sha256'." >&2
-    log_info "Successfully created '$OUTPUT_FILE'." >&2
-    echo "100"
+    log info "Checksum written to '${OUTPUT_FILE}.sha256'."
+    log info "Successfully created '$OUTPUT_FILE'."
     exit 0
   fi
 
-  local exit_code=0
-
   if command -v yad &>/dev/null; then
-    log_info "Starting compression with YAD UI..."
+    log info "Starting compression with YAD UI..."
     compress_with_yad "$OUTPUT_FILE" "${SOURCES[@]}" || exit_code=$?
   elif command -v zenity &>/dev/null; then
-    log_info "Starting compression with Zenity UI..."
+    log info "Starting compression with Zenity UI..."
     compress_with_zenity "$OUTPUT_FILE" "${SOURCES[@]}" || exit_code=$?
   else
-    log_info "No GUI available. Falling back to CLI output..."
+    log info "No GUI available. Falling back to CLI output..."
     compress_cli "$OUTPUT_FILE" "${SOURCES[@]}" || exit_code=$?
   fi
 
   if [[ $exit_code -ne 0 ]]; then
-    log_error "Compression failed or was cancelled (exit code: $exit_code)."
+    log error "Compression failed or was cancelled (exit code: $exit_code)."
     [[ -f $OUTPUT_FILE ]] && rm -f "$OUTPUT_FILE"
     exit "$exit_code"
   fi
 
-  log_info "Generating checksum..."
+  log info "Generating checksum..."
   pushd "$(dirname "$OUTPUT_FILE")" >/dev/null
   sha256sum "$(basename "$OUTPUT_FILE")" >"$(basename "$OUTPUT_FILE").sha256"
   popd >/dev/null
-  log_info "Checksum written to '${OUTPUT_FILE}.sha256'."
-  log_info "Successfully created '$OUTPUT_FILE'."
+  log info "Checksum written to '${OUTPUT_FILE}.sha256'."
+  log info "Successfully created '$OUTPUT_FILE'."
 }
 
 main "$@"

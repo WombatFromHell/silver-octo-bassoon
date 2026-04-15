@@ -87,6 +87,10 @@ window-rule {
     open-floating true
 }
 window-rule {
+    match app-id="yad"
+    open-floating true
+}
+window-rule {
     match app-id="org.kde.kcalc" title="^KCalc$"
     default-column-width {
         fixed 500

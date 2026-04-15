@@ -8,19 +8,21 @@ BASE_UNSQUASHFS_ARGS=(
   -no-xattrs
 )
 
-log_info() { echo "[INFO] $*"; }
-log_error() { echo "[ERROR] $*" >&2; }
-
-# Global flag: skip checksum verification before extracting (-y)
+# Global flags
 SKIP_CHECKSUM=0
-
-# Global flag: pipe mode — machine-readable progress to stdout, all else to stderr
 PIPE_MODE=0
 
-check_dependencies() {
-  if ! command -v unsquashfs &>/dev/null; then
-    log_error "'unsquashfs' is not installed!"
-    exit 1
+# Unified logging: checks PIPE_MODE at call time
+# In pipe mode, all output goes to stderr
+log() {
+  local level="$1"
+  shift
+  if [[ $PIPE_MODE -eq 1 ]]; then
+    echo "[${level^^}] $*" >&2
+  elif [[ $level == "info" ]]; then
+    echo "[INFO] $*"
+  else
+    echo "[${level^^}] $*" >&2
   fi
 }
 
@@ -38,11 +40,11 @@ list_archive() {
   fi
 
   if [[ ! -f $archive_abs ]]; then
-    log_error "Archive file not found: '$archive_abs'"
+    log error "Archive file not found: '$archive_abs'"
     exit 1
   fi
 
-  log_info "Listing contents of '$(basename "$archive_abs")'..."
+  log info "Listing contents of '$(basename "$archive_abs")'..."
   unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}" -d "" -llc "$archive_abs"
 }
 
@@ -62,12 +64,12 @@ check_archive() {
   fi
 
   if [[ ! -f $archive_abs ]]; then
-    log_error "Archive file not found: '$archive_abs'"
+    log error "Archive file not found: '$archive_abs'"
     return 1
   fi
 
   if [[ ! -f $checksum_abs ]]; then
-    log_error "No paired checksum file found: '$checksum_abs'"
+    log error "No paired checksum file found: '$checksum_abs'"
     return 1
   fi
 
@@ -76,7 +78,7 @@ check_archive() {
   target_basename="$(basename "$archive_abs")"
   checksum_file="$(basename "$checksum_abs")"
 
-  log_info "Verifying '$target_basename' against '$checksum_file'..."
+  log info "Verifying '$target_basename' against '$checksum_file'..."
 
   pushd "$target_dir" >/dev/null
   sha256sum -c "$checksum_file"
@@ -84,16 +86,26 @@ check_archive() {
   popd >/dev/null
 
   if [[ $exit_code -ne 0 ]]; then
-    log_error "Checksum verification FAILED for '$target_basename'."
+    log error "Checksum verification FAILED for '$target_basename'."
     return "$exit_code"
   fi
 
-  log_info "Checksum verification passed for '$target_basename'."
+  log info "Checksum verification passed for '$target_basename'."
 }
 
 parse_arguments() {
   INPUT_FILE=""
   OUTPUT_DIR=""
+  SKIP_CHECKSUM=0
+  PIPE_MODE=0
+
+  # Pre-scan for --pipe to set PIPE_MODE before any logging
+  for arg in "$@"; do
+    if [[ $arg == "--pipe" ]]; then
+      PIPE_MODE=1
+      break
+    fi
+  done
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -101,12 +113,15 @@ parse_arguments() {
         SKIP_CHECKSUM=1
         shift
         ;;
+      --pipe)
+        shift
+        ;;
       -o | --output)
         if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
           OUTPUT_DIR="$2"
           shift
         else
-          log_error "Argument for $1 is missing or invalid."
+          log error "Argument for $1 is missing or invalid."
           exit 1
         fi
         shift
@@ -116,7 +131,7 @@ parse_arguments() {
           check_archive "$2"
           exit 0
         else
-          log_error "Argument for $1 is missing or invalid."
+          log error "Argument for $1 is missing or invalid."
           exit 1
         fi
         ;;
@@ -125,7 +140,7 @@ parse_arguments() {
           list_archive "$2"
           exit 0
         else
-          log_error "Argument for $1 is missing or invalid."
+          log error "Argument for $1 is missing or invalid."
           exit 1
         fi
         ;;
@@ -133,24 +148,20 @@ parse_arguments() {
         echo "SquashFS Extractor (unsquish) v${VERSION}"
         echo ""
         echo "Usage:"
-        echo "  $SCRIPT_NAME <archive.sqsh> [-o output_dir] [-y]   Extract archive"
-        echo "  $SCRIPT_NAME --check <archive_file>                Verify archive integrity"
-        echo "  $SCRIPT_NAME --list <archive_file>                 List archive contents"
+        echo " $SCRIPT_NAME <archive.sqsh> [-o output_dir] [-y] Extract archive"
+        echo " $SCRIPT_NAME --check <archive_file> Verify archive integrity"
+        echo " $SCRIPT_NAME --list <archive_file> List archive contents"
         echo ""
         echo "Options:"
-        echo "  -o, --output <dir>     Specify extraction directory (default: archive stem)"
-        echo "  -y, --yes              Skip checksum verification errors"
-        echo "  --pipe                 Machine-readable mode: percentages to stdout, logs to stderr"
-        echo "  -h, --help             Show this help message"
+        echo " -o, --output <dir> Specify extraction directory (default: archive stem)"
+        echo " -y, --yes Skip checksum verification errors"
+        echo " --pipe Machine-readable mode: percentages to stdout, logs to stderr"
+        echo " -h, --help Show this help message"
         exit 0
-        ;;
-      --pipe)
-        PIPE_MODE=1
-        shift
         ;;
       *)
         if [[ -n $INPUT_FILE ]]; then
-          log_error "Unexpected argument: '$1'. Only one archive file may be specified."
+          log error "Unexpected argument: '$1'. Only one archive file may be specified."
           exit 1
         fi
         INPUT_FILE="$(realpath "$1")"
@@ -160,15 +171,15 @@ parse_arguments() {
   done
 
   if [[ -z $INPUT_FILE ]]; then
-    log_error "No archive file specified."
+    log error "No archive file specified."
     echo "Usage: $SCRIPT_NAME <archive.sqsh> [-o output_dir] [-y]"
-    echo "       $SCRIPT_NAME --check <archive_file>"
-    echo "       $SCRIPT_NAME --list  <archive_file>"
+    echo " $SCRIPT_NAME --check <archive_file>"
+    echo " $SCRIPT_NAME --list <archive_file>"
     exit 1
   fi
 
   if [[ ! -f $INPUT_FILE ]]; then
-    log_error "Archive file not found: '$INPUT_FILE'"
+    log error "Archive file not found: '$INPUT_FILE'"
     exit 1
   fi
 }
@@ -181,23 +192,23 @@ determine_output_dir() {
     basename="${basename%.sqsh}"
     basename="${basename%.squashfs}"
     OUTPUT_DIR="$(dirname "$INPUT_FILE")/${basename}"
-    log_info "No output directory specified; auto-detected: '$OUTPUT_DIR'"
+    log info "No output directory specified; auto-detected: '$OUTPUT_DIR'"
   fi
 
   OUTPUT_DIR="$(realpath -m "$OUTPUT_DIR")"
 
   if [[ -e $OUTPUT_DIR ]]; then
     if [[ ! -d $OUTPUT_DIR ]]; then
-      log_error "Output path exists and is not a directory: '$OUTPUT_DIR'."
+      log error "Output path exists and is not a directory: '$OUTPUT_DIR'."
       exit 1
     fi
     if [[ -n "$(ls -A "$OUTPUT_DIR")" ]]; then
-      log_error "Output directory already exists and is not empty: '$OUTPUT_DIR'. Refusing to overwrite."
+      log error "Output directory already exists and is not empty: '$OUTPUT_DIR'. Refusing to overwrite."
       exit 1
     fi
   fi
 
-  log_info "Output directory: '$OUTPUT_DIR'"
+  log info "Output directory: '$OUTPUT_DIR'"
 }
 
 # Shared pipeline used by both GUI modes: runs unsquashfs, tees non-integer
@@ -292,91 +303,61 @@ extract_cli() {
 extract_pipe() {
   local target_dir="$1"
 
-  local unsq_status_file
-  unsq_status_file=$(mktemp)
-
-  (
-    unsquashfs \
-      "${BASE_UNSQUASHFS_ARGS[@]}" \
-      -percentage \
-      -d "$target_dir" \
-      "$INPUT_FILE" 2>&1 \
-      | awk '/[0-9]+%/ { gsub(/[^0-9]/, ""); print; fflush() }'
-    echo "$?" >"$unsq_status_file"
-  ) &
-  local unsq_pid=$!
-
-  wait "$unsq_pid"
-  local unsq_exit
-  unsq_exit=$(cat "$unsq_status_file" 2>/dev/null || echo "1")
-  rm -f "$unsq_status_file"
-
-  return "$unsq_exit"
+  unsquashfs \
+    "${BASE_UNSQUASHFS_ARGS[@]}" \
+    -percentage \
+    -d "$target_dir" \
+    "$INPUT_FILE" 2>&1 | awk '/^[0-9]+$/{print; fflush(); next} {print > "/dev/stderr"}'
 }
 
 main() {
   check_dependencies
   parse_arguments "$@"
-
-  # In pipe mode, override all log functions to stderr before any other code runs.
-  # This prevents log_info from leaking to stdout and corrupting the percentage stream.
-  if [[ $PIPE_MODE -eq 1 ]]; then
-    log_info()  { echo "[INFO] $*"  >&2; }
-    log_error() { echo "[ERROR] $*" >&2; }
-
-    # Suppress all stderr for the entire script so nothing leaks into the
-    # caller's terminal (e.g. Yazi's TUI). We only want bare integers on
-    # stdout; real errors are reported via the exit code.
-    exec 2>/dev/null
-  fi
-
   determine_output_dir
 
   # Verify checksum before extracting; -y skips hard failure but still warns
   if ! check_archive "$INPUT_FILE"; then
     if [[ $SKIP_CHECKSUM -eq 1 ]]; then
-      log_info "Checksum verification failed but -y was passed; continuing anyway." >&2
+      log info "Checksum verification failed but -y was passed; continuing anyway."
     else
       exit 1
     fi
   fi
 
+  local exit_code=0
+
   # In pipe mode, skip GUI detection entirely — designed for TUI/embedded use.
   if [[ $PIPE_MODE -eq 1 ]]; then
-    local exit_code=0
     extract_pipe "$OUTPUT_DIR" || exit_code=$?
 
     if [[ $exit_code -ne 0 ]]; then
-      log_error "Extraction failed or was cancelled (exit code: $exit_code)." >&2
+      log error "Extraction failed (exit code: $exit_code)."
       [[ -d $OUTPUT_DIR ]] && rm -rf "$OUTPUT_DIR"
       exit "$exit_code"
     fi
 
-    log_info "Successfully extracted '$INPUT_FILE' to '$OUTPUT_DIR'." >&2
-    echo "100"
+    log info "Successfully extracted '$INPUT_FILE' to '$OUTPUT_DIR'."
     exit 0
   fi
 
-  local exit_code=0
-
   if command -v yad &>/dev/null; then
-    log_info "Starting extraction with YAD UI..."
+    log info "Starting extraction with YAD UI..."
     extract_with_yad "$OUTPUT_DIR" || exit_code=$?
   elif command -v zenity &>/dev/null; then
-    log_info "Starting extraction with Zenity UI..."
+    log info "Starting extraction with Zenity UI..."
     extract_with_zenity "$OUTPUT_DIR" || exit_code=$?
   else
-    log_info "No GUI available. Falling back to CLI output..."
+    log info "No GUI available. Falling back to CLI output..."
     extract_cli "$OUTPUT_DIR" || exit_code=$?
   fi
 
   if [[ $exit_code -ne 0 ]]; then
-    log_error "Extraction failed or was cancelled (exit code: $exit_code)."
+    log error "Extraction failed or was cancelled (exit code: $exit_code)."
     [[ -d $OUTPUT_DIR ]] && rm -rf "$OUTPUT_DIR"
     exit "$exit_code"
   fi
 
-  log_info "Successfully extracted '$INPUT_FILE' to '$OUTPUT_DIR'."
+  log info "Successfully extracted '$INPUT_FILE' to '$OUTPUT_DIR'."
 }
 
 main "$@"
