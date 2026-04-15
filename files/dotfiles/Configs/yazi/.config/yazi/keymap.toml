@@ -117,6 +117,16 @@ run = "plugin squish -- unmount"
 desc = "Squash Unmount"
 
 [[mgr.prepend_keymap]]
+on = ["n", "U"]
+run = "plugin squish -- unmount-tracked"
+desc = "Squash Unmount (select from tracked)"
+
+[[mgr.prepend_keymap]]
+on = ["n", "j"]
+run = "plugin squish -- jump"
+desc = "Squash Jump to mount"
+
+[[mgr.prepend_keymap]]
 on = ["Q"]
 run = "quit"
 

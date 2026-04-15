@@ -14,23 +14,24 @@ local NOTIFY_IDS = {
 }
 
 local MESSAGES = {
-	START_BUILD = "Starting build...",
-	BUILD_SUCCESS = function(target) return "Built: " .. target end,
-	BUILD_ERROR = "Build failed",
-	START_EXTRACT = "Starting extraction...",
-	EXTRACT_SUCCESS = "Extracted successfully",
-	EXTRACT_ERROR = "Extraction failed",
-	MOUNT_SUCCESS = "Mounted successfully",
-	MOUNT_ERROR = "Mount failed",
-	UNMOUNT_SUCCESS = "Unmounted successfully",
-	UNMOUNT_ERROR = "Unmount failed",
-	NO_SELECTION = "No item selected",
-	NEED_DIRECTORY = "Select a directory to compress",
-	NEED_SQSH = "Select a .sqsh file",
-	FILE_NOT_FOUND = function(url) return "File does not exist: " .. url end,
-	UNKNOWN_ACTION = function(a) return "Unknown action: " .. a end,
-	USAGE = "Usage: squish -- <build|extract|extract-pick|mount|unmount>",
-	CMD_FAILED = "Failed to execute command",
+  START_BUILD = "Starting build...",
+  BUILD_SUCCESS = function(target) return "Built: " .. target end,
+  BUILD_ERROR = "Build failed",
+  START_EXTRACT = "Starting extraction...",
+  EXTRACT_SUCCESS = "Extracted successfully",
+  EXTRACT_ERROR = "Extraction failed",
+  START_MOUNT = "Attempting to mount...",
+  MOUNT_SUCCESS = "Mounted successfully",
+  MOUNT_ERROR = "Mount failed",
+  UNMOUNT_SUCCESS = "Unmounted successfully",
+  UNMOUNT_ERROR = "Unmount failed",
+  NO_SELECTION = "No item selected",
+  NEED_DIRECTORY = "Select a directory to compress",
+  NEED_SQSH = "Select a .sqsh file",
+  FILE_NOT_FOUND = function(url) return "File does not exist: " .. url end,
+  UNKNOWN_ACTION = function(a) return "Unknown action: " .. a end,
+  USAGE = "Usage: squish -- <build|extract|extract-pick|mount|unmount>",
+  CMD_FAILED = "Failed to execute command",
 }
 
 local CONFIG = {
@@ -58,17 +59,51 @@ end)
 -- Helpers
 -- ─────────────────────────────────────────────────────────────────────────────
 local function notify(content, level, id, timeout)
-	ya.notify({
-		title = PLUGIN_NAME,
-		content = content,
-		level = level or "info",
-		timeout = timeout or CONFIG.timeout,
-		id = id,
-	})
+  ya.notify({
+    title = PLUGIN_NAME,
+    content = content,
+    level = level or "info",
+    timeout = timeout or CONFIG.timeout,
+    id = id,
+  })
 end
 
 local function is_sqsh_file(path)
-	return path:lower():match("%.sqsh$")
+  local lower = path:lower()
+  return lower:match("%.sqsh$") or lower:match("%.squashfs$")
+end
+
+local function parse_list_mounts_line(line)
+  local archive, mountpoint = line:match("^(.-)%s*%->%s*(.+)$")
+  if archive and mountpoint then
+    return archive, mountpoint
+  end
+  return nil, nil
+end
+
+local function get_mountpoint_display(mountpoint)
+  return mountpoint:match("([^/]+)[/]?$") or mountpoint
+end
+
+local function get_tracked_mounts()
+  local mounts = {}
+  local handle = io.popen(CONFIG.squish_cmd .. " --list-mounts 2>/dev/null")
+  if not handle then
+    return mounts
+  end
+
+  for line in handle:lines() do
+    local archive, mountpoint = parse_list_mounts_line(line)
+    if archive and mountpoint then
+      table.insert(mounts, {
+        archive = archive,
+        mountpoint = mountpoint,
+        display = get_mountpoint_display(mountpoint),
+      })
+    end
+  end
+  handle:close()
+  return mounts
 end
 
 local function validate_hovered(action, h)
@@ -149,24 +184,24 @@ local function run_with_pipe_progress(cmd_str, notify_id, title_start)
 	return status and status.success and (last_pct == 100 or last_pct == -1)
 end
 
-local function run_simple_command(cmd_str, notify_id, success_msg, error_msg)
-	notify(success_msg .. "...", "info", notify_id)
-	local child, err = Command("sh"):arg({ "-c", cmd_str }):stdout(Command.PIPED):stderr(Command.PIPED):spawn()
-	if not child then
-		notify(error_msg, "error", notify_id)
-		return false
-	end
+local function run_simple_command(cmd_str, notify_id, start_msg, success_msg, error_msg)
+  notify(start_msg, "info", notify_id)
+  local child, err = Command("sh"):arg({ "-c", cmd_str }):stdout(Command.PIPED):stderr(Command.PIPED):spawn()
+  if not child then
+    notify(error_msg, "error", notify_id)
+    return false
+  end
 
-	local status = child:wait()
-	local success = status and status.success
+  local status = child:wait()
+  local success = status and status.success
 
-	if success then
-		notify(success_msg, "info", notify_id)
-	else
-		notify(error_msg, "error", notify_id)
-	end
+  if success then
+    notify(success_msg, "info", notify_id)
+  else
+    notify(error_msg, "error", notify_id)
+  end
 
-	return success
+  return success
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -215,15 +250,70 @@ local function run_extract_pick(file_url)
 end
 
 local function run_mount(file_url)
-	local cmd = build_mount_cmd(file_url)
-	run_simple_command(cmd, NOTIFY_IDS.MOUNT, MESSAGES.MOUNT_SUCCESS, MESSAGES.MOUNT_ERROR)
+  local cmd = build_mount_cmd(file_url)
+  run_simple_command(cmd, NOTIFY_IDS.MOUNT, MESSAGES.START_MOUNT, MESSAGES.MOUNT_SUCCESS, MESSAGES.MOUNT_ERROR)
 end
 
 local function run_unmount(file_url)
-	local cmd = build_unmount_cmd(file_url)
-	if run_simple_command(cmd, NOTIFY_IDS.UNMOUNT, MESSAGES.UNMOUNT_SUCCESS, MESSAGES.UNMOUNT_ERROR) then
-		ya.emit("refresh", {})
-	end
+  local cmd = build_unmount_cmd(file_url)
+  if run_simple_command(cmd, NOTIFY_IDS.UNMOUNT, "Attempting to unmount...", MESSAGES.UNMOUNT_SUCCESS, MESSAGES.UNMOUNT_ERROR) then
+    ya.emit("refresh", {})
+  end
+end
+
+local function run_unmount_tracked()
+  local mounts = get_tracked_mounts()
+  if #mounts == 0 then
+    notify("No tracked mounts found", "warn", NOTIFY_IDS.UNMOUNT)
+    return
+  end
+
+  local cands = {}
+  for i, m in ipairs(mounts) do
+    local archive_name = m.archive:match("([^/]+)$") or m.archive
+    table.insert(cands, { on = tostring(i), desc = string.format("%s -> %s/", archive_name, m.display) })
+  end
+
+  local idx = ya.which({
+    title = "Unmount tracked mount",
+    cands = cands,
+  })
+
+  if not idx then
+    return
+  end
+
+  local selected = mounts[idx]
+  local cmd = build_unmount_cmd(selected.archive)
+  if run_simple_command(cmd, NOTIFY_IDS.UNMOUNT, "Attempting to unmount...", MESSAGES.UNMOUNT_SUCCESS, MESSAGES.UNMOUNT_ERROR) then
+    ya.emit("refresh", {})
+  end
+end
+
+local function run_jump()
+  local mounts = get_tracked_mounts()
+  if #mounts == 0 then
+    notify("No tracked mounts found", "warn")
+    return
+  end
+
+  local cands = {}
+  for i, m in ipairs(mounts) do
+    local archive_name = m.archive:match("([^/]+)$") or m.archive
+    table.insert(cands, { on = tostring(i), desc = string.format("%s -> %s/", archive_name, m.display) })
+  end
+
+  local idx = ya.which({
+    title = "Jump to mount",
+    cands = cands,
+  })
+
+  if not idx then
+    return
+  end
+
+  local selected = mounts[idx]
+  ya.emit("tab_create", { tostring(Url(selected.mountpoint)) })
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -235,6 +325,8 @@ local ACTIONS = {
   ["extract-pick"] = function(h) run_extract_pick(h.url) end,
   mount = function(h) run_mount(h.url) end,
   unmount = function(h) run_unmount(h.url) end,
+  ["unmount-tracked"] = function() run_unmount_tracked() end,
+  jump = function() run_jump() end,
 }
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -256,6 +348,17 @@ function M.entry(_, job)
     return
   end
 
+  local handler = ACTIONS[action]
+  if not handler then
+    notify(MESSAGES.UNKNOWN_ACTION(action), "error")
+    return
+  end
+
+  if action == "unmount-tracked" or action == "jump" then
+    handler()
+    return
+  end
+
   local h = get_hovered()
   local ok, err = validate_hovered(action, h)
   if not ok then
@@ -263,12 +366,7 @@ function M.entry(_, job)
     return
   end
 
-  local handler = ACTIONS[action]
-  if handler then
-    handler(h, job)
-  else
-    notify(MESSAGES.UNKNOWN_ACTION(action), "error")
-  end
+  handler(h, job)
 end
 
 return M

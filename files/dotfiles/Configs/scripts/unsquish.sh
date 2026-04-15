@@ -2,18 +2,30 @@
 
 set -euo pipefail
 
-SCRIPT_NAME=$(basename "$0")
-VERSION="1.4.1"
-BASE_UNSQUASHFS_ARGS=(
+#######################################
+# CONSTANTS
+#######################################
+
+declare -r VERSION="dev"
+declare -r SCRIPT_NAME=$(basename "$0")
+
+declare -ra BASE_UNSQUASHFS_ARGS=(
   -no-xattrs
 )
 
-# Global flags
-SKIP_CHECKSUM=0
-PIPE_MODE=0
+#######################################
+# GLOBAL STATE
+#######################################
 
-# Unified logging: checks PIPE_MODE at call time
-# In pipe mode, all output goes to stderr
+declare -i SKIP_CHECKSUM=0
+declare -i PIPE_MODE=0
+declare INPUT_FILE=""
+declare OUTPUT_DIR=""
+
+#######################################
+# LOGGING
+#######################################
+
 log() {
   local level="$1"
   shift
@@ -26,34 +38,26 @@ log() {
   fi
 }
 
-list_archive() {
-  local input="$1"
-  local input_abs
-  input_abs="$(realpath "$input")"
+#######################################
+# DEPENDENCIES
+#######################################
 
-  # Accept either the archive or its checksum as input
-  local archive_abs
-  if [[ $input_abs == *.sha256 ]]; then
-    archive_abs="${input_abs%.sha256}"
-  else
-    archive_abs="$input_abs"
-  fi
-
-  if [[ ! -f $archive_abs ]]; then
-    log error "Archive file not found: '$archive_abs'"
+check_dependencies() {
+  if ! command -v unsquashfs &>/dev/null; then
+    log error "'unsquashfs' is not installed!"
     exit 1
   fi
-
-  log info "Listing contents of '$(basename "$archive_abs")'..."
-  unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}" -d "" -llc "$archive_abs"
 }
+
+#######################################
+# CHECKSUM OPERATIONS
+#######################################
 
 check_archive() {
   local input="$1"
   local input_abs
   input_abs="$(realpath "$input")"
 
-  # Derive archive and checksum paths regardless of which was passed
   local archive_abs checksum_abs
   if [[ $input_abs == *.sha256 ]]; then
     checksum_abs="$input_abs"
@@ -80,10 +84,8 @@ check_archive() {
 
   log info "Verifying '$target_basename' against '$checksum_file'..."
 
-  pushd "$target_dir" >/dev/null
-  sha256sum -c "$checksum_file"
-  local exit_code=$?
-  popd >/dev/null
+  local exit_code
+  exit_code=$(cd "$target_dir" && sha256sum -c "$checksum_file" >/dev/null 2>&1 && echo 0 || echo $?)
 
   if [[ $exit_code -ne 0 ]]; then
     log error "Checksum verification FAILED for '$target_basename'."
@@ -93,100 +95,128 @@ check_archive() {
   log info "Checksum verification passed for '$target_basename'."
 }
 
-parse_arguments() {
-  INPUT_FILE=""
-  OUTPUT_DIR=""
-  SKIP_CHECKSUM=0
-  PIPE_MODE=0
+#######################################
+# LISTING OPERATIONS
+#######################################
 
-  # Pre-scan for --pipe to set PIPE_MODE before any logging
-  for arg in "$@"; do
-    if [[ $arg == "--pipe" ]]; then
-      PIPE_MODE=1
-      break
-    fi
-  done
+list_archive() {
+  local input="$1"
+  local input_abs
+  input_abs="$(realpath "$input")"
 
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      -y | --yes)
-        SKIP_CHECKSUM=1
-        shift
-        ;;
-      --pipe)
-        shift
-        ;;
-      -o | --output)
-        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-          OUTPUT_DIR="$2"
-          shift
-        else
-          log error "Argument for $1 is missing or invalid."
-          exit 1
-        fi
-        shift
-        ;;
-      --check)
-        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-          check_archive "$2"
-          exit 0
-        else
-          log error "Argument for $1 is missing or invalid."
-          exit 1
-        fi
-        ;;
-      --list | --ls)
-        if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-          list_archive "$2"
-          exit 0
-        else
-          log error "Argument for $1 is missing or invalid."
-          exit 1
-        fi
-        ;;
-      -h | --help)
-        echo "SquashFS Extractor (unsquish) v${VERSION}"
-        echo ""
-        echo "Usage:"
-        echo " $SCRIPT_NAME <archive.sqsh> [-o output_dir] [-y] Extract archive"
-        echo " $SCRIPT_NAME --check <archive_file> Verify archive integrity"
-        echo " $SCRIPT_NAME --list <archive_file> List archive contents"
-        echo ""
-        echo "Options:"
-        echo " -o, --output <dir> Specify extraction directory (default: archive stem)"
-        echo " -y, --yes Skip checksum verification errors"
-        echo " --pipe Machine-readable mode: percentages to stdout, logs to stderr"
-        echo " -h, --help Show this help message"
-        exit 0
-        ;;
-      *)
-        if [[ -n $INPUT_FILE ]]; then
-          log error "Unexpected argument: '$1'. Only one archive file may be specified."
-          exit 1
-        fi
-        INPUT_FILE="$(realpath "$1")"
-        shift
-        ;;
-    esac
-  done
+  local archive_abs
+  if [[ $input_abs == *.sha256 ]]; then
+    archive_abs="${input_abs%.sha256}"
+  else
+    archive_abs="$input_abs"
+  fi
 
-  if [[ -z $INPUT_FILE ]]; then
-    log error "No archive file specified."
-    echo "Usage: $SCRIPT_NAME <archive.sqsh> [-o output_dir] [-y]"
-    echo " $SCRIPT_NAME --check <archive_file>"
-    echo " $SCRIPT_NAME --list <archive_file>"
+  if [[ ! -f $archive_abs ]]; then
+    log error "Archive file not found: '$archive_abs'"
     exit 1
   fi
 
-  if [[ ! -f $INPUT_FILE ]]; then
-    log error "Archive file not found: '$INPUT_FILE'"
-    exit 1
-  fi
+  log info "Listing contents of '$(basename "$archive_abs")'..."
+  unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}" -d "" -llc "$archive_abs"
 }
+
+#######################################
+# EXTRACTION OPERATIONS
+#######################################
+
+run_progress_pipeline() {
+  local -n _pipe_pid_ref=$1
+  shift
+  local fifo="$1"
+  shift
+  local status_file="$1"
+  shift
+  local target="$1"
+  shift
+  local cmd=("$@")
+
+  (
+    "${cmd[@]}" "${BASE_UNSQUASHFS_ARGS[@]}" -percentage -d "$target" "$INPUT_FILE" 2>&1
+    echo "$?" >"$status_file"
+  ) | tee >(grep -v -E '^[0-9]+$' >/dev/tty) | grep --line-buffered -E '^[0-9]+$' >"$fifo" &
+
+  _pipe_pid_ref=$!
+}
+
+run_with_dialog() {
+  local target="$1"
+  shift
+  local dialog_cmd=("$@")
+
+  local status_file fifo pipe_pid
+  status_file=$(mktemp)
+  fifo=$(mktemp -u)
+  mkfifo "$fifo"
+
+  run_progress_pipeline pipe_pid "$fifo" "$status_file" "$target" unsquashfs
+
+  "${dialog_cmd[@]}" <"$fifo"
+  local dialog_exit=$?
+
+  if [[ $dialog_exit -ne 0 ]]; then
+    kill -- -"$pipe_pid" 2>/dev/null || true
+    wait "$pipe_pid" 2>/dev/null || true
+    rm -f "$status_file" "$fifo"
+    return "$dialog_exit"
+  fi
+
+  wait "$pipe_pid"
+  local cmd_exit
+  cmd_exit=$(cat "$status_file")
+  rm -f "$status_file" "$fifo"
+
+  [[ $cmd_exit -ne 0 ]] && return "$cmd_exit"
+  return 0
+}
+
+extract_with_yad() {
+  local target="$1"
+  run_with_dialog "$target" \
+    yad --progress \
+    --title="SquashFS Extraction" \
+    --text="Extracting to ${target}..." \
+    --percentage=0 \
+    --auto-close \
+    --auto-kill \
+    --center \
+    --width=450 \
+    --borders=15 \
+    --bar-style=normal
+}
+
+extract_with_zenity() {
+  local target="$1"
+  run_with_dialog "$target" \
+    zenity --progress \
+    --title="SquashFS Extraction" \
+    --text="Extracting to ${target}..." \
+    --percentage=0 \
+    --auto-close \
+    --auto-kill
+}
+
+extract_cli() {
+  local target="$1"
+  unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}" -d "$target" "$INPUT_FILE"
+}
+
+extract_pipe() {
+  local target="$1"
+  unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}" -percentage -d "$target" "$INPUT_FILE" 2>&1 |
+    awk '/^[0-9]+$/{print; fflush(); next} {print > "/dev/stderr"}'
+}
+
+#######################################
+# OUTPUT DIRECTORY RESOLUTION
+#######################################
 
 determine_output_dir() {
   if [[ -z $OUTPUT_DIR ]]; then
-    # Strip known extensions to derive a sensible directory name
     local basename
     basename="$(basename "$INPUT_FILE")"
     basename="${basename%.sqsh}"
@@ -202,7 +232,7 @@ determine_output_dir() {
       log error "Output path exists and is not a directory: '$OUTPUT_DIR'."
       exit 1
     fi
-    if [[ -n "$(ls -A "$OUTPUT_DIR")" ]]; then
+    if [[ -n "$(ls -A "$OUTPUT_DIR" 2>/dev/null)" ]]; then
       log error "Output directory already exists and is not empty: '$OUTPUT_DIR'. Refusing to overwrite."
       exit 1
     fi
@@ -211,111 +241,109 @@ determine_output_dir() {
   log info "Output directory: '$OUTPUT_DIR'"
 }
 
-# Shared pipeline used by both GUI modes: runs unsquashfs, tees non-integer
-# output to the console, and feeds bare integers to the caller's progress dialog.
-_run_unsquashfs_gui() {
-  local fifo="$1"
-  local status_file="$2"
-  local target_dir="$3"
+#######################################
+# ARGUMENT PARSING
+#######################################
 
-  (
-    unsquashfs \
-      "${BASE_UNSQUASHFS_ARGS[@]}" \
-      -percentage \
-      -d "$target_dir" \
-      "$INPUT_FILE" 2>&1
-    echo "$?" >"$status_file"
-  ) | tee >(grep -v -E '^[0-9]+$' >/dev/tty) \
-    | grep --line-buffered -E '^[0-9]+$' >"$fifo" &
-
-  UNSQ_PIPE_PID=$!
-}
-
-_extract_with_dialog() {
-  local target_dir="$1"
-  shift
-  local dialog_cmd=("$@")
-
-  local unsq_status_file fifo
-  unsq_status_file=$(mktemp)
-  fifo=$(mktemp -u)
-  mkfifo "$fifo"
-
-  _run_unsquashfs_gui "$fifo" "$unsq_status_file" "$target_dir"
-
-  "${dialog_cmd[@]}" <"$fifo"
-  local dialog_exit=$?
-
-  if [[ $dialog_exit -ne 0 ]]; then
-    # User cancelled — kill the entire pipeline process group
-    kill -- -"$UNSQ_PIPE_PID" 2>/dev/null || true
-    wait "$UNSQ_PIPE_PID" 2>/dev/null || true
-    rm -f "$unsq_status_file" "$fifo"
-    return "$dialog_exit"
-  fi
-
-  wait "$UNSQ_PIPE_PID"
-  local unsq_exit
-  unsq_exit=$(cat "$unsq_status_file")
-  rm -f "$unsq_status_file" "$fifo"
-
-  [[ $unsq_exit -ne 0 ]] && return "$unsq_exit"
+pre_scan_pipe_mode() {
+  local arg
+  for arg in "$@"; do
+    if [[ $arg == "--pipe" ]]; then
+      PIPE_MODE=1
+      return 0
+    fi
+  done
   return 0
 }
 
-extract_with_yad() {
-  local target_dir="$1"
-  _extract_with_dialog "$target_dir" \
-    yad --progress \
-    --title="SquashFS Extraction" \
-    --text="Extracting to ${target_dir}..." \
-    --percentage=0 \
-    --auto-close \
-    --auto-kill \
-    --center \
-    --width=450 \
-    --borders=15 \
-    --bar-style=normal
+parse_arguments() {
+  pre_scan_pipe_mode "$@"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    -y | --yes)
+      SKIP_CHECKSUM=1
+      shift
+      ;;
+    --pipe)
+      shift
+      ;;
+    -o | --output)
+      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+        OUTPUT_DIR="$2"
+        shift 2
+      else
+        log error "Argument for $1 is missing or invalid."
+        exit 1
+      fi
+      ;;
+    --check)
+      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+        check_archive "$2"
+        exit $?
+      else
+        log error "Argument for $1 is missing or invalid."
+        exit 1
+      fi
+      ;;
+    --list | --ls)
+      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+        list_archive "$2"
+        exit 0
+      else
+        log error "Argument for $1 is missing or invalid."
+        exit 1
+      fi
+      ;;
+    -h | --help)
+      echo "SquashFS Extractor (unsquish) v${VERSION}"
+      echo ""
+      echo "Usage:"
+      echo "  $SCRIPT_NAME <archive.sqsh> [-o output_dir] [-y]  Extract archive"
+      echo "  $SCRIPT_NAME --check <archive_file>              Verify archive integrity"
+      echo "  $SCRIPT_NAME --list <archive_file>               List archive contents"
+      echo ""
+      echo "Options:"
+      echo "  -o, --output <dir>    Specify extraction directory (default: archive stem)"
+      echo "  -y, --yes             Skip checksum verification errors"
+      echo "  --pipe                Machine-readable mode: percentages to stdout, logs to stderr"
+      echo "  -h, --help            Show this help message"
+      exit 0
+      ;;
+    *)
+      if [[ -n $INPUT_FILE ]]; then
+        log error "Unexpected argument: '$1'. Only one archive file may be specified."
+        exit 1
+      fi
+      INPUT_FILE="$(realpath "$1")"
+      shift
+      ;;
+    esac
+  done
+
+  if [[ -z $INPUT_FILE ]]; then
+    log error "No archive file specified."
+    echo "Usage: $SCRIPT_NAME <archive.sqsh> [-o output_dir] [-y]"
+    echo "       $SCRIPT_NAME --check <archive_file>"
+    echo "       $SCRIPT_NAME --list <archive_file>"
+    exit 1
+  fi
+
+  if [[ ! -f $INPUT_FILE ]]; then
+    log error "Archive file not found: '$INPUT_FILE'"
+    exit 1
+  fi
 }
 
-extract_with_zenity() {
-  local target_dir="$1"
-  _extract_with_dialog "$target_dir" \
-    zenity --progress \
-    --title="SquashFS Extraction" \
-    --text="Extracting to ${target_dir}..." \
-    --percentage=0 \
-    --auto-close \
-    --auto-kill
-}
-
-extract_cli() {
-  local target_dir="$1"
-
-  unsquashfs \
-    "${BASE_UNSQUASHFS_ARGS[@]}" \
-    -d "$target_dir" \
-    "$INPUT_FILE"
-}
-
-# Pipe mode: emit bare integer percentages to stdout, all other output to stderr.
-# Designed for embedding in tools like Yazi that parse stdout for progress.
-extract_pipe() {
-  local target_dir="$1"
-
-  unsquashfs \
-    "${BASE_UNSQUASHFS_ARGS[@]}" \
-    -percentage \
-    -d "$target_dir" \
-    "$INPUT_FILE" 2>&1 | awk '/^[0-9]+$/{print; fflush(); next} {print > "/dev/stderr"}'
-}
+#######################################
+# MAIN
+#######################################
 
 main() {
   check_dependencies
   parse_arguments "$@"
   determine_output_dir
 
-  # Verify checksum before extracting; -y skips hard failure but still warns
   if ! check_archive "$INPUT_FILE"; then
     if [[ $SKIP_CHECKSUM -eq 1 ]]; then
       log info "Checksum verification failed but -y was passed; continuing anyway."
@@ -326,7 +354,6 @@ main() {
 
   local exit_code=0
 
-  # In pipe mode, skip GUI detection entirely — designed for TUI/embedded use.
   if [[ $PIPE_MODE -eq 1 ]]; then
     extract_pipe "$OUTPUT_DIR" || exit_code=$?
 
