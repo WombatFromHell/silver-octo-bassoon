@@ -27,6 +27,7 @@ if status is-interactive
     set -x MISE_SHIMS $HOME/.local/share/mise/shims
 
     set -x LLAMA_API_KEY llama-cpp
+    set -gx CREDENTIALS_DIRECTORY "$HOME/.local/share/credentials"
 
     set --erase fish_user_paths
     fish_add_path ~/.local/bin ~/.local/bin/scripts /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MISE_SHIMS

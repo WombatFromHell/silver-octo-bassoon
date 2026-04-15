@@ -85,6 +85,10 @@ if command -q bat
     alias ccat='cat -pP'
 end
 
+if functions -q run_with_cred
+    alias opencodes="run_with_cred NVIDIA_API_KEY -- $(command -s opencode)"
+end
+
 alias vi='$EDITOR'
 alias vim='$EDITOR'
 alias lg='lazygit'
