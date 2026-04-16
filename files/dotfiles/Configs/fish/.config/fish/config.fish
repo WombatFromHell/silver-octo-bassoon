@@ -12,7 +12,7 @@ if status is-interactive
     end
 
     set -g fish_greeting # disable initial fish greeting
-    set -gx SHELL (command -v fish) # ensure fish can run inside multiplexers
+    set -gx SHELL $(command -v fish) # ensure fish can run inside multiplexers
     bootstrap_fisher # make sure fisher is installed
 
     set -g ZELLIJ_ENABLED false
@@ -22,6 +22,13 @@ if status is-interactive
     set -x XDG_DATA_HOME $HOME/.local/share
     set -x XDG_CONFIG_HOME $HOME/.config
 
+    set -gx GOPATH $HOME/.local/share/go
+    set -gx GOMODCACHE $GOPATH/pkg/mod
+    set -gx GOBIN $GOPATH/bin
+    if ! test -d "$GOPATH"
+        mkdir -p "$GOMODPATH" "$GOBIN" "$GOMODCACHE"
+    end
+
     set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
     set -x CARGO_HOME $HOME/.cargo
     set -x MISE_SHIMS $HOME/.local/share/mise/shims
@@ -30,7 +37,7 @@ if status is-interactive
     set -gx CREDENTIALS_DIRECTORY "$HOME/.local/share/credentials"
 
     set --erase fish_user_paths
-    fish_add_path ~/.local/bin ~/.local/bin/scripts /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MISE_SHIMS
+    fish_add_path ~/.local/bin ~/.local/bin/scripts /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MISE_SHIMS $GOBIN
 
     set pure_shorten_prompt_current_directory_length 1
     set pure_truncate_prompt_current_directory_keeps 0
