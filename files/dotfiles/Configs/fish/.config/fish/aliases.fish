@@ -87,6 +87,7 @@ end
 
 if functions -q run_with_cred
     alias opencodes="run_with_cred NVIDIA_API_KEY -- $(command -s opencode)"
+    alias nvims="run_with_cred OPENCODE_API_KEY -- $(command -s nvim)"
 end
 
 alias vi='$EDITOR'

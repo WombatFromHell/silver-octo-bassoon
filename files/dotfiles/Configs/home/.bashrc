@@ -1,5 +1,3 @@
-# .bashrc
-
 # Source global definitions
 if [ -f /etc/bashrc ]; then
   . /etc/bashrc
@@ -41,7 +39,6 @@ function yz() {
 function update_wayland_env_vars() {
   if [[ -n "$XDG_RUNTIME_DIR" ]]; then
     # Find the most recent niri socket (sorted by modification time)
-    # NOTE: Use 'command ls' to bypass eza alias; unquoted glob for shell expansion
     local niri_socket
     niri_socket=$(command ls -t "$XDG_RUNTIME_DIR"/niri.*.sock 2>/dev/null | head -n1)
     if [[ -n "$niri_socket" ]]; then
@@ -60,6 +57,18 @@ function update_wayland_env_vars() {
       fi
     fi
   fi
+}
+
+function sudoe() {
+  local nix_path="$HOME/.nix-profile/bin"
+  local new_path="$nix_path"
+  IFS=':' read -ra path_dirs <<<"$PATH"
+  for dir in "${path_dirs[@]}"; do
+    if [[ ":$new_path:" != *":$dir:"* ]]; then
+      new_path="$new_path:$dir"
+    fi
+  done
+  sudo -E env PATH="$new_path" "$@"
 }
 
 # run only in interactive terminal mode
@@ -94,7 +103,6 @@ if [[ $- == *i* ]]; then
   # Starship MUST be initialized LAST to own the prompt
   if command -v starship &>/dev/null; then
     eval "$(starship init bash)"
-    # overriding any system/other tool prompt setup
     PROMPT_COMMAND="starship_precmd"
   fi
 
@@ -148,16 +156,4 @@ if [[ $- == *i* ]]; then
   alias nixopt='nix-store --gc && nix-store --optimize'
 
   alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
-
-  function sudoe() {
-    local nix_path="$HOME/.nix-profile/bin"
-    local new_path="$nix_path"
-    IFS=':' read -ra path_dirs <<<"$PATH"
-    for dir in "${path_dirs[@]}"; do
-      if [[ ":$new_path:" != *":$dir:"* ]]; then
-        new_path="$new_path:$dir"
-      fi
-    done
-    sudo -E env PATH="$new_path" "$@"
-  }
 fi
