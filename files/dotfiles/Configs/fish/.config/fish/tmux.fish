@@ -39,7 +39,7 @@ set -q EXIT_SHELL_ON_TMUX_EXIT; or set -g EXIT_SHELL_ON_TMUX_EXIT false
 
 # Check if a tmux session exists.
 function __tmux_session_exists -d "Check if session exists"
-    tmux has-session -t $argv[1] 2>/dev/null
+    tmux has-session -t "$argv[1]" 2>/dev/null
 end
 
 # Internal helper to list session names (used for completions).
@@ -53,21 +53,21 @@ function __tmux_attach -d "Attach or switch to a session"
     update_wayland_env_vars
 
     if set -q TMUX
-        tmux switch-client -t $argv[1]
+        tmux switch-client -t "$argv[1]"
     else
-        tmux attach-session -t $argv[1]
+        tmux attach-session -t "$argv[1]"
     end
 end
 
 # Ensure a session exists, creating it detached if missing.
 function __tmux_ensure_session -d "Create session if it does not exist"
-    __tmux_session_exists $argv[1]; or tmux new-session -d -s $argv[1]
+    __tmux_session_exists "$argv[1]"; or tmux new-session -d -s "$argv[1]"
 end
 
 # --- Public API ---
 
 function tma -d "Attach to session (create if missing)"
-    set -l target $argv[1]
+    set -l target "$argv[1]"
 
     # Handle '.' to use directory name with spaces as hyphens (lowercase)
     if test "$target" = .
@@ -81,8 +81,8 @@ function tma -d "Attach to session (create if missing)"
     # Default to configured main session if no argument
     test -z "$target"; and set target $TMUX_DEFAULT_SESSION
 
-    __tmux_ensure_session $target
-    __tmux_attach $target
+    __tmux_ensure_session "$target"
+    __tmux_attach "$target"
 end
 
 function tmr -d "Reattach/switch to existing session"
@@ -102,8 +102,8 @@ function tmr -d "Reattach/switch to existing session"
     # Default to current directory name if no argument
     test -z "$target"; and set target (basename $PWD)
 
-    if __tmux_session_exists $target
-        __tmux_attach $target
+    if __tmux_session_exists "$target"
+        __tmux_attach "$target"
     else
         echo "Session '$target' does not exist." >&2
         return 1
@@ -111,7 +111,7 @@ function tmr -d "Reattach/switch to existing session"
 end
 
 function tmk -d "Kill session"
-    set -l target $argv[1]
+    set -l target "$argv[1]"
 
     # Default to current session if inside tmux and no argument
     if test -z "$target"
@@ -123,8 +123,8 @@ function tmk -d "Kill session"
         end
     end
 
-    if __tmux_session_exists $target
-        tmux kill-session -t $target
+    if __tmux_session_exists "$target"
+        tmux kill-session -t "$target"
     else
         echo "No session named '$target'." >&2
         return 1
@@ -151,17 +151,17 @@ if status is-interactive; and not set -q TMUX
 
     if not $skip_autostart
         set -l target $TMUX_DEFAULT_SESSION
-        __tmux_ensure_session $target
+        __tmux_ensure_session "$target"
 
         # Only attach if the session is not currently attached elsewhere.
         # This prevents "stealing" the session from another window/term.
         set -l clients (tmux list-clients -F '#{session_name}' 2>/dev/null)
         if not string match -q -- $target $clients
-            __tmux_attach $target
+            __tmux_attach "$target"
 
             # Optional: Exit the shell if the tmux session was killed during the session
             if __tmux_is_truthy "$EXIT_SHELL_ON_TMUX_EXIT"
-                if not __tmux_session_exists $target 2>/dev/null
+                if not __tmux_session_exists "$target" 2>/dev/null
                     exit
                 end
             end
