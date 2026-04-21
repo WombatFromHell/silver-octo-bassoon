@@ -40,7 +40,7 @@ import textwrap
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterator, Protocol, runtime_checkable
+from typing import Any, Callable, Iterator, Protocol, cast, runtime_checkable
 
 
 # ============================================================================
@@ -109,6 +109,23 @@ class Config:
     )
     vrr_output_default: str = field(
         default_factory=lambda: os.environ.get("VRR_OUTPUT", "DP-1"),
+    )
+
+    # -- systemd-run wrapper ------------------------------------------------
+    enable_systemd_run: bool = field(
+        default_factory=lambda: _env_bool("ENABLE_SYSTEMD_RUN", True),
+    )
+    systemd_run_args: list[str] = field(
+        default_factory=lambda: (
+            os.environ.get("SYSTEMD_RUN_ARGS", "").split()
+            or [
+                "--user",
+                "--scope",
+                "--slice=app.slice",
+                "--property=CPUWeight=500",
+                "--property=IOWeight=500",
+            ]
+        )
     )
 
     # -- runtime paths -----------------------------------------------------
@@ -360,6 +377,7 @@ def validate_deps(config: Config, runner: Runner, log: logging.Logger) -> bool:
         (config.enable_inhibit, "dbus-send"),
         (config.enable_scx, "scxctl"),
         (config.enable_vrr, "jq"),
+        (config.enable_systemd_run, "systemd-run"),
     ]
     missing = [
         cmd for enabled, cmd in checks if enabled and runner.resolve(cmd) is None
@@ -647,6 +665,90 @@ class Feature(Protocol):
     def disable(self, output: str) -> FeatureResult: ...
 
 
+CommandWrapper = Callable[[list[str]], list[str]]
+WrapperFactory = Callable[["Config", "Runner", logging.Logger], CommandWrapper | None]
+
+
+def _steam_wrapper_factory(
+    config: Config, _runner: Runner, log: logging.Logger
+) -> CommandWrapper | None:
+    """Steam wrapper factory — returns None if disabled/not found."""
+    if not config.enable_steam:
+        return None
+
+    def wrap(argv: list[str]) -> list[str]:
+        path = Path(config.steam_script)
+        if not path.is_file() or not os.access(path, os.X_OK):
+            log.debug("Steam wrapper not available: %s", path)
+            return argv
+        return [str(path), *argv]
+
+    return wrap
+
+
+def _inhibit_wrapper_factory(
+    config: Config, runner: Runner, log: logging.Logger
+) -> CommandWrapper | None:
+    """ScreenInhibit factory — returns None if disabled."""
+    if not config.enable_inhibit:
+        return None
+    return ScreenInhibit(config, runner, log).inhibit_argv
+
+
+def _systemd_run_wrapper_factory(
+    config: Config, runner: Runner, log: logging.Logger
+) -> CommandWrapper | None:
+    """SystemdRun factory — returns None if disabled."""
+    if not config.enable_systemd_run:
+        return None
+    return SystemdRun(config, runner, log).wrap_argv
+
+
+WRAPPER_FACTORIES: list[WrapperFactory] = [
+    _steam_wrapper_factory,
+    _inhibit_wrapper_factory,
+    _systemd_run_wrapper_factory,
+]
+
+
+class WrapperChain:
+    """Composable chain of command wrappers.
+
+    Wrappers are applied in order: first added = outermost (runs first).
+    Example: [steam, inhibit, systemd_run] produces:
+        systemd-run -- systemd-inhibit -- steam-wrapper -- command
+    """
+
+    def __init__(self) -> None:
+        self._wrappers: list[CommandWrapper] = []
+
+    def add(self, wrapper: CommandWrapper | None) -> "WrapperChain":
+        """Add a wrapper to the chain. Returns self for chaining. Skips None."""
+        if wrapper is not None:
+            self._wrappers.append(wrapper)
+        return self
+
+    def add_factory(
+        self,
+        factory: WrapperFactory,
+        config: Config,
+        runner: Runner,
+        log: logging.Logger,
+    ) -> "WrapperChain":
+        """Invoke factory, add result if not None. Returns self for chaining."""
+        wrapper = factory(config, runner, log)
+        if wrapper is not None:
+            self._wrappers.append(wrapper)
+        return self
+
+    def apply(self, argv: list[str]) -> list[str]:
+        """Apply all wrappers in order, returning final command."""
+        result = list(argv)
+        for wrapper in self._wrappers:
+            result = wrapper(result)
+        return result
+
+
 class _BaseFeature:
     """Shared base for all feature implementations.
 
@@ -665,7 +767,7 @@ class _BaseFeature:
         self._run = runner
         self._log = log
 
-    def _gate(self, enabled: bool, name: str) -> FeatureResult | None:
+    def _gate(self, enabled: bool, _name: str) -> FeatureResult | None:
         """Return a skip result when *enabled* is ``False``, else ``None``."""
         if not enabled:
             return FeatureResult.skip("disabled by config")
@@ -813,10 +915,9 @@ class VRR(_BaseFeature):
         if current == desired:
             return FeatureResult.noop()
 
-        self._log.info("VRR: %s → %s on %s", current, desired, output)
         ok = self._set(output, desired)
         if ok:
-            return FeatureResult.did_change(f"{current} → {desired}")
+            return FeatureResult.did_change(f"{current} → {desired} on {output}")
         return FeatureResult.error("toggle failed")
 
     def enable(self, output: str) -> FeatureResult:
@@ -876,10 +977,10 @@ class PowerProfile(_BaseFeature):
             return FeatureResult.did_change(f"{current or 'none'} → {desired}")
         return FeatureResult.error(f"failed to set {desired}")
 
-    def enable(self, output: str) -> FeatureResult:
+    def enable(self, _output: str) -> FeatureResult:
         return self._ensure(self._cfg.profile_game)
 
-    def disable(self, output: str) -> FeatureResult:
+    def disable(self, _output: str) -> FeatureResult:
         return self._ensure(self._cfg.profile_desktop)
 
 
@@ -943,22 +1044,20 @@ class SCXScheduler(_BaseFeature):
                 and self._cfg.scx_mode in status
             ):
                 return FeatureResult.noop()
-            self._log.info("SCX: %s/%s", self._cfg.scx_scheduler, self._cfg.scx_mode)
             return self._apply()
         else:
             if not status or "no scx scheduler running" in status:
                 return FeatureResult.noop()
-            self._log.info("SCX: stopping")
             result = self._scxctl.run_or_none([self._CMD, "stop"])
             ok = result is not None and result.returncode == 0
             if ok:
                 return FeatureResult.did_change("stopped")
             return FeatureResult.error("stop failed")
 
-    def enable(self, output: str) -> FeatureResult:
+    def enable(self, _output: str) -> FeatureResult:
         return self._toggle("on")
 
-    def disable(self, output: str) -> FeatureResult:
+    def disable(self, _output: str) -> FeatureResult:
         return self._toggle("off")
 
 
@@ -999,10 +1098,10 @@ class AudioPriority(_BaseFeature):
                 pass
             return FeatureResult.did_change("cleared PULSE_LATENCY_MSEC")
 
-    def enable(self, output: str) -> FeatureResult:
+    def enable(self, _output: str) -> FeatureResult:
         return self._toggle("on")
 
-    def disable(self, output: str) -> FeatureResult:
+    def disable(self, _output: str) -> FeatureResult:
         return self._toggle("off")
 
 
@@ -1013,7 +1112,7 @@ class AudioPriority(_BaseFeature):
 
 
 def steam_wrapper_path(
-    config: Config, runner: Runner, log: logging.Logger
+    config: Config, _runner: Runner, log: logging.Logger
 ) -> Path | None:
     """Return the path to the Steam wrapper script, or ``None``."""
     if not config.enable_steam:
@@ -1023,6 +1122,42 @@ def steam_wrapper_path(
         return path
     log.debug("Steam wrapper script not found or not executable: %s", path)
     return None
+
+
+class SystemdRun:
+    """Wrapper that prepends systemd-run with resource limits.
+
+    Wraps a command argv with ``systemd-run [args] -- <command>`` to apply
+    cgroup resource limits (CPU, memory, I/O, nice) to the child process.
+    """
+
+    def __init__(self, config: Config, runner: Runner, log: logging.Logger) -> None:
+        self._cfg = config
+        self._run = runner
+        self._log = log
+
+    def wrap_argv(self, argv: list[str]) -> list[str]:
+        """Wrap *argv* with systemd-run if enabled.
+
+        Returns the original argv unchanged if ``enable_systemd_run`` is False
+        or if systemd-run is not available.
+        """
+        if not self._cfg.enable_systemd_run:
+            return argv
+
+        if not self._run.require("systemd-run", "systemd-run"):
+            return argv
+
+        if not self._cfg.systemd_run_args:
+            self._log.warning("ENABLE_SYSTEMD_RUN is set but SYSTEMD_RUN_ARGS is empty")
+            return argv
+
+        self._log.debug(
+            "systemd-run wrapping: %s",
+            " ".join(self._cfg.systemd_run_args + ["--", *argv]),
+        )
+
+        return ["systemd-run", *self._cfg.systemd_run_args, "--", *argv]
 
 
 # ============================================================================
@@ -1136,6 +1271,8 @@ class ScreenInhibit(_BaseFeature):
             return False
 
         cookie_str = result.stdout.strip()
+        if cookie_str.startswith("uint32 "):
+            cookie_str = cookie_str[7:]
         try:
             self._screensaver_cookie = int(cookie_str)
         except ValueError:
@@ -1168,11 +1305,15 @@ class ScreenInhibit(_BaseFeature):
             ]
         )
         if result.returncode != 0:
-            self._log.warning(
-                "ScreenSaver.UnInhibit failed (cookie=%d): %s",
-                self._screensaver_cookie,
-                result.stderr.strip(),
-            )
+            err = result.stderr.strip()
+            if "invalid cookie" in err.lower():
+                self._log.debug("ScreenSaver cookie invalid (already released)")
+            else:
+                self._log.warning(
+                    "ScreenSaver.UnInhibit failed (cookie=%d): %s",
+                    self._screensaver_cookie,
+                    err,
+                )
         else:
             self._log.debug(
                 "ScreenSaver cookie released: %d",
@@ -1218,11 +1359,11 @@ class ScreenInhibit(_BaseFeature):
 
             return FeatureResult(changed=True, detail="; ".join(results))
 
-    def enable(self, output: str) -> FeatureResult:
+    def enable(self, _output: str) -> FeatureResult:
         """Enable idle/sleep inhibit via DMS (niri) and/or DBus ScreenSaver."""
         return self._toggle("on")
 
-    def disable(self, output: str) -> FeatureResult:
+    def disable(self, _output: str) -> FeatureResult:
         """Disable idle/sleep inhibit via DMS (niri) and/or DBus ScreenSaver."""
         return self._toggle("off")
 
@@ -1282,13 +1423,16 @@ def collect_features(
     Returns a list of ``(name, feature)`` tuples.  The order matches
     the original bash script's ``features_enable``/``features_disable``.
     """
-    return [
-        ("tuned", PowerProfile(config, runner, log)),
-        ("vrr", VRR(config, runner, log)),
-        ("scx", SCXScheduler(config, runner, log)),
-        ("audio", AudioPriority(config, runner, log)),
-        ("inhibit", ScreenInhibit(config, runner, log)),
-    ]
+    return cast(
+        list[tuple[str, Feature]],
+        [
+            ("tuned", PowerProfile(config, runner, log)),
+            ("vrr", VRR(config, runner, log)),
+            ("scx", SCXScheduler(config, runner, log)),
+            ("audio", AudioPriority(config, runner, log)),
+            ("inhibit", ScreenInhibit(config, runner, log)),
+        ],
+    )
 
 
 def _apply_features(
@@ -1420,7 +1564,7 @@ def action_off(
     return 0
 
 
-def action_status(config: Config, runner: Runner, log: logging.Logger) -> int:
+def action_status(config: Config, _runner: Runner, _log: logging.Logger) -> int:
     """Print current state for diagnostics.  Returns 0."""
     state = StateManager(config)
     state.init()
@@ -1607,16 +1751,10 @@ def action_wrapper(
 
         cleanup = _build_cleanup_closure(features, output, log, state)
 
-        # Build the command to execute
-        exec_cmd: list[str] = list(command)
-
-        sw = steam_wrapper_path(config, runner, log)
-        if sw is not None:
-            exec_cmd = [str(sw)] + exec_cmd
-
-        # Wrap with systemd-inhibit if applicable
-        inhibit = ScreenInhibit(config, runner, log)
-        exec_cmd = inhibit.inhibit_argv(exec_cmd)
+        chain = WrapperChain()
+        for factory in WRAPPER_FACTORIES:
+            chain.add_factory(factory, config, runner, log)
+        exec_cmd = chain.apply(list(command))
 
         # Run the child process with signal-guarded cleanup.
         child_proc: list[subprocess.Popen | None] = [None]
@@ -1680,6 +1818,9 @@ USAGE = textwrap.dedent("""\
                         PULSE_LATENCY_MSEC=60
       Steam Env       Prepend steam-env-base.sh to wrapped commands
                         ENABLE_STEAM_ENV=true
+      Systemd Run     Wrap command with systemd-run for resource limits
+                        ENABLE_SYSTEMD_RUN=false
+                        SYSTEMD_RUN_ARGS="--user --scope --slice=app.slice ..."
 
     ENVIRONMENT:
       NIRI_OUTPUT_NAME   Override the target output (falls back to VRR_OUTPUT)
@@ -1698,6 +1839,7 @@ USAGE = textwrap.dedent("""\
       python3 gamemode.py -- steam                    # Wrapper: launch steam with gaming features
       python3 gamemode.py -- ~/Games/hero/main.sh     # Wrapper: run a game directly
       ENABLE_VRR=false python3 gamemode.py on         # Toggle on without VRR
+      ENABLE_SYSTEMD_RUN=true SYSTEMD_RUN_ARGS='--user --scope --slice=app.slice --property=CPUWeight=500' python3 gamemode.py -- steam
 """)
 
 
