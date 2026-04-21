@@ -47,6 +47,7 @@ Options:
   -i, --install [version]   Install Neovim version (e.g., stable, nightly). Default: stable
   -u, --uninstall [version] Remove a specific Neovim version. Default: stable
   -g, --global           Install symlink to /usr/local/bin (requires sudo)
+  -f, --force           Remove appimage files when uninstalling (use with -u)
   -h, --help            Show this help message
 
 Examples:
@@ -63,7 +64,7 @@ get_version() {
   local action="$1"
   local version="${2:-}"
 
-  if [[ -z "$version" || "$version" == --* ]]; then
+  if [[ -z "$version" || "$version" == -* ]]; then
     echo "stable"
     return 1
   fi
@@ -230,7 +231,12 @@ update_symlink() {
   local dir
   dir=$(dirname "$symlink_path")
 
-  [[ ! -d "$dir" ]] && $SUDO_CMD mkdir -p "$dir"
+  local run_cmd="$SUDO_CMD"
+  if [[ "$symlink_path" == "$HOME"* ]]; then
+    run_cmd=""
+  fi
+
+  [[ ! -d "$dir" ]] && $run_cmd mkdir -p "$dir"
 
   local current_target
   if [[ -L "$symlink_path" ]]; then
@@ -238,32 +244,98 @@ update_symlink() {
     [[ "$current_target" == "$file_path" ]] && return 1
   fi
 
-  [[ -e "$symlink_path" || -L "$symlink_path" ]] && $SUDO_CMD rm -f "$symlink_path"
+  [[ -e "$symlink_path" || -L "$symlink_path" ]] && $run_cmd rm -f "$symlink_path"
 
-  $SUDO_CMD ln -s "$file_path" "$symlink_path" || die "Failed to create symlink at $symlink_path."
+  $run_cmd ln -s "$file_path" "$symlink_path" || die "Failed to create symlink at $symlink_path."
   return 0
+}
+
+get_installed_version() {
+  local install_dir="$1"
+  shopt -s nullglob
+  local versions=("$install_dir"/nvim-*.appimage)
+  shopt -u nullglob
+  if [[ ${#versions[@]} -eq 0 ]]; then
+    return 1
+  fi
+  local latest="${versions[-1]}"
+  basename "$latest" | sed 's/nvim-\(.*\)\.appimage/\1/'
+}
+
+has_symlink() {
+  local symlink_path="$1"
+  [[ -L "$symlink_path" ]]
 }
 
 remove_version() {
   local install_dir="$1"
   local symlink_path="$2"
   local version="$3"
+  local force_delete="${4:-false}"
+  local check_stable="${5:-false}"
   local file_path
-  file_path=$(get_path "$install_dir" "$version" "appimage")
+  local resolved_version="$version"
 
-  [[ ! -f "$file_path" ]] && {
-    log_info "Version '$version' is not installed."
-    return 0
-  }
+  if [[ "$version" == "stable" ]]; then
+    check_stable=true
+    resolved_version=$(get_installed_version "$install_dir") || resolved_version=""
+  fi
 
-  log_info "Removing version '$version'..."
-  $RM_CMD -f "$file_path" "$(get_path "$install_dir" "$version" "meta")"
+  if [[ -n "$resolved_version" ]]; then
+    file_path=$(get_path "$install_dir" "$resolved_version" "appimage")
+  else
+    file_path=""
+  fi
 
-  if [[ -L "$symlink_path" ]] && [[ "$(readlink "$symlink_path")" == "$file_path" ]]; then
-    $SUDO_CMD rm -f "$symlink_path"
+  local removed_anything=false
+
+  if [[ -L "$symlink_path" ]]; then
+    local symlink_target
+    symlink_target=$(readlink "$symlink_path")
+    if [[ -z "$resolved_version" ]]; then
+      if [[ "$symlink_target" == *nvim-*.appimage ]]; then
+        rm -f "$symlink_path"
+        log_info "Removing orphan symlink at $symlink_path..."
+        removed_anything=true
+      fi
+    elif [[ "$symlink_target" == "$file_path" ]]; then
+      local run_cmd="$SUDO_CMD"
+      if [[ "$symlink_path" == "$HOME"* ]]; then
+        run_cmd=""
+      fi
+      log_info "Removing symlink at $symlink_path..."
+      $run_cmd rm -f "$symlink_path"
+      removed_anything=true
+    fi
+  fi
+
+  if [[ "$force_delete" == true ]] && [[ -f "$file_path" ]]; then
+    log_info "Removing version '$version'..."
+    $RM_CMD -f "$file_path" "$(get_path "$install_dir" "$resolved_version" "meta")"
+    removed_anything=true
+  fi
+
+  if [[ "$removed_anything" == false ]]; then
+    log_info "Nothing to remove for version '$version'."
   fi
 
   return 0
+}
+
+cleanup_old_versions() {
+  local install_dir="$1"
+  local current_version="$2"
+
+  shopt -s nullglob
+  local old_files=("$install_dir"/nvim-*.appimage)
+  shopt -u nullglob
+
+  for f in "${old_files[@]}"; do
+    if [[ "$f" != *"${current_version}"* ]]; then
+      log_info "Removing old version: $(basename "$f")"
+      $RM_CMD -f "$f" "${f%.appimage}.meta"
+    fi
+  done
 }
 
 # -----------------------------------------------------------------------------
@@ -287,6 +359,7 @@ main() {
   local action=""
   local version=""
   local global_install=false
+  local force_remove=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -294,9 +367,21 @@ main() {
       global_install=true
       shift
       ;;
-    -i | --install | -u | --uninstall)
-      action="${1#--}"
-      if version=$(get_version "$1" "$2"); then
+    -f | --force)
+      force_remove=true
+      shift
+      ;;
+    -i | --install)
+      action="install"
+      if version=$(get_version "$1" "${2:-}"); then
+        shift 2
+      else
+        shift
+      fi
+      ;;
+    -u | --uninstall)
+      action="uninstall"
+      if version=$(get_version "$1" "${2:-}"); then
         shift 2
       else
         shift
@@ -319,10 +404,13 @@ main() {
 
   ensure_install_dir "$INSTALL_DIR"
 
-  # Resolve 'stable' alias to actual version tag for file naming
   local resolved_version="$version"
-  if [[ "$version" == "stable" ]]; then
-    resolved_version=$(get_stable_version)
+
+  if [[ "$action" == "install" ]]; then
+    # Resolve 'stable' alias to actual version tag for file naming
+    if [[ "$version" == "stable" ]]; then
+      resolved_version=$(get_stable_version)
+    fi
   fi
 
   local file_path
@@ -333,10 +421,16 @@ main() {
     url=$(get_download_url "$resolved_version")
 
     # download_version returns 0 if updated, 1 if already up-to-date
+    local downloaded=false
     if download_version "$INSTALL_DIR" "$resolved_version" "$file_path" "$url"; then
       log_info "Update downloaded successfully."
+      downloaded=true
     else
-      log_info "No new update found."
+      if [[ -f "$file_path" ]]; then
+        log_info "Using existing version: $(basename "$file_path")"
+      else
+        log_info "No new update found."
+      fi
     fi
 
     # Ensure symlink is set (default: ~/.local/bin/nvim)
@@ -352,12 +446,36 @@ main() {
     fi
     update_symlink "$symlink_path" "$file_path"
 
+    # Cleanup old versions AFTER symlink is in place
+    if [[ "$downloaded" == true ]]; then
+      cleanup_old_versions "$INSTALL_DIR" "$resolved_version"
+    fi
+
     # Offer to add to PATH if needed
     if [[ "$symlink_path" == "$SYMLINK_PATH" ]] && [[ ":$PATH:" != *"$LOCAL_BIN"* ]]; then
       log_info "Add to PATH: export PATH=\"$LOCAL_BIN:\$PATH\""
     fi
   elif [[ "$action" == "uninstall" ]]; then
-    remove_version "$INSTALL_DIR" "$SYMLINK_PATH" "$resolved_version"
+    if [[ "$version" == "stable" ]]; then
+      resolved_version=$(get_installed_version "$INSTALL_DIR") || resolved_version=""
+    fi
+
+    local has_user_symlink=false
+    local has_global_symlink=false
+
+    [[ "$global_install" == true ]] && has_symlink "/usr/local/bin/nvim" && has_global_symlink=true
+    has_symlink "$SYMLINK_PATH" && has_user_symlink=true
+
+    if [[ -n "$resolved_version" || "$has_user_symlink" == true || "$has_global_symlink" == true ]]; then
+      if [[ "$global_install" == true && "$has_global_symlink" == true ]]; then
+        remove_version "$INSTALL_DIR" "/usr/local/bin/nvim" "$resolved_version" "$force_remove"
+      fi
+      if [[ "$has_user_symlink" == true ]]; then
+        remove_version "$INSTALL_DIR" "$SYMLINK_PATH" "$resolved_version" "$force_remove"
+      fi
+    else
+      log_info "No installed version found."
+    fi
   fi
 }
 

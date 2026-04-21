@@ -62,7 +62,10 @@ setup() {
 
 teardown() { rm -rf "$TEST_ROOT"; }
 
-log_contains() { grep -qF "$1" "$MOCK_LOG"; }
+log_contains() {
+  [[ -f "$MOCK_LOG" ]] || touch "$MOCK_LOG"
+  grep -qF "$1" "$MOCK_LOG"
+}
 
 @test "constants: default to user-local paths" {
   [[ "$LOCAL_BIN" == "$HOME/.local/bin" ]]
@@ -163,10 +166,67 @@ log_contains() { grep -qF "$1" "$MOCK_LOG"; }
   [[ "$status" -eq 1 ]]
 }
 
-@test "remove_version: removes files and meta" {
-  touch "$INSTALL_DIR/nvim-stable.appimage" "$INSTALL_DIR/nvim-stable.meta"
-  run remove_version "$INSTALL_DIR" "/tmp/nvim" "stable"
+@test "get_installed_version: finds local version" {
+  touch "$INSTALL_DIR/nvim-v0.12.0.appimage" "$INSTALL_DIR/nvim-v0.11.0.appimage"
+  run get_installed_version "$INSTALL_DIR"
+  [[ "$output" == "v0.12.0" ]]
+}
+
+@test "get_installed_version: returns empty when none" {
+  run get_installed_version "$INSTALL_DIR"
+  [[ "$status" -eq 1 ]]
+}
+
+@test "get_version: rejects flag-like arguments" {
+  run get_version "--install" "-f"
+  [[ "$output" == "stable" ]]
+  [[ "$status" -eq 1 ]]
+}
+
+@test "remove_version: removes symlink when found" {
+  touch "$INSTALL_DIR/nvim-v0.12.0.appimage"
+  ln -s "$INSTALL_DIR/nvim-v0.12.0.appimage" "$TEST_ROOT/bin/nvim"
+  run get_installed_version "$INSTALL_DIR"
+  local ver="$output"
+  run remove_version "$INSTALL_DIR" "$TEST_ROOT/bin/nvim" "$ver"
   [[ "$status" -eq 0 ]]
+  log_contains "sudo rm"
+}
+
+@test "remove_version: force deletes appimage" {
+  touch "$INSTALL_DIR/nvim-v0.12.0.appimage" "$INSTALL_DIR/nvim-v0.12.0.meta"
+  ln -s "$INSTALL_DIR/nvim-v0.12.0.appimage" "$TEST_ROOT/bin/nvim"
+  run remove_version "$INSTALL_DIR" "$TEST_ROOT/bin/nvim" "v0.12.0" "true"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"Removing version"* ]]
+}
+
+@test "remove_version: resolves stable from local" {
+  touch "$INSTALL_DIR/nvim-v0.12.0.appimage"
+  ln -s "$INSTALL_DIR/nvim-v0.12.0.appimage" "$TEST_ROOT/bin/nvim"
+  run remove_version "$INSTALL_DIR" "$TEST_ROOT/bin/nvim" "stable"
+  [[ "$status" -eq 0 ]]
+  log_contains "sudo rm"
+}
+
+@test "remove_version: nothing to remove" {
+  run remove_version "$INSTALL_DIR" "$TEST_ROOT/bin/nvim" "v0.99.0"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"Nothing to remove"* ]]
+}
+
+@test "cleanup_old_versions: removes old files" {
+  touch "$INSTALL_DIR/nvim-v0.12.0.appimage" "$INSTALL_DIR/nvim-v0.11.0.appimage"
+  run cleanup_old_versions "$INSTALL_DIR" "v0.12.0"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"Removing old version"* ]]
+}
+
+@test "cleanup_old_versions: keeps current version" {
+  touch "$INSTALL_DIR/nvim-v0.12.0.appimage"
+  run cleanup_old_versions "$INSTALL_DIR" "v0.12.0"
+  [[ "$status" -eq 0 ]]
+  [[ -f "$INSTALL_DIR/nvim-v0.12.0.appimage" ]]
 }
 
 @test "check_nightly_update: detects changes" {
