@@ -3,10 +3,12 @@
 bats_require_minimum_version 1.5.0
 SOURCE_FILE="${BATS_TEST_DIRNAME}/spawn-browser.sh"
 
+# ── Setup / Teardown ─────────────────────────────────────────────────────────
+
 setup() {
   export HOME="$BATS_TMPDIR/home"
+  rm -rf "$HOME"
   mkdir -p "$HOME/.local/share/applications"
-  mkdir -p "$HOME/.local/share/flatpak/exports/share/applications"
   mkdir -p "$HOME/.local/share/flatpak/exports/share/applications"
   mkdir -p "$HOME/.var/app/com.brave.Browser/data/applications"
   mkdir -p "$HOME/.var/app/com.firefox.Firefox/data/applications"
@@ -14,152 +16,245 @@ setup() {
   export PATH="$BATS_TEST_DIRNAME:$PATH"
 }
 
+teardown() {
+  unset DESKTOP_FILE 2>/dev/null || true
+  unset FLATPAK_APP_ID 2>/dev/null || true
+  unset BROWSER_NAME 2>/dev/null || true
+  unset LAUNCHER_TYPE 2>/dev/null || true
+  unset DESKTOP_PATH 2>/dev/null || true
+}
+
+# ── Test Helpers ──────────────────────────────────────────────────────────────
+
 run_script() {
   run bash -c "HOME='$HOME' PATH='$PATH' '${SOURCE_FILE}' $(printf '%q ' "$@")"
 }
 
-teardown() {
-  unset DESKTOP_FILE
-  unset FLATPAK_APP_ID
-  unset BROWSER_NAME
-  unset LAUNCHER_TYPE
-  unset DESKTOP_PATH
-}
-
-mock_xdg_settings() {
-  local desktop_file="$1"
-  printf '%s\n' "$desktop_file"
-}
-
 create_desktop_file() {
-  local path="$1"
-  local filename="$2"
-  local exec_line="$3"
+  local path="$1" filename="$2" exec_line="$3"
   mkdir -p "$(dirname "$path/$filename")"
   printf '[Desktop Entry]\nExec=%s\n' "$exec_line" >"$path/$filename"
 }
 
-@test "desktop file search: finds desktop file in user home first" {
+# ── Desktop File Lookup ──────────────────────────────────────────────────────
+
+@test "find_desktop_path: finds file in user home first" {
   create_desktop_file "$HOME/.local/share/applications" "com.brave.Browser.desktop" "flatpak run com.brave.Browser"
   create_desktop_file "$HOME/.local/share/flatpak/exports/share/applications" "com.brave.Browser.desktop" "flatpak run com.brave.Browser"
 
-  DESKTOP_FILE="com.brave.Browser.desktop"
-
-  run_script --helper-find-path <<<"$DESKTOP_FILE"
+  run_script --helper-find-path <<<"com.brave.Browser.desktop"
   [[ "$output" == "$HOME/.local/share/applications/com.brave.Browser.desktop" ]]
 }
 
-@test "desktop file search: native-first priority for standard desktop file" {
+@test "find_desktop_path: user-local takes priority over flatpak exports" {
   create_desktop_file "$HOME/.local/share/applications" "firefox.desktop" "firefox --new-window"
   create_desktop_file "$HOME/.local/share/flatpak/exports/share/applications" "firefox.desktop" "firefox --new-window"
 
-  DESKTOP_FILE="firefox.desktop"
-
-  run_script --helper-find-path <<<"$DESKTOP_FILE"
+  run_script --helper-find-path <<<"firefox.desktop"
   [[ "$output" == "$HOME/.local/share/applications/firefox.desktop" ]]
 }
 
-@test "desktop file search: returns empty when not found" {
-  DESKTOP_FILE="nonexistent.desktop"
-
-  run_script --helper-find-path <<<"$DESKTOP_FILE"
+@test "find_desktop_path: returns empty when not found" {
+  run_script --helper-find-path <<<"nonexistent.desktop"
   [[ "$output" == "" ]]
 }
 
-@test "extract exec line: returns raw exec line" {
+@test "find_desktop_path: finds file in flatpak exports when not in user home" {
+  create_desktop_file "$HOME/.local/share/flatpak/exports/share/applications" "com.brave.Browser.desktop" "flatpak run com.brave.Browser"
+
+  run_script --helper-find-path <<<"com.brave.Browser.desktop"
+  [[ "$output" == "$HOME/.local/share/flatpak/exports/share/applications/com.brave.Browser.desktop" ]]
+}
+
+# ── Flatpak Desktop File Validation ───────────────────────────────────────────────────
+
+@test "is_flatpak_desktop_file: valid all-lowercase" {
+  run_script --helper-is-flatpak-desktop "com.brave.browser.desktop"
+  [[ "$status" -eq 0 ]]
+}
+
+@test "is_flatpak_desktop_file: valid with uppercase segments" {
+  run_script --helper-is-flatpak-desktop "org.mozilla.firefox.desktop"
+  [[ "$status" -eq 0 ]]
+}
+
+@test "is_flatpak_desktop_file: valid with mixed case" {
+  run_script --helper-is-flatpak-desktop "com.brave.Browser.desktop"
+  [[ "$status" -eq 0 ]]
+}
+
+@test "is_flatpak_desktop_file: invalid - starts with number" {
+  run_script --helper-is-flatpak-desktop "123.example.desktop"
+  [[ "$status" -ne 0 ]]
+}
+
+@test "is_flatpak_desktop_file: invalid - missing dot" {
+  run_script --helper-is-flatpak-desktop "combravedesktop"
+  [[ "$status" -ne 0 ]]
+}
+
+# ── Text Processing ──────────────────────────────────────────────────────────
+
+@test "extract_exec_line: returns raw exec line" {
   create_desktop_file "$HOME/.local/share/applications" "brave.desktop" "chromium-flags.sh brave-browser %U"
 
   run_script --helper-extract-exec "$HOME/.local/share/applications/brave.desktop"
   [[ "$output" == "chromium-flags.sh brave-browser %U" ]]
 }
 
-@test "strip field codes: removes field codes" {
+@test "strip_field_codes: removes %u %U %f %F" {
   run_script --helper-strip-field-codes "firefox -new-window -P default %u %U"
   [[ "$output" == "firefox -new-window -P default" ]]
 }
 
-@test "strip field codes: removes at markers" {
+@test "strip_field_codes: removes @@ markers" {
   run_script --helper-strip-field-codes "google-chrome-stable @@u %U"
   [[ "$output" == "google-chrome-stable" ]]
 }
 
-@test "detect launcher type: flatpak run" {
-  run_script --helper-detect-launcher <<<"flatpak run com.brave.Browser"
-  [[ "$output" == "flatpak" ]]
+@test "strip_field_codes: removes combined field codes and @@ markers" {
+  run_script --helper-strip-field-codes "browser @@c %u %U %f %F"
+  [[ "$output" == "browser" ]]
 }
 
-@test "detect launcher type: distrobox run" {
-  run_script --helper-detect-launcher <<<"distrobox run bravebox -- brave-browser"
-  [[ "$output" == "distrobox" ]]
+@test "strip_field_codes: trims leading and trailing whitespace" {
+  run_script --helper-strip-field-codes "  firefox %u  "
+  [[ "$output" == "firefox" ]]
 }
 
-@test "detect launcher type: native" {
-  run_script --helper-detect-launcher <<<"/usr/bin/firefox --new-window"
-  [[ "$output" == "native" ]]
-}
-
-@test "detect launcher type: unknown" {
-  run_script --helper-detect-launcher <<<"unknown-command"
-  [[ "$output" == "" ]]
-}
-
-@test "substitute url: replaces %U and %u" {
+@test "apply_url: replaces %U and %u with url" {
   run_script --helper-substitute-url "chromium-flags.sh %U" "https://example.com"
   [[ "$output" == "chromium-flags.sh https://example.com" ]]
 }
 
-@test "substitute url: strips remaining field codes" {
+@test "apply_url: replaces %u when %U is absent" {
+  run_script --helper-substitute-url "firefox %u" "https://example.com"
+  [[ "$output" == "firefox https://example.com" ]]
+}
+
+@test "apply_url: replaces both %U and %u" {
+  run_script --helper-substitute-url "browser %U %u" "https://example.com"
+  [[ "$output" == "browser https://example.com https://example.com" ]]
+}
+
+@test "apply_url: strips remaining field codes after substitution" {
   run_script --helper-substitute-url "chromium-flags.sh %U %f %F" "https://example.com"
   [[ "$output" == "chromium-flags.sh https://example.com" ]]
 }
 
-@test "substitute url: handles empty url" {
+@test "apply_url: handles empty url by removing all field codes" {
   run_script --helper-substitute-url "chromium-flags.sh %U" ""
   [[ "$output" == "chromium-flags.sh" ]]
 }
 
-@test "error: no default browser" {
-  run_script --helper-find-desktop-file <<<""
-  [[ "$output" == *"could not determine"* ]]
+@test "apply_url: preserves command when no field codes present" {
+  run_script --helper-substitute-url "firefox --new-window" "https://example.com"
+  [[ "$output" == "firefox --new-window" ]]
 }
 
-@test "build spawn command: flatpak with --new-window" {
+# ── Launcher Detection ───────────────────────────────────────────────────────
+
+@test "detect_launcher_type: flatpak run" {
+  run_script --helper-detect-launcher <<<"flatpak run com.brave.Browser"
+  [[ "$output" == "flatpak" ]]
+}
+
+@test "detect_launcher_type: flatpak run with absolute path" {
+  run_script --helper-detect-launcher <<<"/usr/bin/flatpak run com.brave.Browser"
+  [[ "$output" == "flatpak" ]]
+}
+
+@test "detect_launcher_type: distrobox run" {
+  run_script --helper-detect-launcher <<<"distrobox run bravebox -- brave-browser"
+  [[ "$output" == "distrobox" ]]
+}
+
+@test "detect_launcher_type: native absolute path" {
+  run_script --helper-detect-launcher <<<"/usr/bin/firefox --new-window"
+  [[ "$output" == "native" ]]
+}
+
+@test "detect_launcher_type: native tilde path" {
+  run_script --helper-detect-launcher <<<"$HOME/bin/firefox --new-window"
+  [[ "$output" == "native" ]]
+}
+
+@test "detect_launcher_type: unknown returns empty" {
+  run_script --helper-detect-launcher <<<"unknown-command"
+  [[ "$output" == "" ]]
+}
+
+# ── Browser Capabilities (via build_spawn_cmd) ───────────────────────────────
+
+@test "build_spawn_cmd: flatpak with --new-window for known browser" {
   run_script --helper-build-cmd "flatpak" "com.brave.Browser" "brave"
   [[ "$output" == "flatpak run com.brave.Browser --new-window" ]]
 }
 
-@test "build spawn command: distrobox with --new-window" {
+@test "build_spawn_cmd: flatpak with --new-window for firefox" {
+  run_script --helper-build-cmd "flatpak" "org.mozilla.firefox" "firefox"
+  [[ "$output" == "flatpak run org.mozilla.firefox --new-window" ]]
+}
+
+@test "build_spawn_cmd: distrobox with --new-window for known browser" {
   run_script --helper-build-cmd "distrobox" "bravebox" "brave-browser"
   [[ "$output" == "distrobox run bravebox -- --new-window" ]]
 }
 
-@test "build spawn command: native with --new-window" {
+@test "build_spawn_cmd: native with --new-window for known browser" {
   run_script --helper-build-cmd "native" "/usr/bin/firefox" "firefox"
   [[ "$output" == "/usr/bin/firefox --new-window" ]]
 }
 
-@test "build spawn command: flatpak without --new-window for unknown browser" {
+@test "build_spawn_cmd: flatpak without --new-window for unknown browser" {
   run_script --helper-build-cmd "flatpak" "com.unknown.App" "unknown-browser"
   [[ "$output" == "flatpak run com.unknown.App" ]]
 }
 
-@test "build spawn command: distrobox without --new-window for unknown browser" {
+@test "build_spawn_cmd: distrobox without --new-window for unknown browser" {
   run_script --helper-build-cmd "distrobox" "testbox" "unknown-bin"
   [[ "$output" == "distrobox run testbox --" ]]
 }
 
-@test "build spawn command: native without --new-window for unknown browser" {
+@test "build_spawn_cmd: native without --new-window for unknown browser" {
   run_script --helper-build-cmd "native" "/usr/bin/unknown" "unknown"
   [[ "$output" == "/usr/bin/unknown" ]]
 }
 
-@test "integration: flatpak Desktop Entry to spawn command" {
+@test "build_spawn_cmd: all NEW_WINDOW_BROWSERS get --new-window (flatpak)" {
+  local browsers=(firefox librewolf waterfox google-chrome chromium brave microsoft-edge vivaldi floorp epiphany gnome-web)
+  for browser in "${browsers[@]}"; do
+    run_script --helper-build-cmd "flatpak" "com.test.App" "$browser"
+    [[ "$output" == "flatpak run com.test.App --new-window" ]]
+  done
+}
+
+# ── Helper Dispatch ──────────────────────────────────────────────────────────
+
+@test "helper dispatch: find-desktop-file rejects empty stdin" {
+  run_script --helper-find-desktop-file <<<""
+  [[ "$output" == *"could not determine"* ]]
+}
+
+@test "helper dispatch: find-desktop-file echoes non-empty stdin" {
+  run_script --helper-find-desktop-file <<<"firefox.desktop"
+  [[ "$output" == "firefox.desktop" ]]
+}
+
+@test "helper dispatch: unknown helper returns error" {
+  run bash -c "HOME='$HOME' PATH='$PATH' '${SOURCE_FILE}' --helper-nonexistent" 2>&1
+  [[ "$status" -ne 0 ]]
+}
+
+# ── Integration: Full Pipeline ───────────────────────────────────────────────
+
+@test "integration: flatpak desktop entry to spawn command" {
   create_desktop_file "$HOME/.local/share/applications" "com.firefox.Firefox.desktop" "flatpak run org.mozilla.firefox --new-window %u"
 
-  DESKTOP_FILE="com.firefox.Firefox.desktop"
-  run_script --helper-find-path <<<"$DESKTOP_FILE"
+  run_script --helper-find-path <<<"com.firefox.Firefox.desktop"
+  local path="$output"
 
-  run_script --helper-extract-exec "$output"
+  run_script --helper-extract-exec "$path"
   run_script --helper-detect-launcher <<<"$output"
   [[ "$output" == "flatpak" ]]
 
@@ -167,13 +262,13 @@ create_desktop_file() {
   [[ "$output" == "flatpak run org.mozilla.firefox --new-window" ]]
 }
 
-@test "integration: distrobox Desktop Entry to spawn command" {
+@test "integration: distrobox desktop entry to spawn command" {
   create_desktop_file "$HOME/.local/share/applications" "bravebox.desktop" "distrobox run bravebox -- brave-browser %U"
 
-  DESKTOP_FILE="bravebox.desktop"
-  run_script --helper-find-path <<<"$DESKTOP_FILE"
+  run_script --helper-find-path <<<"bravebox.desktop"
+  local path="$output"
 
-  run_script --helper-extract-exec "$output"
+  run_script --helper-extract-exec "$path"
   run_script --helper-detect-launcher <<<"$output"
   [[ "$output" == "distrobox" ]]
 
@@ -181,13 +276,13 @@ create_desktop_file() {
   [[ "$output" == "distrobox run bravebox -- --new-window" ]]
 }
 
-@test "integration: native Desktop Entry to spawn command" {
+@test "integration: native desktop entry to spawn command" {
   create_desktop_file "$HOME/.local/share/applications" "firefox.desktop" "firefox %u"
 
-  DESKTOP_FILE="firefox.desktop"
-  run_script --helper-find-path <<<"$DESKTOP_FILE"
+  run_script --helper-find-path <<<"firefox.desktop"
+  local path="$output"
 
-  run_script --helper-extract-exec "$output"
+  run_script --helper-extract-exec "$path"
   [[ "$output" == "firefox %u" ]]
 
   run_script --helper-strip-field-codes "$output"
@@ -200,4 +295,14 @@ create_desktop_file() {
 @test "integration: url substitution in wrapper scripts" {
   run_script --helper-substitute-url "chromium-flags.sh brave-browser %U" "https://example.com/page"
   [[ "$output" == "chromium-flags.sh brave-browser https://example.com/page" ]]
+}
+
+@test "integration: flatpak pipeline with field code stripping" {
+  create_desktop_file "$HOME/.local/share/applications" "com.brave.Browser.desktop" "flatpak run com.brave.Browser @@u %U"
+
+  run_script --helper-extract-exec "$HOME/.local/share/applications/com.brave.Browser.desktop"
+  local exec_line="$output"
+
+  run_script --helper-strip-field-codes "$exec_line"
+  [[ "$output" == "flatpak run com.brave.Browser" ]]
 }

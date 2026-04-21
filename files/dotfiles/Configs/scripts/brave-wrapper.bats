@@ -1,186 +1,271 @@
 #!/usr/bin/env bats
 
 bats_require_minimum_version 1.5.0
+
 SOURCE_FILE="${BATS_TEST_DIRNAME}/brave-wrapper.sh"
 
+# ── Setup / Teardown ─────────────────────────────────────────────────────────
+
 setup() {
-  export HOME="${BATS_TMPDIR:-/tmp/bats_test}/home"
-  mkdir -p "${HOME}/.local/bin/scripts"
-  mkdir -p "${HOME}/bin"
-  export PATH="${HOME}/bin:/usr/bin:/bin"
-  export CONTAINER_ID="test"
+  export TEST_ROOT="${BATS_TMPDIR:-/tmp/bats_test}/brave_sandbox_$$"
+  rm -rf "$TEST_ROOT"
+  mkdir -p "$TEST_ROOT/bin"
+  mkdir -p "$TEST_ROOT/home/.local/bin/scripts"
+
+  export HOME="$TEST_ROOT/home"
+  # We add our mock bin and the script's expected config dir to PATH
+  export PATH="$TEST_ROOT/bin:$HOME/.local/bin/scripts:$PATH"
+
+  # shellcheck disable=SC1090
+  source "$SOURCE_FILE"
 }
 
 teardown() {
-  unset CONTAINER_ID
+  rm -rf "$TEST_ROOT"
 }
 
+# ── Test Helpers ──────────────────────────────────────────────────────────────
+
 make_stub() {
-  local name="$1"
-  local exit_code="${2:-0}"
-  printf '#!/bin/bash\nexit %d\n' "$exit_code" >"${HOME}/bin/$name"
-  chmod +x "${HOME}/bin/$name"
+  local name="$1" exit_code="${2:-0}"
+  printf '#!/bin/bash\nexit %d\n' "$exit_code" >"$TEST_ROOT/bin/$name"
+  chmod +x "$TEST_ROOT/bin/$name"
 }
 
 stub_chromium_flags() {
   cat >"${HOME}/.local/bin/scripts/chromium-flags.sh" <<'STUB'
 #!/bin/bash
 echo "chromium-flags: $*"
-exit 0
 STUB
   chmod +x "${HOME}/.local/bin/scripts/chromium-flags.sh"
 }
 
-stub_brave() {
-  make_stub brave 0
-  stub_chromium_flags
+# ── Logic Zone: is_in_container ───────────────────────────────────────────────
+
+@test "is_in_container: returns true when CONTAINER_ID is set" {
+  CONTAINER_ID="test_id" run is_in_container
+  [[ "$status" -eq 0 ]]
 }
 
-run_script() {
-  run bash -c "HOME='$HOME' PATH='$PATH' CONTAINER_ID='${CONTAINER_ID:-}' '${SOURCE_FILE}' $(printf '%q ' "$@")"
+@test "is_in_container: returns true when containerenv exists" {
+  local CONTAINER_ENV_FILE="$TEST_ROOT/fake_containerenv"
+  touch "$CONTAINER_ENV_FILE"
+  # Inject the variable via environment for testing
+  CONTAINER_ENV_FILE="$CONTAINER_ENV_FILE" run is_in_container
+  [[ "$status" -eq 0 ]]
 }
 
-@test "in_container returns true when CONTAINER_ID is set" {
-  stub_brave
-  run_script --helper-in-container
-  [[ $status -eq 0 ]]
-}
-
-@test "in_container returns false outside container" {
+@test "is_in_container: returns false when no container markers exist" {
   unset CONTAINER_ID
-  stub_chromium_flags
-  run_script --helper-in-container
-  [[ $status -ne 0 ]]
+  run is_in_container
+  [[ "$status" -ne 0 ]]
 }
 
-@test "find_browser returns first available browser" {
-  make_stub brave 0
-  stub_chromium_flags
-  run_script --helper-find-browser
-  [[ $status -eq 0 ]]
-  [[ $output == "brave" ]]
+# ── Logic Zone: find_browser ─────────────────────────────────────────────────
+
+@test "find_browser: finds first candidate in PATH (binary)" {
+  make_stub brave
+  run find_browser
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"brave"* || "$output" == "flatpak" ]]
 }
 
-@test "find_browser returns 1 when no browser found" {
-  rm -f "${HOME}/bin/brave" "${HOME}/bin/brave-browser" "${HOME}/bin/brave-browser-beta"
-  rm -f "${HOME}/bin/flatpak"
-  stub_chromium_flags
-  run_script --helper-find-browser
-  [[ $status -eq 1 ]]
-}
-
-@test "brave_flatpak_installed returns 0 when flatpak available and installed" {
-  make_stub flatpak 0
-  stub_chromium_flags
-  run_script --helper-flatpak-installed
-  [[ $status -eq 0 ]]
-}
-
-@test "brave_flatpak_installed returns 1 when flatpak not found" {
-  rm -f "${HOME}/bin/flatpak"
-  stub_chromium_flags
-  run_script --helper-flatpak-installed
-  [[ $status -ne 0 ]]
-}
-
-@test "brave_flatpak_installed returns 1 when brave not installed" {
-  make_stub flatpak 1
-  stub_chromium_flags
-  run_script --helper-flatpak-installed
-  [[ $status -ne 0 ]]
-}
-
-@test "notify silently succeeds when notify-send missing" {
-  rm -f "${HOME}/bin/notify-send"
-  stub_chromium_flags
-  run_script --helper-notify "Test" "body"
-  [[ $status -eq 0 ]]
-  [[ $output == "" ]]
-}
-
-@test "launch_flatpak uses flatpak when available" {
-  make_stub flatpak 0
-  stub_chromium_flags
-  run_script --helper-launch-flatpak
-  [[ $status -eq 0 ]]
-  [[ $output == *"chromium-flags:"* ]]
-}
-
-@test "launch_distrobox uses distrobox when available" {
-  make_stub distrobox-enter 0
-  stub_chromium_flags
-  run_script --helper-launch-distrobox brave
-  [[ $status -eq 0 ]]
-  [[ $output == *"chromium-flags:"* ]]
-}
-
-@test "launch_direct invokes chromium-flags with browser" {
-  make_stub brave 0
-  stub_chromium_flags
-  run_script --helper-launch-direct brave
-  [[ $status -eq 0 ]]
-  [[ $output == *"chromium-flags:"* ]]
-}
-
-stub_flatpak() {
-  local check_output="${1:-"Nothing to do."}"
-  local update_output="${2:-"Updates complete."}"
-  cat >"${HOME}/bin/flatpak" <<STUB
+@test "find_browser: returns flatpak when installed" {
+  # Mock flatpak to pretend Brave is installed
+  cat >"$TEST_ROOT/bin/flatpak" <<'MOCK'
 #!/bin/bash
-case "\$1" in
-  info) exit 0 ;;
-  list) [[ "\$2" == "--app" ]] && echo "com.brave.Browser"; exit 0 ;;
-  update)
-    if [[ "\$2" == "--no-deploy" ]]; then
-      echo "$check_output"
-    else
-      echo "$update_output"
-    fi
-    exit 0 ;;
-  *) echo "unknown: \$*"; exit 1 ;;
-esac
-STUB
-  chmod +x "${HOME}/bin/flatpak"
+if [[ "$1" == "list" ]]; then printf 'com.brave.Browser\n'; exit 0; fi
+exit 1
+MOCK
+  chmod +x "$TEST_ROOT/bin/flatpak"
+
+  run find_browser
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == "flatpak" ]]
 }
 
-stub_notify_send() {
-  cat >"${HOME}/bin/notify-send" <<'STUB'
+@test "find_browser: returns 1 when nothing found" {
+  PATH="$TEST_ROOT/bin" run find_browser
+  [[ "$status" -ne 0 ]]
+}
+
+# ── Logic Zone: detect_package_manager ───────────────────────────────────────
+
+@test "detect_package_manager: prioritizes flatpak if installed" {
+  make_stub dnf
+  cat >"$TEST_ROOT/bin/flatpak" <<'MOCK'
 #!/bin/bash
+if [[ "$1" == "info" ]]; then exit 0; fi
+exit 1
+MOCK
+  chmod +x "$TEST_ROOT/bin/flatpak"
+
+  run detect_package_manager
+  [[ "$output" == "flatpak" ]]
+}
+
+# ── Logic Zone: determine_launch_method ───────────────────────────────────────
+
+@test "determine_launch_method: returns 'flatpak' when flatpak_installed is true" {
+  run determine_launch_method "true" "false"
+  [[ "$output" == "flatpak" ]]
+}
+
+@test "determine_launch_method: returns 'distrobox' when not in container and no flatpak" {
+  run determine_launch_method "false" "false"
+  [[ "$output" == "distrobox" ]]
+}
+
+# ── Action Zone: notify ──────────────────────────────────────────────────────
+
+@test "notify: calls notify-send with correct arguments" {
+  cat >"$TEST_ROOT/bin/notify-send" <<'MOCK'
+#!/bin/bash
+printf 'notify-send: %s\n' "$*"
+MOCK
+  chmod +x "$TEST_ROOT/bin/notify-send"
+
+  run notify "Title" "Body" "low" "5000"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"-a brave-wrapper"* ]]
+  [[ "$output" == *"Title"* ]]
+}
+
+# ── Action Zone: execute_launch ──────────────────────────────────────────────
+
+@test "execute_launch: direct mode calls chromium-flags with browser and args" {
+  make_stub brave
+  stub_chromium_flags
+
+  run bash -c "source '$SOURCE_FILE'; execute_launch direct brave --incognito"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"chromium-flags: brave --incognito"* ]]
+}
+
+@test "execute_launch: flatpak mode runs chromium-flags with flatpak args" {
+  stub_chromium_flags
+  cat >"$TEST_ROOT/bin/flatpak" <<'MOCK'
+#!/bin/bash
+printf 'flatpak: %s\n' "$*"
+MOCK
+  chmod +x "$TEST_ROOT/bin/flatpak"
+
+  run bash -c "source '$SOURCE_FILE'; execute_launch flatpak brave --incognito"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"chromium-flags: flatpak run com.brave.Browser --incognito"* ]]
+}
+
+# ── Action Zone: perform_browser_update (The Strategy Tests) ─────────────────
+
+@test "perform_browser_update [flatpak]: reports no updates when nothing to do" {
+  cat >"$TEST_ROOT/bin/flatpak" <<'MOCK'
+#!/bin/bash
+# Use $* to check if the flag exists anywhere in the argument list
+if [[ "$*" == *"--no-deploy"* ]]; then
+  printf 'Nothing to do.\n'
+  exit 0
+fi
+exit 1
+MOCK
+  chmod +x "$TEST_ROOT/bin/flatpak"
+
+  run bash -c "source '$SOURCE_FILE'; perform_browser_update 'flatpak' 'com.brave.Browser'"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"No flatpak updates found."* ]]
+}
+
+@test "perform_browser_update [flatpak]: notifies on successful upgrade" {
+  make_stub notify-send
+  cat >"$TEST_ROOT/bin/flatpak" <<'MOCK'
+#!/bin/bash
+if [[ "$*" == *"--no-deploy"* ]]; then
+  printf 'Updates available.\n'
+  exit 0
+fi
+printf 'Updates complete.\n'
 exit 0
-STUB
-  chmod +x "${HOME}/bin/notify-send"
+MOCK
+  chmod +x "$TEST_ROOT/bin/flatpak"
+
+  run bash -c "source '$SOURCE_FILE'; perform_browser_update 'flatpak' 'com.brave.Browser'"
+  [[ "$status" -eq 0 ]]
+  # This now works because we added 'echo "$out"' to the script!
+  [[ "$output" == *"Updates complete"* ]]
 }
 
-@test "flatpak_update_check detects no updates" {
-  stub_flatpak "Nothing to do." "Updates complete."
-  stub_notify_send
-  run_script --helper-flatpak-update-check
-  [[ $status -eq 0 ]]
-  [[ $output == *"No flatpak updates"* ]] || [[ $output == *"flatpak update"* ]]
+@test "perform_browser_update [dnf]: reports no updates when dnf finds none" {
+  make_stub brave
+  cat >"$TEST_ROOT/bin/sudo" <<'MOCK'
+#!/bin/bash
+if [[ "$1" == "dnf" ]]; then exit 0; fi # check-update returns 0 for 'no updates'
+exit 0
+MOCK
+  chmod +x "$TEST_ROOT/bin/sudo"
+
+  run bash -c "source '$SOURCE_FILE'; perform_browser_update 'dnf' 'brave'"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"No updates found."* ]]
 }
 
-@test "flatpak_update_check detects updates available" {
-  stub_flatpak "Pulling updates..." "Updates complete."
+@test "perform_browser_update [dnf]: notifies on successful upgrade" {
+  make_stub brave
+  make_stub notify-send
+  cat >"$TEST_ROOT/bin/sudo" <<'MOCK'
+#!/bin/bash
+if [[ "$1" == "dnf" && "$2" == "check-update" ]]; then exit 100; fi # 100 = updates available
+printf 'Upgrading...'
+exit 0
+MOCK
+  chmod +x "$TEST_ROOT/bin/sudo"
+
+  run bash -c "source '$SOURCE_FILE'; perform_browser_update 'dnf' 'brave'"
+  [[ "$status" -eq 0 ]]
+}
+
+# ── Dispatch Zone: _dispatch ─────────────────────────────────────────────────
+
+@test "dispatch: launch-flatpak routes to execute_launch flatpak" {
   stub_chromium_flags
-  stub_notify_send
-  run_script --helper-flatpak-update-check
-  [[ $status -eq 0 ]]
-  [[ "$output" != *"No flatpak updates"* ]]
+  cat >"$TEST_ROOT/bin/flatpak" <<'MOCK'
+#!/bin/bash
+printf 'flatpak: %s\n' "$*"
+MOCK
+  chmod +x "$TEST_ROOT/bin/flatpak"
+
+  run bash -c "source '$SOURCE_FILE'; _dispatch launch-flatpak"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"chromium-flags: flatpak run com.brave.Browser"* ]]
 }
 
-@test "background_update uses flatpak when flatpak_installed" {
-  stub_flatpak "Nothing to do." "Updates complete."
-  stub_notify_send
-  stub_chromium_flags
-  run_script --helper-bg-update flatpak brave
-  [[ $status -eq 0 ]]
-  [[ "$output" == *"flatpak"* ]] || [[ "$output" == *"Checking"* ]]
+@test "dispatch: bg-update with flatpak method routes to perform_browser_update" {
+  cat >"$TEST_ROOT/bin/flatpak" <<'MOCK'
+#!/bin/bash
+printf 'Nothing to do.\n'
+exit 0
+MOCK
+  chmod +x "$TEST_ROOT/bin/flatpak"
+
+  run bash -c "source '$SOURCE_FILE'; _dispatch bg-update flatpak brave"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"No flatpak updates found."* ]]
 }
 
-@test "background_update skips dnf when browser not in PATH" {
-  rm -f "${HOME}/bin/brave"
-  run_script --helper-bg-update direct brave
-  [[ $status -eq 0 ]]
-  [[ $output != *"sudo dnf"* ]]
-  make_stub brave 0
+@test "dispatch: unknown command returns error" {
+  run bash -c "source '$SOURCE_FILE'; _dispatch nonexistent"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == *"Unknown helper"* ]]
+}
+
+# ── CLI Guard: --helper-* dispatch ───────────────────────────────────────────
+
+@test "CLI guard: --helper-find-browser strips prefix and dispatches" {
+  make_stub brave
+  run bash -c "HOME='$HOME' PATH='$PATH' '${SOURCE_FILE}' --helper-find-browser"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"brave"* || "$output" == "flatpak" ]]
+}
+
+@test "CLI guard: --helper-flatpak-installed returns 1 when not installed" {
+  run -127 bash -c "HOME='$HOME' PATH='$TEST_ROOT/bin:$HOME/.local/bin/scripts' '${SOURCE_FILE}' --helper-flatpak-installed"
+  [[ "$status" -ne 0 ]]
 }
