@@ -32,12 +32,13 @@ if status is-interactive
     set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
     set -x CARGO_HOME $HOME/.cargo
     set -x MISE_SHIMS $HOME/.local/share/mise/shims
+    set -x LMS_BIN $HOME/.lmstudio/bin
 
     set -x LLAMA_API_KEY llama-cpp
     set -gx CREDENTIALS_DIRECTORY "$HOME/.local/share/credentials"
 
     set --erase fish_user_paths
-    fish_add_path ~/.local/bin ~/.local/bin/scripts /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MISE_SHIMS $GOBIN
+    fish_add_path ~/.local/bin ~/.local/bin/scripts /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MISE_SHIMS $GOBIN $LMS_BIN
 
     set pure_shorten_prompt_current_directory_length 1
     set pure_truncate_prompt_current_directory_keeps 0
