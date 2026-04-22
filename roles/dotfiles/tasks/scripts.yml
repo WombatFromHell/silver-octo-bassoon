@@ -7,7 +7,7 @@
         path: "{{ home_realpath }}/.local/bin"
         state: directory
         mode: "0755"
-      when: script_links is defined and script_links | length > 0
+      when: dotfiles_script_links_normalized is defined and dotfiles_script_links_normalized | length > 0
 
     - name: Link scripts directory
       ansible.builtin.file:
@@ -36,37 +36,58 @@
           }}
       when: script_links is defined
 
+    - name: Normalize dest to list
+      ansible.builtin.set_fact:
+        dotfiles_script_links_normalized: >-
+          {{
+            dotfiles_script_links_normalized | default([]) +
+            [{ 'src': item.src, 'dest': ([item.dest] if item.dest is string else item.dest) }]
+          }}
+      loop: "{{ dotfiles_script_links_filtered | default([]) }}"
+      loop_control:
+        loop_var: item
+
     - name: Check script source files exist
       ansible.builtin.stat:
         path: "{{ scripts_dir }}/{{ item.src }}"
       register: dotfiles_script_src_stat
-      loop: "{{ dotfiles_script_links_filtered | default(script_links, true) }}"
+      loop: "{{ dotfiles_script_links_normalized | default([]) }}"
       loop_control:
         loop_var: item
         label: "Checking {{ item.src }}"
       when:
-        - (script_links is defined or dotfiles_script_links_filtered is defined)
-        - (dotfiles_script_links_filtered | default(script_links, true)) | length > 0
+        - (script_links is defined or dotfiles_script_links_normalized is defined)
+        - (dotfiles_script_links_normalized | default([])) | length > 0
 
-    - name: Link global scripts
-      ansible.builtin.file:
-        path: "{{ script_item.dest }}"
-        src: "{{ scripts_dir }}/{{ script_item.src }}"
-        state: link
-      loop: "{{ dotfiles_script_links_filtered | default(script_links, true) }}"
+    - name: Build script existence lookup
+      ansible.builtin.set_fact:
+        dotfiles_script_exists: >-
+          {{
+            dotfiles_script_exists | default({}) |
+            combine({item.item.src: item.stat.exists})
+          }}
+      loop: "{{ dotfiles_script_src_stat.results }}"
       loop_control:
-        loop_var: script_item
-        label: "Linking {{ script_item.src }}"
-      when:
-        - (script_links is defined or dotfiles_script_links_filtered is defined)
-        - (dotfiles_script_links_filtered | default(script_links, true)) | length > 0
-        - script_item.src is defined
-        - dotfiles_script_src_stat.results | selectattr('item.src', 'equalto', script_item.src) | map(attribute='stat.exists') | list | first | default(false)
-      become: true
+        label: "{{ item.item.src }}"
+      when: dotfiles_script_src_stat is defined and dotfiles_script_src_stat.results | length > 0
+
+    - name: Link scripts
+      ansible.builtin.file:
+        path: "{{ item.1 }}"
+        src: "{{ scripts_dir }}/{{ item.0.src }}"
+        state: link
+      with_subelements:
+        - "{{ dotfiles_script_links_normalized | default([]) }}"
+        - dest
+      loop_control:
+        label: "Linking {{ item.1 }}"
+      when: dotfiles_script_exists[item.0.src] | default(false)
+      become: "{{ item.1 is match('/(usr|etc|srv)/') }}"
 
     - name: Remove stale niri-watcher link when niri not installed
       when: dotfiles_niri_in_path.rc != 0
       become: true
+      changed_when: "{{ not (ansible_check_mode | bool) }}"
       ansible.builtin.file:
         path: /usr/local/bin/niri-watcher
         state: absent
@@ -109,7 +130,7 @@
               - name: "steamos-session-select"
                 mode: "0755"
 
-    # --- Phase 1: Gather Facts ---
+    # --- Gather Facts ---
 
     - name: Check for presence of required scripts
       ansible.builtin.stat:
@@ -128,33 +149,33 @@
       loop_control:
         label: "{{ item.dest }}"
 
-    # --- Phase 2: Consolidate Facts into Structured Dictionaries ---
+    # --- Consolidate Facts into Structured Dictionaries ---
 
     - name: Aggregate script statuses into a single dictionary
       ansible.builtin.set_fact:
-        # Creates: {'bazzite-steam.sh': { 'exists': true, 'mode': '0755', ... }, ...}
         dotfiles_script_status: >-
           {{
-            dotfiles_script_status | default({}) |
-            combine({item.item.name: item.stat})
+            dict(
+              dotfiles_script_stat_result.results
+              | map(attribute='item.name')
+              | zip(dotfiles_script_stat_result.results | map(attribute='stat'))
+              | list
+            )
           }}
-      loop: "{{ dotfiles_script_stat_result.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
 
     - name: Aggregate desktop file existence into a single dictionary
       ansible.builtin.set_fact:
-        # Creates: {'/path/to/steam.desktop': true, '/path/to/steam-gamescope.desktop': false}
         dotfiles_desktop_files_exist: >-
           {{
-            dotfiles_desktop_files_exist | default({}) |
-            combine({item.item.dest: item.stat.exists})
+            dict(
+              dotfiles_desktop_file_stat_result.results
+              | map(attribute='item.dest')
+              | zip(dotfiles_desktop_file_stat_result.results | map(attribute='stat.exists'))
+              | list
+            )
           }}
-      loop: "{{ dotfiles_desktop_file_stat_result.results }}"
-      loop_control:
-        label: "{{ item.item.dest }}"
 
-    # --- Phase 3: Take Action Based on Facts ---
+    # --- Take Action Based on Facts ---
 
     - name: Ensure required scripts have correct permissions
       ansible.builtin.file:
@@ -176,30 +197,22 @@
       vars:
         required_scripts_exist: >-
           {{
-            item.requires_scripts
-            | map(attribute='name')
-            | map('extract', dotfiles_script_status or {})
-            | select
-            | selectattr('exists', 'defined')
-            | selectattr('exists', 'true')
-            | list
-            | length == item.requires_scripts | length
+            item.requires_scripts | map(attribute='name') |
+            map('extract', dotfiles_script_status | default({})) |
+            selectattr('exists', 'true') | list |
+            length == item.requires_scripts | length
           }}
         required_scripts_correct_mode: >-
           {{
-            item.requires_scripts
-            | map(attribute='name')
-            | map('extract', dotfiles_script_status or {})
-            | select
-            | selectattr('mode', 'defined')
-            | selectattr('mode', 'equalto', '0755')
-            | list
-            | length == item.requires_scripts | length
+            item.requires_scripts | map(attribute='name') |
+            map('extract', dotfiles_script_status | default({})) |
+            selectattr('mode', 'equalto', '0755') | list |
+            length == item.requires_scripts | length
           }}
       when:
-        - not dotfiles_desktop_files_exist.get(item.dest, false) # Desktop file doesn't exist yet
-        - required_scripts_exist # All required scripts exist
-        - required_scripts_correct_mode # All required scripts have correct mode
+        - not dotfiles_desktop_files_exist.get(item.dest, false)
+        - required_scripts_exist
+        - required_scripts_correct_mode
       notify: update_desktop_database
       check_mode: false
 

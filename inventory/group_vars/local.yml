@@ -47,8 +47,10 @@ script_links:
     dest: "/usr/local/bin/khalreminder"
   - src: "niri_watcher.py"
     dest: "/usr/local/bin/niri-watcher"
-  - src: "gamemode.py"
-    dest: "/usr/local/bin/gamemode"
+  - src: "gamemode.pyz"
+    dest:
+      - "/usr/local/bin/gamemode"
+      - "{{ home_dir }}/.local/bin/gamemode"
 
 # Program Handlers (run after dotfiles are processed)
 program_handlers:
