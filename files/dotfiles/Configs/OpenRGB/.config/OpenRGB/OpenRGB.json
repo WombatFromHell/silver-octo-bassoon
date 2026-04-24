@@ -2154,8 +2154,8 @@
         "RunZoneChecks": false,
         "autoload_profiles": {
             "exit_profile": {
-                "enabled": false,
-                "name": ""
+                "enabled": true,
+                "name": "lightsout"
             },
             "resume_profile": {
                 "enabled": false,

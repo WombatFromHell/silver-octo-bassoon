@@ -4,7 +4,7 @@ Description=OpenRGB Profile Service (lightsout)
 [Service]
 Type=simple
 ExecStart=%h/.local/bin/scripts/openrgb-load.sh
-ExecStop=/usr/bin/pkill -TERM -f "openrgb" || true
+ExecStop=/usr/bin/pkill -f openrgb
 TimeoutStopSec=10
 
 [Install]
