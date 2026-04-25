@@ -15,6 +15,10 @@ if status is-interactive
     set -gx SHELL $(command -v fish) # ensure fish can run inside multiplexers
     bootstrap_fisher # make sure fisher is installed
 
+    set_editor
+    setup_podman_sock
+    update_wayland_env_vars
+
     set -g ZELLIJ_ENABLED false
     set -g TMUX_ENABLED true
 
@@ -49,10 +53,6 @@ if status is-interactive
     set -g --append __done_exclude '^(nvim|nano|bat|cat|less|lazygit|lg)'
     set -g --append __done_exclude '^sudo (nvim|nano|bat|cat|less|qwen|gemini)'
     set -g --append __done_exclude '^sedit'
-
-    set_editor
-    setup_podman_sock
-    update_wayland_env_vars
 
     # functions and evals that can be loaded after everything else
     set SOURCES_FISH_SRC "$HOME/.config/fish/sources.fish"

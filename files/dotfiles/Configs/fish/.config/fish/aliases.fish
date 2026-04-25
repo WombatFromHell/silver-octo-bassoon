@@ -1,15 +1,17 @@
 if command -q nix
     set _host (hostname)
     set FLAKE_ROOT "$HOME/.config/flakeroot"
+    set -x NH_FLAKE "$FLAKE_ROOT"
     alias nixconf='$EDITOR $FLAKE_ROOT'
     #
     alias nhmb='nh home switch -n $FLAKE_ROOT'
     alias nhms='nh home switch $FLAKE_ROOT'
+    alias nhmu='nh home switch -u $FLAKE_ROOT'
     alias nhcu='nh clean user'
     alias nhca='nh clean all'
     #
     alias hmnix='nix run home-manager/master -- init'
-    alias hmb='home-manager build --flake $FLAKE_ROOT'
+    alias hmb='home-manager build --flake $FLAKE_ROOT --dry-run'
     alias hms='home-manager switch --flake $FLAKE_ROOT'
     alias hmls='home-manager generations'
     alias hmrm='home-manager remove-generations'
@@ -83,11 +85,7 @@ end
 if command -q bat
     alias cat='bat'
     alias ccat='cat -pP'
-end
-
-if functions -q run_with_cred
-    alias opencodes="run_with_cred NVIDIA_API_KEY -- $(command -s opencode)"
-    alias nvims="run_with_cred OPENCODE_API_KEY -- $(command -s nvim)"
+    alias pcat='cat -P'
 end
 
 alias vi='$EDITOR'
@@ -101,3 +99,4 @@ alias mkdir='mkdir -pv'
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
 alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
 alias kclear="printf '\033[2J\033[3J\033[1;1H'"
+alias reload='source $HOME/.config/fish/config.fish'

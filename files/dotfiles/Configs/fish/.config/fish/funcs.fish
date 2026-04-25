@@ -110,7 +110,7 @@ end
 
 function setup_podman_sock
     if test -r "$XDG_RUNTIME_DIR"/podman/podman.sock
-        set -g DOCKER_HOST unix:///run/user/$(id -u)/podman/podman.sock
+        set -gx DOCKER_HOST unix:///run/user/$(id -u)/podman/podman.sock
     end
 end
 
@@ -143,7 +143,7 @@ function lactd_uv
 end
 function start-llm
     lactd_reset
-    /var/mnt/data/vllm/llm.sh start $argv
+    /var/mnt/data/vllm/llm.sh start qwen.sh
 end
 function stop-llm
     /var/mnt/data/vllm/llm.sh stop
@@ -226,10 +226,10 @@ function nix_collect_garbage
         # strip '--sudo' from argv
         set args (string match -v '--sudo' $argv)
         command sudo -i nix-collect-garbage $argv
-        command sudo -i nix-store --optimize
+        command sudo -i nix store optimise
     else
         command nix-collect-garbage $argv
-        command nix-store --optimize
+        command nix store optimise
     end
 end
 
