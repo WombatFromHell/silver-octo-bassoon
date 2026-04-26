@@ -145,6 +145,11 @@ function start-llm
     lactd_reset
     /var/mnt/data/vllm/llm.sh start qwen.sh
 end
+function start-with-llm
+    start-llm
+    eval $argv
+    stop-llm
+end
 function stop-llm
     /var/mnt/data/vllm/llm.sh stop
     lactd_uv
