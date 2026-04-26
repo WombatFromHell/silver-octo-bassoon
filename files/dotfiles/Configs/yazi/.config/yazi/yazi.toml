@@ -2,7 +2,7 @@
 show_hidden = true
 
 [opener]
-play = [{ run = "xdg-open %s", orphan = true, for = "unix" }]
+play = [{ run = "gio open %s", orphan = true, for = "linux" }]
 
 [open]
-prepend_rules = [{ mime = "video/*", use = ["play"] }]
+rules = [{ mime = "video/*", use = "play" }]
