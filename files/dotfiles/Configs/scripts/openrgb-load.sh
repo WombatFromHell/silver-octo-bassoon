@@ -17,10 +17,14 @@ find_openrgb() {
   fi
 }
 
-OPENRGB="$(find_openrgb)" || { echo "openrgb-load: OpenRGB not found, skipping" >&2; exit 0; }
+OPENRGB="$(find_openrgb)" || {
+  echo "openrgb-load: OpenRGB not found, skipping" >&2
+  exit 0
+}
 
 nohup bash -c "
   $OPENRGB --noautoconnect -p lightsout
-" </dev/null >"$LOG_FILE" 2>&1 & disown
+" </dev/null >"$LOG_FILE" 2>&1 &
+disown
 
 exit 0

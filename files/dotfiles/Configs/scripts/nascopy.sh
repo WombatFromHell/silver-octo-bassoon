@@ -44,12 +44,37 @@ Notes:
 EOF
 }
 
-# Check if .gitignore exists in the current directory
+# Check if .gitignore exists in a source directory
+# Usage: check_gitignore <source_directory>
 check_gitignore() {
-  if [ -f ".gitignore" ]; then
-    EXCLUDE_FILE=".gitignore"
-    echo "Found .gitignore - will use it for exclusions"
+  local source_dir="$1"
+
+  # Skip remote destinations
+  case "$source_dir" in
+  *:* | */*)
+    # Check if it looks like a remote destination (contains :)
+    if [[ "$source_dir" == *:* ]]; then
+      return 1
+    fi
+    ;;
+  esac
+
+  # Resolve to absolute directory path (strip trailing slash)
+  source_dir="${source_dir%/}"
+
+  local gitignore_path="${source_dir}/.gitignore"
+
+  if [ -f "$gitignore_path" ]; then
+    # Get absolute path
+    if command -v realpath &>/dev/null; then
+      EXCLUDE_FILE="$(realpath "$gitignore_path")"
+    else
+      EXCLUDE_FILE="$(cd "$source_dir" && pwd)/.gitignore"
+    fi
+    echo "Found .gitignore in '${source_dir}' - will use it for exclusions"
+    return 0
   fi
+  return 1
 }
 
 # Parse command line arguments
@@ -151,17 +176,67 @@ extract_paths() {
 # Build and execute rsync command
 build_and_execute_rsync() {
   local RSYNC_CMD=("rsync" "${RSYNC_FLAGS[@]}")
+  local has_exclude_from=false
 
-  # Add exclude file if it exists
-  if [ -n "$EXCLUDE_FILE" ]; then
-    RSYNC_CMD+=("--exclude-from=$EXCLUDE_FILE")
+  # Resolve relative --exclude-from paths to absolute, skip if file doesn't exist
+  # First, find the source directory for relative path resolution
+  local resolve_dir=""
+  if [ ${#SOURCES[@]} -gt 0 ]; then
+    resolve_dir="${SOURCES[0]}"
+    resolve_dir="${resolve_dir%/}"
+    # Skip remote destinations
+    if [[ "$resolve_dir" == *:* ]]; then
+      resolve_dir=""
+    fi
+  fi
+
+  # Process flags: resolve relative --exclude-from paths to absolute
+  local processed_flags=()
+  local i
+  for i in "${!RSYNC_CMD[@]}"; do
+    local flag="${RSYNC_CMD[$i]}"
+    case "$flag" in
+    --exclude-from=*)
+      has_exclude_from=true
+      local exclude_path="${flag#--exclude-from=}"
+      # Resolve relative paths to absolute, skip if file doesn't exist
+      if [[ "$exclude_path" != /* ]]; then
+        if [ -f "$exclude_path" ]; then
+          if command -v realpath &>/dev/null; then
+            exclude_path="$(realpath "$exclude_path")"
+          else
+            exclude_path="$(cd "$(dirname "$exclude_path")" && pwd)/$(basename "$exclude_path")"
+          fi
+        elif [ -n "$resolve_dir" ] && [ -f "${resolve_dir}/${exclude_path}" ]; then
+          if command -v realpath &>/dev/null; then
+            exclude_path="$(realpath "${resolve_dir}/${exclude_path}")"
+          else
+            exclude_path="${resolve_dir}/${exclude_path}"
+          fi
+        else
+          # File doesn't exist anywhere — skip this flag
+          echo "Warning: --exclude-from='${flag#--exclude-from=}' file not found, skipping" >&2
+          continue
+        fi
+      fi
+      processed_flags+=("--exclude-from=$exclude_path")
+      ;;
+    *)
+      processed_flags+=("$flag")
+      ;;
+    esac
+  done
+
+  # Auto-add .gitignore if not already specified
+  if [ "$has_exclude_from" = false ] && [ -n "$EXCLUDE_FILE" ]; then
+    processed_flags+=("--exclude-from=$EXCLUDE_FILE")
   fi
 
   # Add sources and destination
-  RSYNC_CMD+=("${SOURCES[@]}" "$DESTINATION")
+  processed_flags+=("${SOURCES[@]}" "$DESTINATION")
 
-  echo "Executing: ${RSYNC_CMD[*]}"
-  exec "${RSYNC_CMD[@]}"
+  echo "Executing: ${processed_flags[*]}"
+  exec "${processed_flags[@]}"
 }
 
 # Expand profile if specified
@@ -173,16 +248,35 @@ expand_profile() {
     if profile_content=$(parse_profile "$PROFILE_VAR"); then
       echo "Using profile: $PROFILE_VAR"
 
-      # Parse the profile content and prepend to arguments
+      # Parse the profile content and split into rsync flags and positional args
       # Format: --blah /source /anothersource user@somehost:/target
       # Use eval to properly handle quoted arguments and spaces
       local profile_args
       eval "profile_args=($profile_content)"
 
-      # Prepend profile arguments to POSITIONAL_ARGS
-      POSITIONAL_ARGS=("${profile_args[@]}" "${POSITIONAL_ARGS[@]}")
+      local profile_flags=()
+      local profile_paths=()
+      local arg
+      for arg in "${profile_args[@]}"; do
+        case "$arg" in
+        -*)
+          profile_flags+=("$arg")
+          ;;
+        *)
+          profile_paths+=("$arg")
+          ;;
+        esac
+      done
 
-      echo "Expanded arguments: ${POSITIONAL_ARGS[*]}"
+      # Prepend profile flags to RSYNC_FLAGS
+      if [ ${#profile_flags[@]} -gt 0 ]; then
+        RSYNC_FLAGS=("${profile_flags[@]}" "${RSYNC_FLAGS[@]}")
+      fi
+
+      # Prepend profile paths to POSITIONAL_ARGS
+      if [ ${#profile_paths[@]} -gt 0 ]; then
+        POSITIONAL_ARGS=("${profile_paths[@]}" "${POSITIONAL_ARGS[@]}")
+      fi
     else
       echo "No profile expansion performed" >&2
     fi
@@ -195,7 +289,7 @@ main() {
   expand_profile
   validate_arguments
   extract_paths
-  check_gitignore
+  check_gitignore "${SOURCES[0]}" || true
   build_and_execute_rsync
 }
 

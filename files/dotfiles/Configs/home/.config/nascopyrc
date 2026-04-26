@@ -1,2 +1,4 @@
 HOMEANSIBLEDRY=--dry-run -i ~/.ansible-root/ homenas:/share/homes/nxxel/Projects/silver-octo-bassoon/
 HOMEANSIBLE=~/.ansible-root/ homenas:/share/homes/nxxel/Projects/silver-octo-bassoon/
+HOMEFLAKEDRY=--dry-run -i --delete --exclude-from=.gitignore ~/.config/flakeroot/ homenas:/share/homes/nxxel/Projects/nix/
+HOMEFLAKE=--delete --exclude-from=.gitignore ~/.config/flakeroot/ homenas:/share/homes/nxxel/Projects/nix/
