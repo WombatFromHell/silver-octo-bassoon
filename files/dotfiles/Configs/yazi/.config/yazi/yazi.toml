@@ -1,8 +1,2 @@
 [mgr]
 show_hidden = true
-
-[opener]
-play = [{ run = "gio open %s", orphan = true, for = "linux" }]
-
-[open]
-rules = [{ mime = "video/*", use = "play" }]
