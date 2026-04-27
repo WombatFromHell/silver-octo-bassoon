@@ -5,7 +5,14 @@ scan_timeout = 10
 add_newline = false
 follow_symlinks = false
 palette = "catppuccin_mocha"
-format = """$directory$git_branch$git_status$cmd_duration$line_break${custom.distrobox}${custom.bash}${custom.direnv}$character"""
+format = """$directory$git_branch$git_status$cmd_duration$line_break${custom.asroot}${custom.distrobox}${custom.bash}${custom.direnv}$character"""
+
+[custom.asroot]
+command = "echo ▲"
+when = '[ -n "$SUDO_USER" ]'
+format = "[$output]($style) "
+style = "bold red"
+ignore_timeout = true
 
 [custom.direnv]
 command = "echo λ"

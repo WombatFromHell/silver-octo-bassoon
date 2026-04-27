@@ -5,6 +5,13 @@
 
 # only run in an interactive shell
 if status is-interactive
+    # When running as root via sudoe, $HOME may be /root but our configs live
+    # under the original user's home. Fall back to $SUDO_USER's home if needed.
+    if set -q SUDO_USER; and test "$USER" = root
+        set -l user_home (getent passwd $SUDO_USER | cut -d: -f6)
+        set -gx HOME $user_home # update $HOME so everything else just works
+    end
+
     # functions that should be loaded before anything else
     set FUNCS_FISH_SRC "$HOME/.config/fish/funcs.fish"
     if test -r "$FUNCS_FISH_SRC"

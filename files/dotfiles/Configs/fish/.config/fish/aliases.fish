@@ -35,8 +35,6 @@ if command -q nix
     alias nix_rb='sudo -i nix profile rollback --profile /nix/var/nix/profile/system'
     alias nix_act='sudo /nix/var/nix/profile/system/bin/switch-to-configuration switch'
     alias nix_roots='nix-store --gc --print-roots'
-    alias nixenv_ls='sudoe nix-env --list-generations'
-    alias nixenv_rm='sudoe nix-env --delete-generations'
     #
     alias nixopt='nix_collect_garbage'
     alias nixopts='nix_collect_garbage --sudo'
