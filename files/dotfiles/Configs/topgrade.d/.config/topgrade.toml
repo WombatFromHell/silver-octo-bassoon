@@ -3,7 +3,7 @@ paths = ["/etc/ublue-os/topgrade.toml"]
 
 [misc]
 no_self_update = true
-only = ["distrobox", "brew_cask", "brew_formula", "custom_commands"]
+only = ["distrobox", "brew_cask", "brew_formula", "flatpak", "custom_commands"]
 ignore_failures = [
   "distrobox",
   "brew_cask",
@@ -17,3 +17,6 @@ skip_notify = true
 [commands]
 "fisher" = "/usr/bin/fish -c 'fisher update'"
 "tmux" = "~/.config/tmux/plugins/tpm/bin/update_plugins all"
+
+[pre_commands]
+"Upgrade libvirtbox" = "distrobox-upgrade -r libvirtbox"
