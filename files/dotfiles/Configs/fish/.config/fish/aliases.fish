@@ -97,4 +97,6 @@ alias mkdir='mkdir -pv'
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'
 alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
 alias kclear="printf '\033[2J\033[3J\033[1;1H'"
+
 alias reload='source $HOME/.config/fish/config.fish'
+alias editconf='$EDITOR $HOME/.config/fish/'

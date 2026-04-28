@@ -163,6 +163,12 @@ end
 function llm-coder
     start-with-llm qwen3.6_35b.sh $argv
 end
+function coder
+    llm-coder little-coder
+end
+function planner
+    llm-planner little-coder
+end
 
 function fish_title
     # Get the current working directory
