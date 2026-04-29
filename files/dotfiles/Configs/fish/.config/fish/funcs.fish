@@ -114,27 +114,6 @@ function setup_podman_sock
     end
 end
 
-function nh_clean
-    set cmd "nh clean all --ask"
-    set args_provided 0
-
-    # Iterate over all arguments to check for relevant flags
-    for arg in $argv
-        if contains -- -k --keep -K --keep-since $arg
-            set args_provided 1
-            break
-        end
-    end
-
-    # Provide a default if no relevant args were provided
-    if test $args_provided -eq 0
-        set cmd "$cmd -k 3 -K 24h"
-    end
-
-    set cmd $cmd $argv
-    eval $cmd
-end
-
 function lactd_reset
     flatpak run io.github.ilya_zlobintsev.LACT cli profile set Default
 end
@@ -245,29 +224,70 @@ function update_wayland_env_vars -d "Update NIRI_SOCKET and WAYLAND_DISPLAY to m
     end
 end
 
-function nix_collect_garbage
-    if contains -- --sudo $argv
-        # strip '--sudo' from argv
-        set args (string match -v '--sudo' $argv)
-        command sudo -i nix-collect-garbage $argv
-        command sudo -i nix store optimise
-    else
-        command nix-collect-garbage $argv
-        command nix store optimise
+if command -q nix
+    function nix_collect_garbage
+        if contains -- --sudo $argv
+            # strip '--sudo' from argv
+            set args (string match -v '--sudo' $argv)
+            command sudo -i nix-collect-garbage $argv
+            command sudo -i nix store optimise
+        else
+            command nix-collect-garbage $argv
+            command nix store optimise
+        end
     end
-end
-function nixenv_ls
-    if test "$argv[1]" = -r -o "$argv[1]" = --sudo
-        sudoe nix-env --list-generations
-    else
-        nix-env --list-generations
+
+    function nixenv_ls
+        if test "$argv[1]" = -r -o "$argv[1]" = --sudo
+            sudoe nix-env --list-generations
+        else
+            nix-env --list-generations
+        end
     end
-end
-function nixenv_rm
-    if test "$argv[1]" = -r -o "$argv[1]" = --sudo
-        sudoe nix-env --delete-generations
-    else
-        nix-env --delete-generations
+
+    function nixenv_rm
+        if test "$argv[1]" = -r -o "$argv[1]" = --sudo
+            sudoe nix-env --delete-generations
+        else
+            nix-env --delete-generations
+        end
+    end
+
+    function nix_hm_init
+        if ! command -q home-manager
+            rm -rf "$HOME/.config/home-manager/"
+            nix run github:nix-community/home-manager -- init
+            nix run github:nix-community/home-manager -- switch
+        end
+        if command -q home-manager
+            set NIX_SESSION_VARS $HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
+            if test -r "$NIX_SESSION_VARS"
+                fenv source "$NIX_SESSION_VARS"
+            end
+        end
+    end
+
+    if command -q nh
+        function nh_clean
+            set cmd "nh clean all --ask"
+            set args_provided 0
+
+            # Iterate over all arguments to check for relevant flags
+            for arg in $argv
+                if contains -- -k --keep -K --keep-since $arg
+                    set args_provided 1
+                    break
+                end
+            end
+
+            # Provide a default if no relevant args were provided
+            if test $args_provided -eq 0
+                set cmd "$cmd -k 3 -K 24h"
+            end
+
+            set cmd $cmd $argv
+            eval $cmd
+        end
     end
 end
 
