@@ -134,19 +134,15 @@ end
 function start-with-llm
     start-llm $argv[1]
     eval $argv[2..-1]
-    stop-llm
-end
-function llm-planner
-    start-with-llm qwen3.6_27b.sh $argv
-end
-function llm-coder
-    start-with-llm qwen3.6_35b.sh $argv
-end
-function coder
-    llm-coder little-coder
+    if set -q argv[2] # only if <cmd> args exist
+        stop-llm
+    end
 end
 function planner
-    llm-planner little-coder
+    start-with-llm qwen3.6_27b.sh $argv
+end
+function coder
+    start-with-llm qwen3.6_35b.sh $argv
 end
 
 function fish_title

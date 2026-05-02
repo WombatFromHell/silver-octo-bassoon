@@ -35,7 +35,7 @@ if command -q trash
         read -l -P "Confirm? [y/N] " confirm
         if string match -qi y -- $confirm
             for p in $paths
-                echo $p | trash-restore --overwrite
+                trash-restore --overwrite -- "$p"
             end
         else
             echo "Aborted."
