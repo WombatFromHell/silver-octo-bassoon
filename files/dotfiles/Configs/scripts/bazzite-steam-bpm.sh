@@ -9,13 +9,10 @@ LOCK_FILE="${XDG_RUNTIME_DIR:-}/bazzite-steam-bpm.lock"
 STEAM="$SCRIPTS/bazzite-steam.sh"
 STEAM_ARGS=(
   -gamepadui
-  -steamos3
 )
 GAMESCOPE_WRAPPER="$(which nscb 2>/dev/null)" || true
 GAMESCOPE_ARGS=(
-  -p std
-  --mangoapp
-  -e
+  "-p std,wl"
   --
 )
 
@@ -28,6 +25,9 @@ LOCAL_STEAM_ENV_VARS=(
 HOOKS=(
   "gamemode --"
 )
+
+# Set to 0 to disable the niri event-stream watcher that auto-focuses game windows.
+GAME_FOCUS_WATCHER_ENABLED="${GAME_FOCUS_WATCHER_ENABLED:-0}"
 
 # ── Dependency Checks ────────────────────────────────────────────────────────
 
@@ -50,16 +50,19 @@ check_dependencies() {
   fi
 }
 
-# ── Signal Handling ──────────────────────────────────────────────────────────
+# ── State ────────────────────────────────────────────────────────────────────
 
 # Track the child PID so we can forward signals and clean up on interrupt.
 STEAM_CHILD_PID=0
+GAME_FOCUS_WATCHER_PID=0
 
 forward_signal() {
   local sig="$1"
   if ((STEAM_CHILD_PID > 0)); then
     kill -"$sig" "$STEAM_CHILD_PID" 2>/dev/null || true
   fi
+  # Kill the game-focus watcher if running
+  ((GAME_FOCUS_WATCHER_PID > 0)) && kill "$GAME_FOCUS_WATCHER_PID" 2>/dev/null || true
   shutdown_steam_if_running
   exit 1
 }
@@ -122,6 +125,34 @@ shutdown_steam_if_running() {
   fi
 }
 
+# ── Game Window Auto-Focus ───────────────────────────────────────────────────
+
+# Background watcher that auto-focuses game windows launched from Steam BPM.
+# Games launched via Proton's native Wayland mode appear with app_id="steam_app_default"
+# in the outer Niri compositor, but don't receive focus automatically.
+watch_for_game_windows() {
+  niri msg event-stream 2>/dev/null | while IFS= read -r line; do
+    # Only react to "Window opened or changed" events
+    [[ "$line" == *"Window opened or changed:"* ]] || continue
+
+    # Extract window info from the Rust Debug output
+    local window_id app_id is_focused
+    window_id=$(echo "$line" | grep -oP 'Window \{ id: \K\d+' 2>/dev/null) || continue
+    app_id=$(echo "$line" | grep -oP 'app_id: Some\("\K[^"]+' 2>/dev/null) || continue
+    is_focused=$(echo "$line" | grep -oP 'is_focused: \K(true|false)' 2>/dev/null) || continue
+
+    # Only target game windows (steam_app_default), skip if already focused
+    [[ "$app_id" == "steam_app_default" ]] || continue
+    [[ "$is_focused" == "true" ]] && continue
+    [[ -n "$window_id" ]] || continue
+
+    # Brief pause to let the window fully map, then focus
+    sleep 0.75
+    niri msg action focus-window --id "$window_id" 2>/dev/null &&
+      echo "Auto-focused game window $window_id ($app_id)" >&2
+  done
+}
+
 # ── Niri Window Focus ────────────────────────────────────────────────────────
 
 focus_steam_bpm_window() {
@@ -131,7 +162,7 @@ focus_steam_bpm_window() {
   window_id=$(
     niri msg -j windows 2>/dev/null | jq -r '
       .[]
-      | select(.app_id == "gamescope" and .title == "Steam Big Picture Mode")
+      | select(.app_id == "steam" and .title == "Steam Big Picture Mode")
       | .id
     ' 2>/dev/null | head -n1
   ) || true
@@ -141,7 +172,7 @@ focus_steam_bpm_window() {
     window_id=$(
       niri msg -j windows 2>/dev/null | jq -r '
         .[]
-        | select(.app_id == "gamescope")
+        | select(.app_id == "steam")
         | .id
       ' 2>/dev/null | head -n1
     ) || true
@@ -193,12 +224,21 @@ cleanup_orphaned_session() {
 build_steam_command() {
   STEAM_CMD=(env "${LOCAL_STEAM_ENV_VARS[@]}")
   for hook_str in "${HOOKS[@]}"; do
+    # Split hook into executable + arguments
     read -ra hook <<<"$hook_str"
-    if [[ -x "${hook[0]:-}" ]]; then
-      STEAM_CMD+=("${hook[@]}")
-      echo "Hook: ${hook[0]}" >&2
+    local hook_bin="${hook[0]:-}"
+    local hook_args=("${hook[@]:1}")
+
+    # Resolve to absolute path
+    local resolved
+    resolved="$(command -v "$hook_bin" 2>/dev/null)" || true
+
+    # Verify resolved path exists and is executable
+    if [[ -n "$resolved" && -x "$resolved" ]]; then
+      STEAM_CMD+=("$resolved" "${hook_args[@]}")
+      echo "Hook: $resolved ${hook_args[*]:-}" >&2
     else
-      echo "Skipping missing/unexecutable hook: ${hook[0]:-$hook_str}" >&2
+      echo "Skipping missing/unexecutable hook: $hook_bin" >&2
     fi
   done
   STEAM_CMD+=("${GAMESCOPE_WRAPPER}" "${GAMESCOPE_ARGS[@]}" "${STEAM}" "${STEAM_ARGS[@]}")
@@ -214,6 +254,12 @@ launch_steam_bpm() {
   # Launch Steam in background, then focus the BPM window once it appears
   "${steam_cmd[@]}" &
   STEAM_CHILD_PID=$!
+
+  # Start the game window auto-focus watcher in background (if enabled)
+  if [[ "$GAME_FOCUS_WATCHER_ENABLED" == "1" ]]; then
+    watch_for_game_windows &
+    GAME_FOCUS_WATCHER_PID=$!
+  fi
 
   local timeout=30
   local elapsed=0
@@ -233,6 +279,11 @@ launch_steam_bpm() {
   # Wait for the Steam/gamescope process to exit
   wait "$STEAM_CHILD_PID"
   STEAM_CHILD_PID=0
+
+  # Clean up the watcher
+  ((GAME_FOCUS_WATCHER_PID > 0)) && kill "$GAME_FOCUS_WATCHER_PID" 2>/dev/null || true
+  wait "$GAME_FOCUS_WATCHER_PID" 2>/dev/null || true
+  GAME_FOCUS_WATCHER_PID=0
 }
 
 # ── Lock Management ──────────────────────────────────────────────────────────
