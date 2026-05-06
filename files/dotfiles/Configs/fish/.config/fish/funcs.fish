@@ -122,11 +122,19 @@ function lactd_uv
 end
 function start-llm
     lactd_reset
-    if test -z "$argv"
-        set argv "qwen3.6_35b.sh"
+    set -l model $argv[1]
+    if test -z "$model"
+        set model "qwen3.6_35b.sh"
     end
-    /var/mnt/data/vllm/llm.sh start $argv
+    /var/mnt/data/vllm/llm.sh start $model
 end
+function __fish_complete_start-llm
+    for s in /var/mnt/data/vllm/workspace/*.sh
+        basename "$s"
+    end
+end
+complete -c start-llm -f -a "(__fish_complete_start-llm)"
+
 function stop-llm
     /var/mnt/data/vllm/llm.sh stop
     lactd_uv
@@ -138,6 +146,7 @@ function start-with-llm
         stop-llm
     end
 end
+complete -c start-with-llm -f -a "(__fish_complete_start-llm)"
 function planner
     start-with-llm qwen3.6_27b.sh $argv
 end
