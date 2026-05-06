@@ -1,2 +1,23 @@
 [mgr]
 show_hidden = true
+
+[opener]
+edit_tmux = [
+  { run = 'tmux new-window -t main -- "$EDITOR" "$@"', block = true, desc = "Edit via tmux" },
+]
+
+[open]
+rules = [
+  { mime = "text/*", use = [
+    "edit",
+    "edit_tmux",
+  ] },
+  { mime = "application/javascript", use = [
+    "edit",
+    "edit_tmux",
+  ] },
+  { mime = "application/json", use = [
+    "edit",
+    "edit_tmux",
+  ] },
+]
