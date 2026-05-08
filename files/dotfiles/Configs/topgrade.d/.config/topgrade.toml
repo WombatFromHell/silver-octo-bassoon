@@ -19,4 +19,4 @@ skip_notify = true
 "tmux" = "~/.config/tmux/plugins/tpm/bin/update_plugins all"
 
 [pre_commands]
-"Upgrade libvirtbox" = "distrobox-upgrade -r libvirtbox"
+"Upgrade libvirtbox" = "/usr/bin/distrobox-upgrade -r libvirtbox"
