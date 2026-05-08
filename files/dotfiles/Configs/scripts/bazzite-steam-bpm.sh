@@ -8,44 +8,57 @@ LOCK_FILE="${XDG_RUNTIME_DIR:-}/bazzite-steam-bpm.lock"
 
 STEAM="$SCRIPTS/bazzite-steam.sh"
 STEAM_ARGS=(
-  -gamepadui
+  -bigpicture
 )
-GAMESCOPE_WRAPPER="$(which nscb 2>/dev/null)" || true
+NSCB_PATH="$(command -v nscb 2>/dev/null)" || true
 GAMESCOPE_ARGS=(
-  "-p std,wl"
+  -p std
+  --mangoapp
+  -e
   --
 )
 
 LOCAL_STEAM_ENV_VARS=(
-  "PROTON_ENABLE_WAYLAND=1"
-  MANGOHUD_CONFIG="read_cfg"
-  MANGOHUD_CONFIGFILE="$HOME/.config/MangoHud/MangoHud.conf"
 )
 
-HOOKS=(
+WRAPPERS=(
   "gamemode --"
 )
 
-# Set to 0 to disable the niri event-stream watcher that auto-focuses game windows.
-GAME_FOCUS_WATCHER_ENABLED="${GAME_FOCUS_WATCHER_ENABLED:-0}"
+# ── Logging ──────────────────────────────────────────────────────────────────
+
+log_info() { echo "[bazzite-steam-bpm] $*" >&2; }
+log_warn() { echo "[bazzite-steam-bpm] WARN: $*" >&2; }
+log_error() { echo "[bazzite-steam-bpm] ERROR: $*" >&2; }
+
+# ── Process Helpers ──────────────────────────────────────────────────────────
+
+is_steam_running() {
+  pgrep -x steam >/dev/null 2>&1
+}
+
+is_gamescope_steam_running() {
+  # Check if gamescope is wrapping our Steam session
+  pgrep -a gamescope 2>/dev/null | grep -qF "$STEAM"
+}
 
 # ── Dependency Checks ────────────────────────────────────────────────────────
 
 check_dependencies() {
   local missing=()
 
-  [[ -z "${XDG_RUNTIME_DIR:-}" ]] && missing+=("XDG_RUNTIME_DIR (not set)")
-  [[ -z "$GAMESCOPE_WRAPPER" ]] && missing+=("nscb")
+  [[ -z ${XDG_RUNTIME_DIR:-} ]] && missing+=("XDG_RUNTIME_DIR (not set)")
+  [[ -z $NSCB_PATH ]] && missing+=("nscb")
 
   for dep in niri jq; do
     command -v "$dep" &>/dev/null || missing+=("$dep")
   done
 
   # fuser is preferred but not fatal — we have a fallback
-  command -v fuser &>/dev/null || echo "Warning: fuser not found; orphan cleanup will use fallback" >&2
+  command -v fuser &>/dev/null || log_warn "fuser not found; orphan cleanup will use fallback"
 
   if ((${#missing[@]})); then
-    echo "Error: Missing dependencies: ${missing[*]}" >&2
+    log_error "Missing dependencies: ${missing[*]}"
     exit 1
   fi
 }
@@ -54,43 +67,39 @@ check_dependencies() {
 
 # Track the child PID so we can forward signals and clean up on interrupt.
 STEAM_CHILD_PID=0
-GAME_FOCUS_WATCHER_PID=0
 
 forward_signal() {
   local sig="$1"
+  local exit_code=$((128 + sig))
+
   if ((STEAM_CHILD_PID > 0)); then
     kill -"$sig" "$STEAM_CHILD_PID" 2>/dev/null || true
   fi
-  # Kill the game-focus watcher if running
-  ((GAME_FOCUS_WATCHER_PID > 0)) && kill "$GAME_FOCUS_WATCHER_PID" 2>/dev/null || true
+
   shutdown_steam_if_running
-  exit 1
+  exit "$exit_code"
 }
 
 setup_signal_handlers() {
-  trap 'forward_signal INT' INT
-  trap 'forward_signal TERM' TERM
-  trap 'forward_signal HUP' HUP
+  trap 'forward_signal INT' INT TERM HUP
 }
 
 # ── Shutdown Hook Interceptor ────────────────────────────────────────────────
 
-# Handles the `-shutdown` flag from steamos-session-switch.
-# If steamos-session-select is available, execs into it.
-# Otherwise shuts down Steam and falls through to relaunch (BPM restart cycle).
+# If Steam is already running, handle the shutdown/restart request.
+# Prefers steamos-session-select (execs into it), falls back to steam -shutdown.
 handle_shutdown_request() {
-  for arg in "$@"; do
-    if [[ "$arg" == "-shutdown" ]]; then
-      local hook
-      hook="$(command -v steamos-session-select 2>/dev/null)" || true
-      if [[ -n "$hook" ]]; then
-        # Pass only -shutdown to steamos-session-select, not unrelated args
-        exec "$hook" -shutdown
-      fi
-      shutdown_steam_if_running
-      exit 0
-    fi
-  done
+  # Only act if there's a pre-existing Steam session to hand off
+  is_steam_running || return 0
+
+  local hook
+  hook="$(command -v steamos-session-select 2>/dev/null)" || true
+  if [[ -n $hook ]]; then
+    exec "$hook"
+  fi
+
+  steam -shutdown || true
+  wait_for_steam_exit
 }
 
 # ── Steam Shutdown Logic ─────────────────────────────────────────────────────
@@ -98,7 +107,6 @@ handle_shutdown_request() {
 wait_for_steam_exit() {
   local timeout=10
   local elapsed=0
-  local signaled=0
 
   while pgrep -xc steam >/dev/null 2>&1; do
     if ((elapsed >= timeout)); then
@@ -106,12 +114,8 @@ wait_for_steam_exit() {
       pkill --signal 9 -x steam 2>/dev/null || true
       return 0
     fi
-
-    # After 3s, send SIGINT for graceful shutdown before escalating to SIGKILL
-    if ((elapsed >= 3 && signaled == 0)); then
-      pkill --signal INT -x steam 2>/dev/null || true
-      signaled=1
-    fi
+    # After 3s, nudge with SIGINT before escalating to SIGKILL
+    ((elapsed >= 3)) && pkill --signal INT -x steam 2>/dev/null || true
 
     sleep 1
     elapsed=$((elapsed + 1))
@@ -119,68 +123,36 @@ wait_for_steam_exit() {
 }
 
 shutdown_steam_if_running() {
-  if pgrep -x steam >/dev/null 2>&1; then
+  if is_steam_running; then
     steam -shutdown || true
     wait_for_steam_exit
   fi
 }
 
-# ── Game Window Auto-Focus ───────────────────────────────────────────────────
-
-# Background watcher that auto-focuses game windows launched from Steam BPM.
-# Games launched via Proton's native Wayland mode appear with app_id="steam_app_default"
-# in the outer Niri compositor, but don't receive focus automatically.
-watch_for_game_windows() {
-  niri msg event-stream 2>/dev/null | while IFS= read -r line; do
-    # Only react to "Window opened or changed" events
-    [[ "$line" == *"Window opened or changed:"* ]] || continue
-
-    # Extract window info from the Rust Debug output
-    local window_id app_id is_focused
-    window_id=$(echo "$line" | grep -oP 'Window \{ id: \K\d+' 2>/dev/null) || continue
-    app_id=$(echo "$line" | grep -oP 'app_id: Some\("\K[^"]+' 2>/dev/null) || continue
-    is_focused=$(echo "$line" | grep -oP 'is_focused: \K(true|false)' 2>/dev/null) || continue
-
-    # Only target game windows (steam_app_default), skip if already focused
-    [[ "$app_id" == "steam_app_default" ]] || continue
-    [[ "$is_focused" == "true" ]] && continue
-    [[ -n "$window_id" ]] || continue
-
-    # Brief pause to let the window fully map, then focus
-    sleep 0.75
-    niri msg action focus-window --id "$window_id" 2>/dev/null &&
-      echo "Auto-focused game window $window_id ($app_id)" >&2
-  done
-}
-
 # ── Niri Window Focus ────────────────────────────────────────────────────────
+
+# Find a window ID by app_id, with optional title filter.
+# Returns the first matching window ID or empty string.
+find_window_id() {
+  local app_id="$1"
+  local title="${2:-}"
+
+  local query='.[] | select(.app_id == "'"$app_id"'") | .id'
+  [[ -n $title ]] && query='.[] | select(.app_id == "'"$app_id"'" and .title == "'"$title"'") | .id'
+
+  niri msg -j windows 2>/dev/null | jq -r "$query" 2>/dev/null | head -n1
+}
 
 focus_steam_bpm_window() {
   local window_id
 
-  # Try exact title match first
-  window_id=$(
-    niri msg -j windows 2>/dev/null | jq -r '
-      .[]
-      | select(.app_id == "steam" and .title == "Steam Big Picture Mode")
-      | .id
-    ' 2>/dev/null | head -n1
-  ) || true
+  # Try Gamescope-wrapped first, then bare Steam (both share the same title)
+  window_id=$(find_window_id "gamescope" "Steam Big Picture Mode") || true
+  [[ -z $window_id ]] && window_id=$(find_window_id "steam" "Steam Big Picture Mode") || true
 
-  # Fallback: match on app_id alone (title may differ by locale/version)
-  if [[ -z "$window_id" ]]; then
-    window_id=$(
-      niri msg -j windows 2>/dev/null | jq -r '
-        .[]
-        | select(.app_id == "steam")
-        | .id
-      ' 2>/dev/null | head -n1
-    ) || true
-  fi
-
-  if [[ -n "$window_id" ]]; then
+  if [[ -n $window_id ]]; then
     niri msg action focus-window --id "$window_id" 2>/dev/null
-    return $?
+    return 0
   fi
 
   return 1
@@ -190,82 +162,81 @@ focus_steam_bpm_window() {
 
 # Kill everything holding the orphaned session's lock
 cleanup_orphaned_session() {
-  echo "Orphaned Gamescope session detected (Steam not running). Cleaning up..." >&2
+  log_warn "Orphaned Gamescope session detected (Steam not running). Cleaning up..."
 
   # Prefer fuser — single syscall, no tree-walking needed
   if command -v fuser &>/dev/null; then
     fuser -k -9 "$LOCK_FILE" 2>/dev/null || true
   else
     # Fallback: kill only the specific gamescope processes wrapping our Steam
-    # Use SIGINT first for graceful shutdown, then SIGKILL
-    pkill --signal INT -f "gamescope.*${STEAM}" 2>/dev/null || true
-    sleep 1
-    pkill --signal 9 -f "gamescope.*${STEAM}" 2>/dev/null || true
+    log_warn "Using pkill fallback (fuser not available)"
+    local pattern
+    pattern="gamescope.*$(basename "$STEAM")"
+    pkill --signal 9 -f "$pattern" 2>/dev/null || true
   fi
 
   # Sweep leaf processes that may have outlived the parent kill
-  pkill --signal 9 -x steam 2>/dev/null || true
+  if is_steam_running; then
+    pkill --signal 9 -x steam 2>/dev/null || true
+  fi
 
   # Poll until lock is free
   for ((i = 0; i < 10; i++)); do
-    exec 200>&-
-    exec 200>"$LOCK_FILE"
-    flock -n 200 && return 0
+    close_lock_fd
+    open_lock_fd
+    if try_lock; then
+      log_info "Lock reclaimed successfully"
+      return 0
+    fi
     sleep 1
   done
 
-  echo "Failed to reclaim lock after 10s — run: fuser -k '$LOCK_FILE'" >&2
+  log_error "Failed to reclaim lock after 10s — run: fuser -k '$LOCK_FILE'"
   return 1
 }
 
 # ── Command Building ─────────────────────────────────────────────────────────
 
 # Populates STEAM_CMD array with the full command chain.
+# WRAPPERS is extensible — end-users can add pre-launch hooks here.
 build_steam_command() {
+  # Environment variables
   STEAM_CMD=(env "${LOCAL_STEAM_ENV_VARS[@]}")
-  for hook_str in "${HOOKS[@]}"; do
-    # Split hook into executable + arguments
-    read -ra hook <<<"$hook_str"
-    local hook_bin="${hook[0]:-}"
-    local hook_args=("${hook[@]:1}")
 
-    # Resolve to absolute path
-    local resolved
-    resolved="$(command -v "$hook_bin" 2>/dev/null)" || true
+  # Pre-launch wrappers (extensible extension point)
+  for wrapper_str in "${WRAPPERS[@]}"; do
+    read -ra wrapper <<<"$wrapper_str"
+    local wrapper_bin="${wrapper[0]:-}"
+    local wrapper_args=("${wrapper[@]:1}")
 
-    # Verify resolved path exists and is executable
-    if [[ -n "$resolved" && -x "$resolved" ]]; then
-      STEAM_CMD+=("$resolved" "${hook_args[@]}")
-      echo "Hook: $resolved ${hook_args[*]:-}" >&2
-    else
-      echo "Skipping missing/unexecutable hook: $hook_bin" >&2
-    fi
+    command -v "$wrapper_bin" &>/dev/null || continue
+    STEAM_CMD+=("$wrapper_bin" "${wrapper_args[@]}")
+    log_info "Wrapper: $wrapper_bin ${wrapper_args[*]:-}"
   done
-  STEAM_CMD+=("${GAMESCOPE_WRAPPER}" "${GAMESCOPE_ARGS[@]}" "${STEAM}" "${STEAM_ARGS[@]}")
+
+  # Gamescope/nscb wrapper (if configured)
+  if [[ -n $NSCB_PATH ]]; then
+    STEAM_CMD+=("$NSCB_PATH" "${GAMESCOPE_ARGS[@]}")
+  fi
+
+  # Steam binary + args
+  STEAM_CMD+=("${STEAM}" "${STEAM_ARGS[@]}")
 }
 
 # ── Session Launch ───────────────────────────────────────────────────────────
 
 launch_steam_bpm() {
-  local steam_cmd
   build_steam_command
-  steam_cmd=("${STEAM_CMD[@]}")
 
   # Launch Steam in background, then focus the BPM window once it appears
-  "${steam_cmd[@]}" &
+  "${STEAM_CMD[@]}" &
   STEAM_CHILD_PID=$!
-
-  # Start the game window auto-focus watcher in background (if enabled)
-  if [[ "$GAME_FOCUS_WATCHER_ENABLED" == "1" ]]; then
-    watch_for_game_windows &
-    GAME_FOCUS_WATCHER_PID=$!
-  fi
 
   local timeout=30
   local elapsed=0
   while ((elapsed < timeout)); do
     if focus_steam_bpm_window 2>/dev/null; then
-      echo "Focused Steam BPM window" >&2
+      log_info "Focused Steam BPM window"
       break
     fi
     sleep 1
@@ -273,43 +244,73 @@ launch_steam_bpm() {
   done
 
   if ((elapsed >= timeout)); then
-    echo "Timed out waiting for Steam BPM window — Steam may still be starting" >&2
+    log_warn "Timed out waiting for Steam BPM window — Steam may still be starting"
   fi
 
   # Wait for the Steam/gamescope process to exit
   wait "$STEAM_CHILD_PID"
   STEAM_CHILD_PID=0
-
-  # Clean up the watcher
-  ((GAME_FOCUS_WATCHER_PID > 0)) && kill "$GAME_FOCUS_WATCHER_PID" 2>/dev/null || true
-  wait "$GAME_FOCUS_WATCHER_PID" 2>/dev/null || true
-  GAME_FOCUS_WATCHER_PID=0
 }
 
 # ── Lock Management ──────────────────────────────────────────────────────────
 
+open_lock_fd() { exec 200>"$LOCK_FILE"; }
+close_lock_fd() { exec 200>&-; }
+try_lock() { flock -n 200; }
+wait_lock() {
+  local timeout="$1"
+  flock -w "$timeout" 200
+}
+
 acquire_lock() {
-  exec 200>"$LOCK_FILE"
-  if ! flock -n 200; then
-    # Lock is held — check if this is a healthy session or orphaned
-    if pgrep -a gamescope 2>/dev/null | grep -q "$STEAM" 2>/dev/null; then
-      # Gamescope is running, but is Steam actually alive?
-      if pgrep -x steam >/dev/null 2>&1; then
-        echo "Gamescope Steam session already active — focusing window" >&2
-        focus_steam_bpm_window || true
-        exit 0
-      else
-        cleanup_orphaned_session || exit 1
-      fi
+  open_lock_fd
+
+  # Fast path: lock acquired immediately
+  if try_lock; then
+    return 0
+  fi
+
+  # Lock is held — diagnose the situation
+
+  # Case 1: Gamescope wrapping Steam is running
+  if is_gamescope_steam_running; then
+    if is_steam_running; then
+      # Healthy session already active
+      log_info "Gamescope Steam session already active — focusing window"
+      focus_steam_bpm_window || true
+      exit 0
     else
-      # Lock held by unrelated process — wait up to 15s for it to release
-      echo "Lock held by unrelated process — waiting (15s timeout)..." >&2
-      if ! flock -w 15 200; then
-        echo "Error: Could not acquire lock after 15s" >&2
-        exit 1
+      # Gamescope running but Steam dead — orphaned
+      cleanup_orphaned_session || return 1
+      if try_lock; then
+        return 0
+      else
+        log_error "Failed to acquire lock after cleanup"
+        return 1
       fi
     fi
   fi
+
+  # Case 2: Neither gamescope nor steam running — definitely orphaned
+  if ! is_steam_running && ! pgrep -x gamescope >/dev/null 2>&1; then
+    log_info "Lock held but no gamescope or steam running — treating as orphaned"
+    cleanup_orphaned_session || return 1
+    if try_lock; then
+      return 0
+    else
+      log_error "Failed to acquire lock after cleanup"
+      return 1
+    fi
+  fi
+
+  # Case 3: Lock held by unrelated process — wait with timeout
+  log_info "Lock held by unrelated process — waiting (15s timeout)..."
+  if wait_lock 15; then
+    return 0
+  fi
+
+  log_error "Could not acquire lock after 15s"
+  return 1
 }
 
 # ── Main Execution ───────────────────────────────────────────────────────────
@@ -317,12 +318,12 @@ acquire_lock() {
 main() {
   check_dependencies
   setup_signal_handlers
-  handle_shutdown_request "${@}"
+
+  # If Steam is already running, hand off to steamos-session-select or shut it down
+  handle_shutdown_request
 
   # Prevent concurrent executions (hold lock until session ends)
   acquire_lock
-
-  shutdown_steam_if_running
 
   launch_steam_bpm
 }

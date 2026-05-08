@@ -32,4 +32,4 @@ main() {
   shutdown_steam_if_running
 }
 
-main "${@}"
+main
