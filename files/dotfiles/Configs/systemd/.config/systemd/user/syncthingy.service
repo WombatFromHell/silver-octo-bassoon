@@ -1,16 +1,13 @@
 [Unit]
-Description=SyncThingy (Flatpak)
-After=network-online.target
-Wants=network-online.target
+Description=SyncThingy
 
 [Service]
 Type=simple
-# We remove --logfile=default because systemd captures stdout/stderr in the journal anyway
-ExecStart=/usr/bin/flatpak run --command=syncthing com.github.zocker_160.SyncThingy --no-browser --no-restart
+ExecStart=flatpak run --command=syncthing com.github.zocker_160.SyncThingy --no-browser --logfile=default
+ExecStop=flatpak kill com.github.zocker_160.SyncThingy
 Restart=on-failure
 RestartSec=5
-# Give it a bit more time to write its index to disk before systemd kills it
-TimeoutStopSec=20
+SuccessExitStatus=0
 
 [Install]
 WantedBy=default.target
