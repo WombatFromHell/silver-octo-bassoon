@@ -25,10 +25,6 @@
   ansible.builtin.import_tasks: globalbin.yml
   tags: [extra, globalbin]
 
-- name: Include global systemd units task
-  ansible.builtin.import_tasks: globalunits.yml
-  tags: [extra, globalunits]
-
 - name: Include etc configs task
   ansible.builtin.import_tasks: etc.yml
   tags: [extra, etc]
@@ -64,3 +60,7 @@
 - name: Include shortcuts install task
   ansible.builtin.import_tasks: shortcuts.yml
   tags: [extra, shortcuts]
+
+- name: Include beesd configuration task
+  ansible.builtin.import_tasks: beesd.yml
+  tags: [extra, beesd]

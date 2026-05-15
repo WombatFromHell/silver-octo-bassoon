@@ -1,0 +1,51 @@
+---
+- name: Check for beesd binary
+  ansible.builtin.command: command -v beesd
+  register: base_beeshd_binary
+  changed_when: false
+  check_mode: false
+
+- name: Configure beesd
+  tags: [beesd]
+  when: base_beeshd_binary.rc == 0
+  become: true
+  block:
+    - name: Create /etc/bees directory
+      ansible.builtin.file:
+        path: /etc/bees
+        state: directory
+        mode: "0755"
+
+    - name: Find beesd config files
+      ansible.builtin.find:
+        paths: "{{ role_path }}/files/etc/bees"
+        file_type: file
+        recurse: false
+      register: base_beeshd_configs
+
+    - name: Copy beesd config files to /etc/bees
+      ansible.builtin.copy:
+        src: "{{ beesd_item.path }}"
+        dest: "/etc/bees/{{ beesd_item.path | basename }}"
+        mode: "0644"
+        remote_src: false
+        backup: true
+      loop: "{{ base_beeshd_configs.files }}"
+      loop_control:
+        loop_var: beesd_item
+        label: "Copying {{ beesd_item.path | basename }}"
+      when: base_beeshd_configs.matched > 0
+
+    - name: Ensure /etc/systemd/system/beesd@.service.d exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/beesd@.service.d
+        state: directory
+        mode: "0755"
+
+    - name: Copy beesd systemd override
+      ansible.builtin.copy:
+        src: "{{ role_path }}/files/systemd/beesd@.service.d/override.conf"
+        dest: /etc/systemd/system/beesd@.service.d/override.conf
+        mode: "0644"
+        remote_src: false
+        backup: true
