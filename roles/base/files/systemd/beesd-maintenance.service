@@ -1,0 +1,12 @@
+[Unit]
+Description=Dynamically discover and launch all beesd configuration templates
+
+[Service]
+Type=oneshot
+# Find every .conf file in /etc/bees, extract the UUID name, and start its service
+ExecStart=/bin/bash -c '\
+  for conf in /etc/bees/*.conf; do \
+    uuid=$(basename "$conf" .conf); \
+    echo "Dynamically starting beesd@$uuid..."; \
+    systemctl start beesd@$uuid.service; \
+  done'
