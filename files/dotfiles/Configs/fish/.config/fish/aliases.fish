@@ -11,6 +11,7 @@ if command -q nix
     alias hms='home-manager switch --flake $FLAKE_ROOT'
     alias hmls='home-manager generations'
     alias hmrm='home-manager remove-generations'
+    alias hmrb='home-manager switch --rollback'
     #
     alias nhb='nh os switch -n $FLAKE_ROOT'
     alias nhs='nh os switch $FLAKE_ROOT'
