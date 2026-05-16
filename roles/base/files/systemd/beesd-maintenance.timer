@@ -2,9 +2,9 @@
 Description=Run beesd deduplication during maintenance window
 
 [Timer]
-# Define your maintenance window start time (e.g., every day at 9:00 AM)
-OnCalendar=*-*-* 09:00:00
 Persistent=true
+OnBootSec=15min
+OnUnitInactiveSec=10d
 
 [Install]
 WantedBy=timers.target

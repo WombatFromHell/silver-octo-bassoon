@@ -16,25 +16,17 @@
         state: directory
         mode: "0755"
 
-    - name: Find beesd config files
-      ansible.builtin.find:
-        paths: "{{ role_path }}/files/etc/bees"
-        file_type: file
-        recurse: false
-      register: base_beeshd_configs
-
     - name: Copy beesd config files to /etc/bees
       ansible.builtin.copy:
-        src: "{{ beesd_item.path }}"
-        dest: "/etc/bees/{{ beesd_item.path | basename }}"
+        src: "{{ beesd_item }}"
+        dest: "/etc/bees/{{ beesd_item | basename }}"
         mode: "0644"
         remote_src: false
         backup: true
-      loop: "{{ base_beeshd_configs.files }}"
+      loop: "{{ query('fileglob', role_path + '/files/etc/bees/*.conf') }}"
       loop_control:
         loop_var: beesd_item
-        label: "Copying {{ beesd_item.path | basename }}"
-      when: base_beeshd_configs.matched > 0
+        label: "Copying {{ beesd_item | basename }}"
 
     - name: Ensure /etc/systemd/system/beesd@.service.d exists
       ansible.builtin.file:
@@ -49,3 +41,28 @@
         mode: "0644"
         remote_src: false
         backup: true
+
+    - name: Install beesd-maintenance service and timer
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: "0644"
+        remote_src: false
+        backup: true
+      loop:
+        - src: "{{ role_path }}/files/systemd/beesd-maintenance.service"
+          dest: /etc/systemd/system/beesd-maintenance.service
+        - src: "{{ role_path }}/files/systemd/beesd-maintenance.timer"
+          dest: /etc/systemd/system/beesd-maintenance.timer
+      loop_control:
+        label: "Installing {{ item.dest | basename }}"
+
+    - name: Reload systemd to pick up beesd changes
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Enable and start beesd-maintenance timer
+      ansible.builtin.systemd:
+        name: beesd-maintenance.timer
+        enabled: true
+        state: started

@@ -3,10 +3,18 @@ Description=Dynamically discover and launch all beesd configuration templates
 
 [Service]
 Type=oneshot
-# Find every .conf file in /etc/bees, extract the UUID name, and start its service
+RemainAfterExit=yes
+TimeoutStartSec=60s
+TimeoutStopSec=60s
 ExecStart=/bin/bash -c '\
   for conf in /etc/bees/*.conf; do \
     uuid=$(basename "$conf" .conf); \
-    echo "Dynamically starting beesd@$uuid..."; \
+    echo "Starting beesd@$uuid..."; \
     systemctl start beesd@$uuid.service; \
   done'
+ExecStop=/bin/bash -c '\
+  for conf in /etc/bees/*.conf; do \
+    uuid=$(basename "$conf" .conf); \
+    systemctl stop beesd@$uuid.service; \
+  done'
+
