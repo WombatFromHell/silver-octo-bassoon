@@ -1,10 +1,10 @@
 [Unit]
-Description=Run vdirsyncer every 3 hours
+Description=Sync khal reminders on a schedule
 
 [Timer]
 # Run 5 minutes after boot, then every 3 hours
 OnBootSec=5min
-OnUnitActiveSec=3h
+OnUnitActiveSec=1h
 # Start even if the computer was off during the scheduled time
 Persistent=true
 

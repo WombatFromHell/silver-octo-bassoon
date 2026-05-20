@@ -15,7 +15,7 @@ NOTIFY_URGENCY="${NOTIFY_URGENCY:-normal}" # low | normal | critical
 WARN_MINUTES="${WARN_MINUTES:-30}"
 ALLDAY_START="${ALLDAY_START:-08:00}" # assumed start time for all-day events
 RANGE_FROM="${RANGE_FROM:-now}"
-RANGE_TO="${RANGE_TO:-72h}"
+RANGE_TO="${RANGE_TO:-48h}"
 UNIT_PREFIX="calremind"
 
 # ═══════════════════════════════════════════════════════════════════════════

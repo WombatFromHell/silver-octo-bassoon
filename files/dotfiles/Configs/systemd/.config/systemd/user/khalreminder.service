@@ -1,9 +1,8 @@
 [Unit]
-Description=Sync calendars and contacts with vdirsyncer
+Description=Sync khal with vdirsyncer filesystem
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/vdirsyncer sync
-ExecStartPost=/usr/local/bin/khalreminder.sh
+ExecStart=/usr/local/bin/khalreminder.sh
 Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus"
 Environment="PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:%h/.nix-profile/bin:%h/.local/bin:%h/.local/bin/scripts:/home/linuxbrew/.linuxbrew/bin"
