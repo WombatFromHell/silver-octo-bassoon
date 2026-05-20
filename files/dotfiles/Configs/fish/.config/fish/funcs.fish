@@ -121,7 +121,7 @@ function lactd_uv
     flatpak run io.github.ilya_zlobintsev.LACT cli profile set UV
 end
 function start-llm
-    lactd_reset
+    # lactd_reset
     set -l model $argv[1]
     if test -z "$model"
         set model "qwen3.6_35b.sh"
@@ -137,7 +137,7 @@ complete -c start-llm -f -a "(__fish_complete_start-llm)"
 
 function stop-llm
     /var/mnt/data/vllm/llm.sh stop
-    lactd_uv
+    # lactd_uv
 end
 function start-with-llm
     start-llm $argv[1]
