@@ -60,7 +60,3 @@
 - name: Include shortcuts install task
   ansible.builtin.import_tasks: shortcuts.yml
   tags: [extra, shortcuts]
-
-- name: Include beesd configuration task
-  ansible.builtin.import_tasks: beesd.yml
-  tags: [extra, beesd]
