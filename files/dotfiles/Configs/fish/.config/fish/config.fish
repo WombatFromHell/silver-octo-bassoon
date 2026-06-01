@@ -12,6 +12,8 @@ if status is-interactive
         set -gx HOME $user_home # update $HOME so everything else just works
     end
 
+    fish_config theme choose catppuccin-mocha --color-theme=dark
+
     # functions that should be loaded before anything else
     set FUNCS_FISH_SRC "$HOME/.config/fish/funcs.fish"
     if test -r "$FUNCS_FISH_SRC"
@@ -24,7 +26,7 @@ if status is-interactive
 
     set_editor
     setup_podman_sock
-    update_wayland_env_vars
+    # update_wayland_env_vars
 
     set -g ZELLIJ_ENABLED false
     set -g TMUX_ENABLED true

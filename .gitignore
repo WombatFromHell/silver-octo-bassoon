@@ -13,3 +13,5 @@ __pycache__
 **/.config/environment.d/*
 **/vdirsyncer/.vdirsyncer/*
 gvfs.private
+
+Lossless.dll

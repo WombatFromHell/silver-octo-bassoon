@@ -49,9 +49,6 @@ end
 
 # Attach to a session, or switch-client if already inside tmux.
 function __tmux_attach -d "Attach or switch to a session"
-    # Update Wayland env vars in the parent shell before attaching
-    update_wayland_env_vars
-
     if set -q TMUX
         tmux switch-client -t "$argv[1]"
     else
