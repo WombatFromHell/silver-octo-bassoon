@@ -142,7 +142,7 @@ if status is-interactive; and not set -q TMUX
 
     if test "$TERM_PROGRAM" = vscode
         set skip_autostart true
-    else if test -n "$SSH_TTY"; and not __tmux_is_truthy "$TMUX_ON_SSH"
+    else if test -n "$SSH_TTY"; and test (__tmux_is_truthy "$TMUX_ON_SSH") -eq 0
         set skip_autostart true
     end
 
