@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mount / unmount SSHFS asynchronously; safe to call repeatedly.
+# Mount / unmount SSHFS; prompts for password if no valid key is found.
 
 NAS_HOME="$HOME/.nas-home"
 MOUNT_POINT="nxxel@192.168.1.153:/share/homes/nxxel"
@@ -8,6 +8,7 @@ TARGET="$NAS_HOME/GDrive/Backups"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID}"
 PID_FILE="$RUNTIME_DIR/nasmount-sshfs.pid"
 LOG_FILE="$RUNTIME_DIR/nasmount-sshfs.log"
+SSH_KEY="$HOME/.ssh/id_rsa"
 
 deps=(sshfs fusermount)
 for d in "${deps[@]}"; do
@@ -18,14 +19,12 @@ for d in "${deps[@]}"; do
 done
 
 do_mount() {
-  # Idempotency gate: lock file with live process OR mountpoint
-  if [[ -f "$PID_FILE" ]]; then
-    if kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-      exit 0
-    fi
-    # Stale PID file — clean up and continue
-    rm -f "$PID_FILE"
+  # Idempotency gate: lock file with live process OR active mountpoint
+  if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    exit 0
   fi
+  [[ -f "$PID_FILE" ]] && rm -f "$PID_FILE"
+
   if mountpoint -q "$NAS_HOME"; then
     if [[ ! -L "$LINK" ]] || [[ "$(readlink -f "$LINK")" != "$(readlink -f "$TARGET")" ]]; then
       rm -f "$LINK"
@@ -34,49 +33,70 @@ do_mount() {
     exit 0
   fi
 
-  # Detach — everything below runs in background
-  nohup bash -c "
-        mkdir -p '$NAS_HOME'
-        sshfs -p 2222 -o reconnect,noatime,cache_timeout=1,IdentityFile=~/.ssh/id_rsa,idmap=user '$MOUNT_POINT' '$NAS_HOME' &
-        echo \$! > '$PID_FILE'
+  mkdir -p "$NAS_HOME"
 
-        # Wait for mount to be visible
-        for i in 1 2 3 4 5 6 7 8 9 10; do
-            if mountpoint -q '$NAS_HOME'; then
-                rm -f '$LINK'
-                ln -sf '$TARGET' '$LINK'
-                break
-            fi
-            sleep 1
-        done
+  SSHFS_OPTS=(-p 2222 -o reconnect,noatime,cache_timeout=1,idmap=user)
+  HAS_KEY=false
+  if [[ -r "$SSH_KEY" ]]; then
+    SSHFS_OPTS+=(-o "IdentityFile=$SSH_KEY")
+    HAS_KEY=true
+  fi
 
-        # Keep subshell alive so sshfs stays attached to a parent
-        wait \$!
-    " </dev/null >"$LOG_FILE" 2>&1 &
-  disown
+  # Detect if we have a usable TTY
+  HAS_TTY=false
+  if [[ -t 0 ]] && [[ -t 2 ]]; then
+    HAS_TTY=true
+  fi
 
-  exit 0
+  if $HAS_KEY || ! $HAS_TTY; then
+    # Key-based OR no TTY (e.g., systemd): run detached
+    # In no-TTY/no-key case, sshfs will fail fast rather than hang
+    nohup sshfs "${SSHFS_OPTS[@]}" \
+      "$MOUNT_POINT" "$NAS_HOME" \
+      </dev/null >"$LOG_FILE" 2>&1 &
+    local bg_pid=$!
+    disown
+
+    # Wait briefly for mount to appear (non-interactive path)
+    for _ in {1..10}; do
+      mountpoint -q "$NAS_HOME" && break
+      sleep 1
+    done
+
+    if mountpoint -q "$NAS_HOME"; then
+      echo "$bg_pid" >"$PID_FILE"
+      rm -f "$LINK" && ln -sf "$TARGET" "$LINK"
+      exit 0
+    else
+      echo "nasmount: background mount failed (check $LOG_FILE)" >&2
+      exit 1
+    fi
+  else
+    # Interactive terminal + no key: foreground for password prompt
+    echo "nasmount: mounting (password prompt expected)..."
+    sshfs "${SSHFS_OPTS[@]}" "$MOUNT_POINT" "$NAS_HOME"
+    local rc=$?
+    [[ $rc -ne 0 ]] && exit "$rc"
+
+    rm -f "$LINK" && ln -sf "$TARGET" "$LINK"
+    pgrep -f "sshfs.*$NAS_HOME" | head -n1 >"$PID_FILE"
+    exit 0
+  fi
 }
 
 do_unmount() {
-  # Idempotency gate: nothing to unmount if no lock AND no mount
   if [[ ! -f "$PID_FILE" ]] && ! mountpoint -q "$NAS_HOME"; then
     exit 0
   fi
 
-  # Kill the backgrounded sshfs if it's still running
   if [[ -f "$PID_FILE" ]]; then
     kill "$(cat "$PID_FILE")" 2>/dev/null
     rm -f "$PID_FILE"
   fi
 
-  # Unmount (best-effort)
   fusermount -u "$NAS_HOME" 2>/dev/null || true
 
-  # Clean up symlink
-  if [[ -L "$LINK" ]]; then
-    rm -f "$LINK"
-  fi
+  [[ -L "$LINK" ]] && rm -f "$LINK"
 
   exit 0
 }

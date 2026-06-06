@@ -179,9 +179,14 @@ create_desktop_file() {
   [[ "$output" == "native" ]]
 }
 
-@test "detect_launcher_type: unknown returns empty" {
+@test "detect_launcher_type: bare binary name treated as native" {
+  run_script --helper-detect-launcher <<<"firefox --name firefox"
+  [[ "$output" == "native" ]]
+}
+
+@test "detect_launcher_type: unknown bare command treated as native" {
   run_script --helper-detect-launcher <<<"unknown-command"
-  [[ "$output" == "" ]]
+  [[ "$output" == "native" ]]
 }
 
 # ── Browser Capabilities (via build_spawn_cmd) ───────────────────────────────

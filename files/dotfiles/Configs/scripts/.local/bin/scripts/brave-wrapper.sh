@@ -6,7 +6,11 @@ set -euo pipefail
 # ZONE 1: CONFIGURATION
 # ==============================================================================
 readonly CONTAINER_NAME="bravebox"
-readonly CHROMIUM_FLAGS_SCRIPT="${HOME}/.local/bin/scripts/chromium-flags.sh"
+if [ -f "$HOME/.local/bin/scripts/chromium-flags.sh" ]; then
+  CHROMIUM_FLAGS_SCRIPT="$HOME/.local/bin/scripts/chromium-flags.sh"
+else
+  CHROMIUM_FLAGS_SCRIPT="$(command -v chromium-flags.sh)"
+fi
 readonly NOTIFY_APP="brave-wrapper"
 readonly BROWSER_CANDIDATES=(brave brave-browser-beta brave-browser)
 readonly FLATPAK_ID="com.brave.Browser"

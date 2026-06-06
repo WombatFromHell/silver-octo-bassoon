@@ -32,7 +32,7 @@ end
 
 # --- Configuration ---
 set -q TMUX_DEFAULT_SESSION; or set -g TMUX_DEFAULT_SESSION main
-set -q TMUX_ON_SSH; or set -g TMUX_ON_SSH true
+set -q TMUX_ON_SSH; or set -g TMUX_ON_SSH false
 set -q EXIT_SHELL_ON_TMUX_EXIT; or set -g EXIT_SHELL_ON_TMUX_EXIT false
 
 # --- Helper Functions ---
@@ -142,7 +142,7 @@ if status is-interactive; and not set -q TMUX
 
     if test "$TERM_PROGRAM" = vscode
         set skip_autostart true
-    else if test -n "$SSH_TTY"; and test (__tmux_is_truthy "$TMUX_ON_SSH") -eq 0
+    else if test -n "$SSH_TTY"; and not __tmux_is_truthy "$TMUX_ON_SSH"
         set skip_autostart true
     end
 
