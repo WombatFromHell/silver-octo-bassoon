@@ -74,7 +74,7 @@ function sudoe() {
 # run only in interactive terminal mode
 if [[ $- == *i* ]]; then
   # Check if fish is available and we're not already inside it
-  if command -v fish &>/dev/null; then
+  if command -v fish &>/dev/null && [ -z "$ZED_TERM" ]; then
     _parent_cmd=$(ps -p "$PPID" -o comm= 2>/dev/null || true)
     if [[ -z "$TMUX" && -z "$ZELLIJ" && "$_parent_cmd" != "fish" ]]; then
       exec fish -l
@@ -86,7 +86,7 @@ if [[ $- == *i* ]]; then
   # --- Tool initializations (order matters) ---
   update_wayland_env_vars
 
-  if command -v direnv &>/dev/null; then
+  if command -v direnv &>/dev/null && [ -z "$ZED_TERM" ]; then
     export DIRENV_LOG_FORMAT=
     eval "$(direnv hook bash)"
   fi

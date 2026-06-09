@@ -1,0 +1,71 @@
+{
+  "agent": {
+    "favorite_models": [],
+    "default_profile": "write",
+    "model_parameters": [],
+  },
+  "vim": {
+    "toggle_relative_line_numbers": true,
+  },
+  "git_panel": {
+    "dock": "left",
+  },
+  "lsp": {
+    "nixd": {
+      "binary": { "path": "~/.nix-profile/bin/nixd" },
+      "initialization_options": {
+        "formatting": {
+          "command": ["~/.nix-profile/bin/alejandra", "-q", "-"],
+        },
+      },
+    },
+  },
+  "languages": {
+    "Nix": {
+      "language_servers": ["nixd"],
+      "formatter": "language_server",
+      "format_on_save": "on",
+    },
+    "Lua": {
+      "tab_size": 2,
+      "hard_tabs": false,
+      "auto_indent": "syntax_aware",
+      "auto_indent_on_paste": true,
+      "use_on_type_format": false,
+    },
+    "Python": {
+      "language_servers": ["ty"],
+      "formatter": {
+        "language_server": { "name": "ruff" },
+      },
+      "code_actions_on_format": {
+        "source.organizeImports.ruff": true,
+      },
+      "auto_indent": "syntax_aware",
+      "auto_indent_on_paste": true,
+    },
+  },
+  "language_models": {
+    "openai_compatible": {
+      "llamacpp": {
+        "api_url": "http://127.0.0.1:8080/v1",
+        "available_models": [
+          {
+            "name": "qwen3.6",
+            "display_name": "Qwen3.6",
+            "max_tokens": 65536,
+          },
+        ],
+      },
+    },
+  },
+  "show_whitespaces": "trailing",
+  "vim_mode": true,
+  "buffer_font_size": 14.0,
+  "ui_font_size": 16.0,
+  "ui_font_family": "Noto Sans",
+  "buffer_font_family": "FiraCode Nerd Font",
+  "theme": "Catppuccin Mocha",
+  "format_on_save": "on",
+  "load_direnv": "direct",
+}
