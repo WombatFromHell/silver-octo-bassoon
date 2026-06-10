@@ -1,7 +1,8 @@
 {
+  "cli_default_open_behavior": "existing_window",
   "agent": {
     "favorite_models": [],
-    "default_profile": "write",
+    "default_profile": "ask",
     "model_parameters": [],
   },
   "vim": {
@@ -13,17 +14,17 @@
   "lsp": {
     "nixd": {
       "binary": { "path": "~/.nix-profile/bin/nixd" },
-      "initialization_options": {
-        "formatting": {
-          "command": ["~/.nix-profile/bin/alejandra", "-q", "-"],
-        },
-      },
     },
   },
   "languages": {
     "Nix": {
-      "language_servers": ["nixd"],
-      "formatter": "language_server",
+      "language_servers": ["nixd", "!nil"],
+      "formatter": {
+        "external": {
+          "command": "alejandra",
+          "arguments": ["--quiet", "--"],
+        },
+      },
       "format_on_save": "on",
     },
     "Lua": {
@@ -51,17 +52,30 @@
         "api_url": "http://127.0.0.1:8080/v1",
         "available_models": [
           {
-            "name": "qwen3.6",
-            "display_name": "Qwen3.6",
+            "name": "qwen3.6-27b",
+            "display_name": "Qwen3.6-27B",
             "max_tokens": 65536,
+          },
+          {
+            "name": "qwen3.6-35b",
+            "display_name": "Qwen3.6-35B",
+            "max_tokens": 98304,
           },
         ],
       },
     },
   },
+  "terminal": {
+    "shell": {
+      "with_arguments": {
+        "program": "fish",
+        "args": ["-l"],
+      },
+    },
+  },
   "show_whitespaces": "trailing",
   "vim_mode": true,
-  "buffer_font_size": 14.0,
+  "buffer_font_size": 15.0,
   "ui_font_size": 16.0,
   "ui_font_family": "Noto Sans",
   "buffer_font_family": "FiraCode Nerd Font",

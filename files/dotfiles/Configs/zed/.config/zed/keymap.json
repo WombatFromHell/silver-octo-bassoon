@@ -113,6 +113,8 @@
       "space m P": "markdown::OpenPreviewToTheSide",
       // Open recent project
       "space f p": "projects::OpenRecent",
+      // Open a workspace folder/file
+      "space f o": "workspace::Open",
       // Search word under cursor in current pane
       "space s w": "buffer_search::Deploy",
       // Search word under cursor in all panes
@@ -224,6 +226,13 @@
     "bindings": {
       "s": "vim::PushSneak",
       "S": "vim::PushSneakBackward",
+    },
+  },
+  {
+    // move the AddSurrounds default to make room for sneak
+    "context": "vim_mode == visual",
+    "bindings": {
+      "space S": ["vim::PushAddSurrounds", {}],
     },
   },
   {
