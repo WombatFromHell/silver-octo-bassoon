@@ -1,6 +1,11 @@
 {
   "cli_default_open_behavior": "existing_window",
   "agent": {
+    "default_model": {
+      "provider": "llamacpp",
+      "model": "qwen3.6-35b",
+      "enable_thinking": false
+    },
     "favorite_models": [],
     "default_profile": "ask",
     "model_parameters": [],
