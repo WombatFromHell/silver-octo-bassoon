@@ -1,13 +1,27 @@
 {
   "cli_default_open_behavior": "existing_window",
   "agent": {
+    "tool_permissions": {
+      "tools": {
+        "terminal": {
+          "always_allow": [
+            {
+              "pattern": "^nix\\s+flake(\\s|$)",
+            },
+            {
+              "pattern": "^head\\b",
+            },
+          ],
+        },
+      },
+    },
     "default_model": {
-      "provider": "llamacpp",
-      "model": "qwen3.6-35b",
-      "enable_thinking": false
+      "provider": "opencode",
+      "model": "free/big-pickle",
+      "enable_thinking": false,
     },
     "favorite_models": [],
-    "default_profile": "ask",
+    "default_profile": "write",
     "model_parameters": [],
   },
   "vim": {
@@ -20,13 +34,19 @@
     "nixd": {
       "binary": { "path": "~/.nix-profile/bin/nixd" },
     },
+    "nil": {
+      "binary": { "path": "~/.nix-profile/bin/nil" },
+      "settings": {
+        "autoArchive": false,
+      },
+    },
   },
   "languages": {
     "Nix": {
-      "language_servers": ["nixd", "!nil"],
+      "language_servers": ["nixd", "nil"],
       "formatter": {
         "external": {
-          "command": "alejandra",
+          "command": "~/.nix-profile/bin/alejandra",
           "arguments": ["--quiet", "--"],
         },
       },
@@ -52,6 +72,10 @@
     },
   },
   "language_models": {
+    "opencode": {
+      "show_zen_models": false,
+      "show_go_models": false,
+    },
     "openai_compatible": {
       "llamacpp": {
         "api_url": "http://127.0.0.1:8080/v1",
