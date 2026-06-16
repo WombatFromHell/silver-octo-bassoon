@@ -35,7 +35,7 @@ do_mount() {
 
   mkdir -p "$NAS_HOME"
 
-  SSHFS_OPTS=(-p 2222 -o reconnect,noatime,cache_timeout=1,idmap=user)
+  SSHFS_OPTS=(-p 2222 -o "follow_symlinks,reconnect,noatime,cache_timeout=1,idmap=user")
   HAS_KEY=false
   if [[ -r "$SSH_KEY" ]]; then
     SSHFS_OPTS+=(-o "IdentityFile=$SSH_KEY")
