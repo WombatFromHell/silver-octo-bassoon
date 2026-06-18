@@ -1,8 +1,28 @@
 {
+  "diagnostics": {
+    "inline": {
+      "enabled": true,
+      "update_debounce_ms": 250,
+      "padding": 4,
+      "min_column": 0,
+      "max_severity": null,
+    },
+  },
   "cli_default_open_behavior": "existing_window",
+  "context_servers": {
+    "nixos": {
+      "enabled": true,
+      "remote": false,
+      "command": "nix",
+      "args": ["run", "github:utensils/mcp-nixos", "--"],
+    },
+  },
   "agent": {
     "tool_permissions": {
       "tools": {
+        "fetch": {
+          "default": "allow",
+        },
         "terminal": {
           "always_allow": [
             {
@@ -36,8 +56,12 @@
     },
     "nil": {
       "binary": { "path": "~/.nix-profile/bin/nil" },
-      "settings": {
-        "autoArchive": false,
+      "initialization_options": {
+        "nix": {
+          "flake": {
+            "autoArchive": false,
+          },
+        },
       },
     },
   },
@@ -46,7 +70,7 @@
       "language_servers": ["nixd", "nil"],
       "formatter": {
         "external": {
-          "command": "~/.nix-profile/bin/alejandra",
+          "command": "alejandra",
           "arguments": ["--quiet", "--"],
         },
       },

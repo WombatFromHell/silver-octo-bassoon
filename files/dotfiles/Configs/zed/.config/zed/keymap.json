@@ -100,6 +100,14 @@
           "reveal_target": "center",
         },
       ],
+      // Yazi
+      "space g f": [
+        "task::Spawn",
+        {
+          "task_name": "yazi",
+          "reveal_target": "center",
+        },
+      ],
       "space g h d": "editor::ExpandAllDiffHunks",
       "space g h D": "git::Diff",
       "space g h r": "git::Restore",
