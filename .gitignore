@@ -6,8 +6,11 @@
 support
 __pycache__
 
-**/.config/OpenRGB/*
-!**/.config/OpenRGB/lightsout*.orp
+**/config/OpenRGB/**
+**/.config/OpenRGB/**
+!**/config/OpenRGB/OpenRGB.json
+!**/config/OpenRGB/*.orp
+
 **/.config/pipewire
 **/.config/fish/fish_variables
 **/.config/environment.d/*
