@@ -10,7 +10,7 @@ PID_FILE="$RUNTIME_DIR/nasmount-sshfs.pid"
 LOG_FILE="$RUNTIME_DIR/nasmount-sshfs.log"
 SSH_KEY="$HOME/.ssh/id_rsa"
 
-SSHFS_OPTS=(-o "follow_symlinks,reconnect,noatime,cache_timeout=1,idmap=user")
+SSHFS_OPTS=(-o "delay_connect,default_permissions,follow_symlinks,reconnect,ServerAliveInterval=15,ConnectTimeout=3,ConnectionAttempts=3,noatime,idmap=user")
 
 deps=(sshfs fusermount)
 for d in "${deps[@]}"; do
