@@ -2,13 +2,15 @@
 # Mount / unmount SSHFS; prompts for password if no valid key is found.
 
 NAS_HOME="$HOME/.nas-home"
-MOUNT_POINT="nxxel@192.168.1.153:/share/homes/nxxel"
+MOUNT_POINT="josh@192.168.1.153:/home/josh"
 LINK="$HOME/Backups"
 TARGET="$NAS_HOME/GDrive/Backups"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID}"
 PID_FILE="$RUNTIME_DIR/nasmount-sshfs.pid"
 LOG_FILE="$RUNTIME_DIR/nasmount-sshfs.log"
 SSH_KEY="$HOME/.ssh/id_rsa"
+
+SSHFS_OPTS=(-o "follow_symlinks,reconnect,noatime,cache_timeout=1,idmap=user")
 
 deps=(sshfs fusermount)
 for d in "${deps[@]}"; do
@@ -35,7 +37,6 @@ do_mount() {
 
   mkdir -p "$NAS_HOME"
 
-  SSHFS_OPTS=(-p 2222 -o "follow_symlinks,reconnect,noatime,cache_timeout=1,idmap=user")
   HAS_KEY=false
   if [[ -r "$SSH_KEY" ]]; then
     SSHFS_OPTS+=(-o "IdentityFile=$SSH_KEY")
