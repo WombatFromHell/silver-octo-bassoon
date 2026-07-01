@@ -21,3 +21,6 @@ background-blur-radius = 20
 window-save-state = always
 quit-after-last-window-closed = true
 keybind = shift+enter=text:\n
+#
+clipboard-read = allow
+clipboard-write = allow
