@@ -1,15 +1,11 @@
 [calendars]
 [[gcal]]
-path = ~/.calendars/gcal/main/
+path = ~/.calendars/gcal-dcal/
 color = light blue
 
 [[icloud]]
-path = ~/.calendars/icloud/main/
+path = ~/.calendars/icloud-dcal/
 color = light green
-
-[default]
-default_calendar = gcal
-highlight_event_days = True
 
 [locale]
 timeformat = %I:%M %p
