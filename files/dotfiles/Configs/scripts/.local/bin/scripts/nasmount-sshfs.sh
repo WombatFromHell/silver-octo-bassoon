@@ -1,18 +1,83 @@
 #!/usr/bin/env bash
-# Mount / unmount SSHFS; prompts for password if no valid key is found.
+set -euo pipefail
 
+# Mount / unmount SSHFS; prompts for password if no valid key is found.
 NAS_HOME="$HOME/.mnt/nas-home"
 MOUNT_POINT="josh@192.168.1.153:/home/josh"
-LINK="$HOME/Backups"
-TARGET="$NAS_HOME/GDrive/Backups"
-RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID}"
+
+# /run/user/$UID is a Linux-only (systemd) convention; macOS has no equivalent
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}"
 PID_FILE="$RUNTIME_DIR/nasmount-sshfs.pid"
 LOG_FILE="$RUNTIME_DIR/nasmount-sshfs.log"
 SSH_KEY="$HOME/.ssh/id_rsa"
+#
+LINK="$HOME/Backups"
+TARGET="$NAS_HOME/GDrive/Backups"
 
-SSHFS_OPTS=(-o "delay_connect,default_permissions,follow_symlinks,reconnect,ServerAliveInterval=15,ConnectTimeout=3,ConnectionAttempts=1,noatime,idmap=user")
+# symlinking into $HOME is a side effect the user must opt into
+is_truthy() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+  1 | true | y | yes | on) return 0 ;;
+  *) return 1 ;;
+  esac
+}
 
-deps=(sshfs fusermount)
+if is_truthy "${LINK_ENABLED:-}"; then
+  LINK_ENABLED=true
+else
+  LINK_ENABLED=false
+fi
+
+IS_MACOS=false
+if [[ "$(uname)" == "Darwin" ]]; then
+  IS_MACOS=true
+fi
+
+# idmap=user is Linux-FUSE-only; macFUSE/fuse-t's sshfs rejects it
+SSHFS_OPTS=(-o "delay_connect,default_permissions,follow_symlinks,reconnect,ServerAliveInterval=15,ConnectTimeout=3,ConnectionAttempts=1,noatime")
+if ! $IS_MACOS; then
+  SSHFS_OPTS+=(-o "idmap=user")
+fi
+
+# `mountpoint` doesn't exist on macOS (even under fuse-t); use mount(1) instead
+is_mounted() { if $IS_MACOS; then mount | grep -q " on $1 "; else mountpoint -q "$1"; fi; }
+
+# `fusermount` doesn't exist on macOS/fuse-t either; use native umount
+os_unmount() { if $IS_MACOS; then umount "$1"; else fusermount -u "$1"; fi; }
+
+link_matches_target() {
+  [[ -L "$LINK" ]] && [[ "$(readlink -f "$LINK")" == "$(readlink -f "$TARGET")" ]]
+}
+
+sync_link() {
+  if [[ "$LINK_ENABLED" != "true" ]]; then
+    remove_link
+    return 0
+  fi
+  if link_matches_target; then
+    return 0
+  fi
+  rm -f "$LINK"
+  ln -sf "$TARGET" "$LINK"
+}
+
+remove_link() {
+  if link_matches_target; then
+    rm -f "$LINK"
+  fi
+  return 0
+}
+
+finish_mount() {
+  echo "$1" >"$PID_FILE"
+  sync_link
+  exit 0
+}
+
+deps=(sshfs)
+if ! $IS_MACOS; then
+  deps+=(fusermount)
+fi
 for d in "${deps[@]}"; do
   command -v "$d" &>/dev/null || {
     echo "nasmount: missing dependency: '$d'" >&2
@@ -25,27 +90,23 @@ do_mount() {
   if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
     exit 0
   fi
-  [[ -f "$PID_FILE" ]] && rm -f "$PID_FILE"
-
-  if mountpoint -q "$NAS_HOME"; then
-    if [[ ! -L "$LINK" ]] || [[ "$(readlink -f "$LINK")" != "$(readlink -f "$TARGET")" ]]; then
-      rm -f "$LINK"
-      ln -sf "$TARGET" "$LINK"
-    fi
+  if [[ -f "$PID_FILE" ]]; then
+    rm -f "$PID_FILE"
+  fi
+  if is_mounted "$NAS_HOME"; then
+    sync_link
     exit 0
   fi
 
   mkdir -p "$NAS_HOME"
-
   HAS_KEY=false
   if [[ -r "$SSH_KEY" ]]; then
     SSHFS_OPTS+=(-o "IdentityFile=$SSH_KEY")
     HAS_KEY=true
   fi
-
-  # Detect if we have a usable TTY
+  # Detect if we have a usable TTY for an interactive password prompt
   HAS_TTY=false
-  if [[ -t 0 ]] && [[ -t 2 ]]; then
+  if [[ -t 0 && -t 2 ]]; then
     HAS_TTY=true
   fi
 
@@ -60,14 +121,14 @@ do_mount() {
 
     # Wait briefly for mount to appear (non-interactive path)
     for _ in {1..10}; do
-      mountpoint -q "$NAS_HOME" && break
+      if is_mounted "$NAS_HOME"; then
+        break
+      fi
       sleep 1
     done
 
-    if mountpoint -q "$NAS_HOME"; then
-      echo "$bg_pid" >"$PID_FILE"
-      rm -f "$LINK" && ln -sf "$TARGET" "$LINK"
-      exit 0
+    if is_mounted "$NAS_HOME"; then
+      finish_mount "$bg_pid"
     else
       echo "nasmount: background mount failed (check $LOG_FILE)" >&2
       exit 1
@@ -77,32 +138,29 @@ do_mount() {
     echo "nasmount: mounting (password prompt expected)..."
     sshfs "${SSHFS_OPTS[@]}" "$MOUNT_POINT" "$NAS_HOME"
     local rc=$?
-    [[ $rc -ne 0 ]] && exit "$rc"
-
-    rm -f "$LINK" && ln -sf "$TARGET" "$LINK"
-    pgrep -f "sshfs.*$NAS_HOME" | head -n1 >"$PID_FILE"
-    exit 0
+    if [[ $rc -ne 0 ]]; then
+      exit "$rc"
+    fi
+    local fg_pid
+    fg_pid="$(pgrep -f "sshfs.*$NAS_HOME" | head -n1 || true)"
+    finish_mount "$fg_pid"
   fi
 }
 
 do_unmount() {
-  if [[ ! -f "$PID_FILE" ]] && ! mountpoint -q "$NAS_HOME"; then
+  if [[ ! -f "$PID_FILE" ]] && ! is_mounted "$NAS_HOME"; then
     exit 0
   fi
-
   if [[ -f "$PID_FILE" ]]; then
     kill "$(cat "$PID_FILE")" 2>/dev/null
     rm -f "$PID_FILE"
   fi
-
-  fusermount -u "$NAS_HOME" 2>/dev/null || true
-
-  [[ -L "$LINK" ]] && rm -f "$LINK"
-
+  os_unmount "$NAS_HOME" 2>/dev/null || true
+  remove_link
   exit 0
 }
 
-case "$1" in
+case "${1:-}" in
 mount) do_mount ;;
 unmount) do_unmount ;;
 *)
