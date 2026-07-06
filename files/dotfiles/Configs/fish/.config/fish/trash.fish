@@ -1,4 +1,4 @@
-if command -q trash
+if command -q trash-put
     alias rm='trash-put'
     alias rmd='trash-put'
     alias rmc='trash-empty'
