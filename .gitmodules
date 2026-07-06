@@ -18,7 +18,7 @@
 	url = https://github.com/Arcitec/discord-flatpak-rpc-bridge.git
 [submodule "files/dotfiles/Configs/tmux/.config/tmux/plugins/tpm"]
 	path = files/dotfiles/Configs/tmux/.config/tmux/plugins/tpm
-	url = https://github.com/tmux-plugins/tpm.git
+	url = https://github.com/tmuxpack/tpack.git
 [submodule "files/dotfiles/Configs/tmux/.config/tmux/plugins/tmux-floax"]
 	path = files/dotfiles/Configs/tmux/.config/tmux/plugins/tmux-floax
 	url = https://github.com/omerxx/tmux-floax.git
