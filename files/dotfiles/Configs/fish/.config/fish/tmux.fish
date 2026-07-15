@@ -33,6 +33,7 @@ end
 # --- Configuration ---
 set -q TMUX_DEFAULT_SESSION; or set -g TMUX_DEFAULT_SESSION main
 set -q TMUX_ON_SSH; or set -g TMUX_ON_SSH false
+set -q TMUX_AUTO_ATTACH; or set -g TMUX_AUTO_ATTACH true
 set -q EXIT_SHELL_ON_TMUX_EXIT; or set -g EXIT_SHELL_ON_TMUX_EXIT false
 
 # --- Helper Functions ---
@@ -139,6 +140,9 @@ if status is-interactive; and not set -q TMUX
     # 1. Inside VS Code terminal
     # 2. Inside SSH (unless TMUX_ON_SSH is true)
     set -l skip_autostart false
+    if not __tmux_is_truthy "$TMUX_AUTO_ATTACH"
+        set skip_autostart true
+    end
 
     if test "$TERM_PROGRAM" = vscode
         set skip_autostart true
