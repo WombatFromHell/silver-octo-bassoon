@@ -294,6 +294,56 @@ if command -q nix
             eval $cmd
         end
     end
+
+    if command -q xilo
+        function xilo-push --description "Build and push a closure to xilo"
+            set -l flake_path $argv[1]
+            set -l target (test -n "$argv[2]"; and echo $argv[2]; or hostname)
+
+            if string match -q '*@*' -- "$target"
+                set target "homeConfigurations.\"$target\".activationPackage"
+            else
+                set target "nixosConfigurations.$target.config.system.build.toplevel"
+            end
+
+            set -l xilo_bin (command -v xilo)
+            if test -z "$xilo_bin"
+                echo "Error: 'xilo' not found or not installed!" >&2
+                return 1
+            end
+
+            set -l xilo_secrets /run/agenix/xilo
+            set -l push_creds_mode ""
+
+            if test -f "$xilo_secrets"
+                set push_creds_mode agenix
+            else if ls_creds | string match -q '*XILO_URL*'; and ls_creds | string match -q '*XILO_TOKEN*'; and ls_creds | string match -q '*XILO_CACHE*'
+                set push_creds_mode creds
+            else
+                echo "Error: no xilo credentials found (checked $xilo_secrets and ls_creds)" >&2
+                return 1
+            end
+
+            set -l flake_target "$flake_path#$target"
+            set -l out_paths (nix build "$flake_target" -L --print-out-paths --no-link)
+            if test $status -ne 0
+                echo "Error: nix build failed" >&2
+                return 1
+            end
+
+            if test "$push_creds_mode" = agenix
+                printf '%s\n' $out_paths | sudo env XILO_BIN="$xilo_bin" sh -c '
+                    set -a
+                    . "'"$xilo_secrets"'"
+                    set +a
+                    "$XILO_BIN" push default/xilopkgs - --quiet
+                '
+            else
+                unlock_creds XILO_URL XILO_TOKEN XILO_CACHE
+                printf '%s\n' $out_paths | $xilo_bin push default/xilopkgs -
+            end
+        end
+    end
 end
 
 function sudoe --description "sudo with preserved PATH and Fish function support"
