@@ -132,7 +132,8 @@ environment {
 spawn-at-startup "/usr/libexec/pam_kwallet_init"
 spawn-at-startup "/usr/libexec/kf6/polkit-kde-authentication-agent-1"
 //
-spawn-sh-at-startup "/usr/bin/dbus-update-activation-environment --systemd QT_QPA_PLATFORMTHEME QT_QPA_PLATFORM QT_WAYLAND_DISABLE_WINDOWDECORATION"
+spawn-sh-at-startup "/usr/bin/dbus-update-activation-environment --systemd QT_QPA_PLATFORMTHEME QT_QPA_PLATFORM QT_WAYLAND_DISABLE_WINDOWDECORATION XDG_DATA_DIRS"
+spawn-sh-at-startup "/usr/bin/systemctl --user import-environment XDG_DATA_DIRS"
 spawn-sh-at-startup "/usr/bin/systemctl --user restart xdg-desktop-portal xdg-desktop-portal-gtk plasma-xdg-desktop-portal-kde 2>/dev/null"
 //
 // only uncomment below if using 'kdewallet' with blank password
