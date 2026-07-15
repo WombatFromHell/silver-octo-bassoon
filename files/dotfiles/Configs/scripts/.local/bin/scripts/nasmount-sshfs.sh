@@ -33,11 +33,11 @@ if [[ "$(uname)" == "Darwin" ]]; then
   IS_MACOS=true
 fi
 
-SSHFS_CONNECTION_OPTS=(-o "reconnect,ServerAliveInterval=30,ConnectTimeout=3,ConnectionAttempts=1")
-SSHFS_OPTS=(-o "follow_symlinks,noatime,iosize=1048576,compression=no")
+SSHFS_CONNECTION_OPTS=(-o "delay_connect,reconnect,ServerAliveInterval=30,ConnectTimeout=3,ConnectionAttempts=1")
+SSHFS_OPTS=(-o "follow_symlinks,noatime,compression=no")
 #
 LINUX_SSHFS_OPTS=(-o "idmap=user")
-MAC_SSHFS_OPTS=(-o "noappledouble,noapplexattr,no_readahead")
+MAC_SSHFS_OPTS=(-o "noappledouble,noapplexattr")
 if ! $IS_MACOS; then
   # idmap=user is Linux-FUSE-only; macFUSE/fuse-t's sshfs rejects it
   SSHFS_OPTS+=("${SSHFS_CONNECTION_OPTS[@]}" "${LINUX_SSHFS_OPTS[@]}")
