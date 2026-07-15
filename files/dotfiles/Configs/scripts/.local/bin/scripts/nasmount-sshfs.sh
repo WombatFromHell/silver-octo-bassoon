@@ -33,10 +33,16 @@ if [[ "$(uname)" == "Darwin" ]]; then
   IS_MACOS=true
 fi
 
-# idmap=user is Linux-FUSE-only; macFUSE/fuse-t's sshfs rejects it
-SSHFS_OPTS=(-o "delay_connect,default_permissions,follow_symlinks,reconnect,ServerAliveInterval=15,ConnectTimeout=3,ConnectionAttempts=1,noatime")
+SSHFS_CONNECTION_OPTS=(-o "reconnect,ServerAliveInterval=30,ConnectTimeout=3,ConnectionAttempts=1")
+SSHFS_OPTS=(-o "follow_symlinks,noatime,iosize=1048576,compression=no")
+#
+LINUX_SSHFS_OPTS=(-o "idmap=user")
+MAC_SSHFS_OPTS=(-o "noappledouble,noapplexattr,no_readahead")
 if ! $IS_MACOS; then
-  SSHFS_OPTS+=(-o "idmap=user")
+  # idmap=user is Linux-FUSE-only; macFUSE/fuse-t's sshfs rejects it
+  SSHFS_OPTS+=("${SSHFS_CONNECTION_OPTS[@]}" "${LINUX_SSHFS_OPTS[@]}")
+else
+  SSHFS_OPTS+=("${SSHFS_CONNECTION_OPTS[@]}" "${MAC_SSHFS_OPTS[@]}")
 fi
 
 # `mountpoint` doesn't exist on macOS (even under fuse-t); use mount(1) instead
@@ -71,7 +77,7 @@ remove_link() {
 finish_mount() {
   echo "$1" >"$PID_FILE"
   sync_link
-  exit 0
+  return 0
 }
 
 deps=(sshfs)
@@ -88,14 +94,14 @@ done
 do_mount() {
   # Idempotency gate: lock file with live process OR active mountpoint
   if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-    exit 0
+    return 0
   fi
   if [[ -f "$PID_FILE" ]]; then
     rm -f "$PID_FILE"
   fi
   if is_mounted "$NAS_HOME"; then
     sync_link
-    exit 0
+    return 0
   fi
 
   mkdir -p "$NAS_HOME"
@@ -131,7 +137,7 @@ do_mount() {
       finish_mount "$bg_pid"
     else
       echo "nasmount: background mount failed (check $LOG_FILE)" >&2
-      exit 1
+      return 1
     fi
   else
     # Interactive terminal + no key: foreground for password prompt
@@ -139,7 +145,7 @@ do_mount() {
     sshfs "${SSHFS_OPTS[@]}" "$MOUNT_POINT" "$NAS_HOME"
     local rc=$?
     if [[ $rc -ne 0 ]]; then
-      exit "$rc"
+      return "$rc"
     fi
     local fg_pid
     fg_pid="$(pgrep -f "sshfs.*$NAS_HOME" | head -n1 || true)"
@@ -149,7 +155,7 @@ do_mount() {
 
 do_unmount() {
   if [[ ! -f "$PID_FILE" ]] && ! is_mounted "$NAS_HOME"; then
-    exit 0
+    return 0
   fi
   if [[ -f "$PID_FILE" ]]; then
     kill "$(cat "$PID_FILE")" 2>/dev/null
@@ -157,14 +163,18 @@ do_unmount() {
   fi
   os_unmount "$NAS_HOME" 2>/dev/null || true
   remove_link
-  exit 0
+  return 0
 }
 
 case "${1:-}" in
 mount) do_mount ;;
 unmount) do_unmount ;;
+remount)
+  do_unmount
+  do_mount
+  ;;
 *)
-  echo "Usage: nasmount-sshfs.sh <mount|unmount>" >&2
+  echo "Usage: nasmount-sshfs.sh <mount|unmount|remount>" >&2
   exit 1
   ;;
 esac
