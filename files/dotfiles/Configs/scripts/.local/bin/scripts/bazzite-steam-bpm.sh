@@ -13,7 +13,6 @@ STEAM_ARGS=(
 NSCB_PATH="$(command -v nscb 2>/dev/null)" || true
 GAMESCOPE_ARGS=(
   -p std
-  --mangoapp
   -e
   --
 )
@@ -81,25 +80,9 @@ forward_signal() {
 }
 
 setup_signal_handlers() {
-  trap 'forward_signal INT' INT TERM HUP
-}
-
-# ── Shutdown Hook Interceptor ────────────────────────────────────────────────
-
-# If Steam is already running, handle the shutdown/restart request.
-# Prefers steamos-session-select (execs into it), falls back to steam -shutdown.
-handle_shutdown_request() {
-  # Only act if there's a pre-existing Steam session to hand off
-  is_steam_running || return 0
-
-  local hook
-  hook="$(command -v steamos-session-select 2>/dev/null)" || true
-  if [[ -n $hook ]]; then
-    exec "$hook"
-  fi
-
-  steam -shutdown || true
-  wait_for_steam_exit
+  trap 'forward_signal INT' INT
+  trap 'forward_signal TERM' TERM
+  trap 'forward_signal HUP' HUP
 }
 
 # ── Steam Shutdown Logic ─────────────────────────────────────────────────────
@@ -272,42 +255,24 @@ acquire_lock() {
 
   # Lock is held — diagnose the situation
 
-  # Case 1: Gamescope wrapping Steam is running
-  if is_gamescope_steam_running; then
-    if is_steam_running; then
-      # Healthy session already active
-      log_info "Gamescope Steam session already active — focusing window"
-      focus_steam_bpm_window || true
-      exit 0
-    else
-      # Gamescope running but Steam dead — orphaned
-      cleanup_orphaned_session || return 1
-      if try_lock; then
-        return 0
-      else
-        log_error "Failed to acquire lock after cleanup"
-        return 1
-      fi
-    fi
+  # Healthy session already active — focus and exit
+  if is_gamescope_steam_running && is_steam_running; then
+    log_info "Gamescope Steam session already active — focusing window"
+    focus_steam_bpm_window || true
+    exit 0
   fi
 
-  # Case 2: Neither gamescope nor steam running — definitely orphaned
-  if ! is_steam_running && ! pgrep -x gamescope >/dev/null 2>&1; then
-    log_info "Lock held but no gamescope or steam running — treating as orphaned"
+  # Steam dead — orphaned session, reclaim the lock
+  if ! is_steam_running; then
     cleanup_orphaned_session || return 1
-    if try_lock; then
-      return 0
-    else
-      log_error "Failed to acquire lock after cleanup"
-      return 1
-    fi
+    try_lock && return 0
+    log_error "Failed to acquire lock after cleanup"
+    return 1
   fi
 
-  # Case 3: Lock held by unrelated process — wait with timeout
+  # Lock held by unrelated process — wait with timeout
   log_info "Lock held by unrelated process — waiting (15s timeout)..."
-  if wait_lock 15; then
-    return 0
-  fi
+  wait_lock 15 && return 0
 
   log_error "Could not acquire lock after 15s"
   return 1
@@ -319,8 +284,8 @@ main() {
   check_dependencies
   setup_signal_handlers
 
-  # If Steam is already running, hand off to steamos-session-select or shut it down
-  handle_shutdown_request
+  # If Steam is already running, shut it down before launching a new session
+  shutdown_steam_if_running
 
   # Prevent concurrent executions (hold lock until session ends)
   acquire_lock

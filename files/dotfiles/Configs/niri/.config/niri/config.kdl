@@ -122,16 +122,19 @@ window-rule {
     geometry-corner-radius 4
     clip-to-geometry true
 }
+// ensure gamescope/bazzite-steam-bpm.sh opens on the dummy-plug
+window-rule {
+    match app-id="^gamescope$"
+    open-on-output "HDMI-A-1"
+}
 //
 environment {
     QT_QPA_PLATFORMTHEME "qt6ct"
     QT_QPA_PLATFORM "wayland"
     QT_WAYLAND_DISABLE_WINDOWDECORATION "0"
 }
-
 // do some things to enable KDE/GNOME during Niri startup (PAM/KWallet/etc)
 spawn-sh-at-startup "~/.config/niri/startup.sh"
-
 // only uncomment below if using 'kdewallet' with blank password
 binds {
     Mod+Alt+Slash {
@@ -525,3 +528,5 @@ binds {
 include "dms/cursor.kdl"
 include "dms/binds.kdl"
 include "dms/windowrules.kdl"
+include "dms/outputs.kdl"
+

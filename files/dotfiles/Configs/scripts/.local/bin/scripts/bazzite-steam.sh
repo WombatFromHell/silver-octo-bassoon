@@ -2,6 +2,8 @@
 STEAM_SCRIPT="$(which bazzite-steam || which steam)"
 STEAM_ARGS=(
   +gyro_force_sensor_rate 250
+  -pipewire
+  -pipewire-dmabuf
 )
 
 # throw in some overrides

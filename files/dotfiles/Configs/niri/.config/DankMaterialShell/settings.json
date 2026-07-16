@@ -240,6 +240,7 @@
   "greeterLockDateFormat": "",
   "greeterFontFamily": "",
   "greeterWallpaperFillMode": "",
+  "greeterPamExternallyManaged": false,
   "greeterSyncPending": false,
   "greeterSyncBaseline": {},
   "mediaSize": 1,
@@ -482,6 +483,9 @@
   "maxFprintTries": 15,
   "enableU2f": false,
   "u2fMode": "or",
+  "lockPamPath": "",
+  "lockPamInlineFprint": false,
+  "lockPamInlineU2f": false,
   "lockScreenInactiveColor": "#000000",
   "lockScreenNotificationMode": 0,
   "lockScreenVideoEnabled": false,
@@ -541,27 +545,30 @@
   "updaterUseCustomCommand": false,
   "updaterCustomCommand": "",
   "updaterTerminalAdditionalParams": "",
-  "updaterIntervalSeconds": 1800,
-  "updaterIncludeFlatpak": true,
+  "updaterIntervalSeconds": 1705032644,
+  "updaterIncludeFlatpak": false,
   "updaterAllowAUR": true,
   "updaterIgnoredPackages": [],
-  "displayNameMode": "system",
+  "displayNameMode": "model",
   "screenPreferences": {},
   "showOnLastDisplay": {},
   "niriOutputSettings": {
     "DP-1": {
-      "vrrOnDemand": true,
-      "disabled": true
+      "focusAtStartup": true,
+      "vrrOnDemand": true
     },
     "LG Electronics LG TV SSCR2 0x01010101": {
       "vrrOnDemand": true
     },
     "LG Electronics 27GL850 910NTGY7B319": {
-      "disabled": false
+      "disabled": false,
+      "vrrOnDemand": true
     },
     "HDMI-A-1": {
-      "vrrOnDemand": true,
-      "disabled": false
+      "disabled": true
+    },
+    "Ugreen Group Ltd. UGREEN 0x20200210": {
+      "vrrOnDemand": true
     }
   },
   "hyprlandOutputSettings": {},
@@ -569,7 +576,7 @@
     "niri": {}
   },
   "activeDisplayProfile": {
-    "niri": ""
+    "niri": "profile_1784158151084_3zm04xv"
   },
   "displayProfileAutoSelect": false,
   "displayShowDisconnected": false,
