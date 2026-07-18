@@ -1,9 +1,24 @@
+output "LG Electronics 27GL850 910NTGY7B319" {
+    mode 2560x1440@144.000
+    position 0,0
+    alias $DESKTOP
+}
+output "LG Electronics LG TV SSCR2 0x01010101" {
+  mode 2560x1440@120.000
+  position 0,0
+  alias $TV
+}
+
 profile notv {
-    output DP-1 enable mode 2560x1440@144.000 position 0,0
-    output HDMI-A-1 disable
+    output $DESKTOP enable
+    output $TV disable
+    exec kanshi-runner.sh notv
 }
 profile tv {
-    output HDMI-A-1 enable mode 2560x1440@120.000 position 0,0
-    output DP-1 disable
-    exec /var/home/josh/.local/bin/scripts/bazzite-steam-bpm.sh
+    output $TV enable
+    output $DESKTOP disable
+    exec kanshi-runner.sh tv
+}
+profile desktop {
+    output $DESKTOP enable
 }

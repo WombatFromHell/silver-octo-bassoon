@@ -1,0 +1,819 @@
+#!/usr/bin/env bash
+# Special thanks to @coolavery for the initial script for this
+# https://github.com/ValveSoftware/gamescope/issues/835#issuecomment-2496383830
+#
+# Initial 1.0.0 version was not possible without the help of
+# * @coolavery
+# * @HikariKnight
+# * @Zeglius
+# * @tulilirockz
+# * @EPOCHvoyager
+# * @wolfyreload
+#
+# Purpose of this script:
+# * Allow launching gamescope with a default set of environment variables and gamescope args set by the user
+#   "~/.config/scopebuddy/scb.conf" will be created with examples after first run
+# * Serve as a temporary workaround for fixing the steam overlay when using nested gamescope on desktop steam until fixed upstream
+set -eo pipefail
+
+##########
+# Globals
+##########
+SCB_VER="1.4.0"
+
+gamescope_opts=""
+command=""
+
+# Set SCB to use gamescope by default
+SCB_NOSCOPE=${SCB_NOSCOPE:-0}
+
+# Set default gamescope binary
+GAMESCOPE_BIN=${GAMESCOPE_BIN:-gamescope}
+
+KSCREEN_COMMAND=${KSCREEN_COMMAND:-kscreen-doctor}
+
+# Set default gdctl command for GNOME
+GDCTL_COMMAND=${GDCTL_COMMAND:-gdctl}
+
+# Set default gnome-randr command for GNOME (alternative to gdctl)
+GNOME_RANDR_COMMAND=${GNOME_RANDR_COMMAND:-gnome-randr}
+
+# Set default wlr-randr command
+WLR_RANDR_COMMAND=${WLR_RANDR_COMMAND:-wlr-randr}
+
+# Set default home config directory
+XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-$HOME/.config}
+# Configure SCB config
+SCB_CONF=${SCB_CONF:-"scb.conf"}
+SCB_CONFIGDIR="$XDG_CONFIG_HOME/scopebuddy"
+
+# Default off for SCB_APPENDMODE (this is better for testing, but is not 1:1 behavior with gamescope)
+# With APPENDMODE enabled, scopebuddy will pass all args and $SCB_GAMESCOPE_ARGS to gamescope with the args to scopebuddy added last.
+SCB_APPENDMODE=${SCB_APPENDMODE:-0}
+
+# Set APPID used for current game config
+SCB_APPID=${SCB_APPID:-}
+
+# Default off for SCB_DEBUG
+SCB_DEBUG=${SCB_DEBUG:-0}
+
+# Default off for SCB_AUTO_*
+SCB_AUTO_RES=${SCB_AUTO_RES:-0}
+SCB_AUTO_HDR=${SCB_AUTO_HDR:-0}
+SCB_AUTO_VRR=${SCB_AUTO_VRR:-0}
+SCB_AUTO_REFRESH=${SCB_AUTO_REFRESH:-0}
+SCB_AUTO_FRAME_LIMIT=${SCB_AUTO_FRAME_LIMIT:-0}
+
+# We want to ignore -e and --steam gamescope flags as they are currently broken and crash gamescope
+SCB_STEAMARGIGNORE=${SCB_STEAMARGIGNORE:-1}
+
+# Add a variable to disable the fix for the steam overlay and steam input in nested gamescope
+# See https://xkcd.com/1172/
+SCB_NESTEDFIX=${SCB_NESTEDFIX:-1}
+
+############
+# Constants
+############
+# By default we will never be in gamemode
+SCB_GAMEMODE=0
+
+# Helper to determine get if any of the SCB_AUTO_* features are enabled
+# 0 = none enabled, >0 means at least one is enabled
+SCB_ANY_AUTO_FEAT_ENABLED=$((SCB_AUTO_RES + SCB_AUTO_HDR + SCB_AUTO_VRR + SCB_AUTO_REFRESH + SCB_AUTO_FRAME_LIMIT))
+
+###################
+# Helper functions
+###################
+
+# Shows an error dialog/notification to the user and optionally exits
+# Usage:
+#    show_error_dialog "Title" "Message" [exit_code]
+# Params:
+#    $1: (Required) Error title
+#    $2: (Required) Error message (can include newlines)
+#    $3: (Optional) Exit code (if provided, script will exit with this code)
+show_error_dialog() {
+  local title="$1"
+  local message="$2"
+  local exit_code="${3:-}"
+
+  # Always print to console
+  echo "================================================================================"
+  echo "ERROR: $title"
+  echo "================================================================================"
+  echo "$message"
+  echo "================================================================================"
+
+  # Try to show a GUI error dialog using various methods (in order of preference)
+  if command -v kdialog >/dev/null 2>&1; then
+    # KDE Plasma - native dialog
+    kdialog --error "$message" --title "$title" 2>/dev/null &
+  elif command -v zenity >/dev/null 2>&1; then
+    # GTK-based systems (GNOME, XFCE, etc.)
+    zenity --error --text="$message" --title="$title" --width=500 2>/dev/null &
+  elif command -v xmessage >/dev/null 2>&1; then
+    # Fallback for basic X11 systems
+    xmessage -center -buttons "OK:0" "$title: $message" 2>/dev/null &
+  elif command -v notify-send >/dev/null 2>&1; then
+    # Last resort - notification (less visible but better than nothing)
+    notify-send -u critical "$title" "$message" -t 30000 2>/dev/null &
+  fi
+
+  # Exit if exit code was provided
+  if [ -n "$exit_code" ]; then
+    exit "$exit_code"
+  fi
+}
+
+# Appends a substring to $gamescope_opts if it doesn't already exist
+# Usage:
+#    gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "<TARGET>")
+# Params:
+#    $1: (Required) original $gamescope_opts argument string, ex: "-H 1920 -W 1080 --mangoapp"
+#    $2: (Required) target substring. Ex: "--hdr-enabled"). If not found, it will be appended.
+verify_or_append_arg() {
+  local argstring="$1"
+  local target="$2"
+  # append if the value doesn't exist.
+  if ! echo "$argstring" | grep -F -q -- "$target"; then
+    argstring="$argstring $target"
+  fi
+  echo "$argstring"
+}
+# Uses sed to replace a target string if it exists, or append it to the args if it doesn't.
+# Usage:
+#    gamescope_opts=$(replace_or_append_arg "$gamescope_opts" "<TARGET>" "<REPLACEMENT>")
+# Params:
+#    $1: (Required) original $gamescope_opts argument string, ex: "-H 1920 -W 1080 --mangoapp"
+#    $2: (Required) target substring. sed extended regex format, ex: "-H[[:space:]]*[0-9]+" (matches strings like "-H 1920")
+#    $3: (Required) replacement substring. Ex: "-H 3440". If $target is not found, this value will be appended.
+replace_or_append_arg() {
+  local argstring="$1"
+  local target="$2"
+  local replacement="$3"
+  if echo "$argstring" | grep -E -q -- "$target"; then
+    # Replace all occurrences of the target with the replacement.
+    argstring=$(echo "$argstring" | sed -E "s/${target}/${replacement}/g")
+  else
+    # Append the replacement value if the target is not found in the original argstring.
+    argstring="$argstring $replacement"
+  fi
+  echo "$argstring"
+}
+# Validates capability to run $SCB_AUTO_*
+# Returns 0 if dependencies are met, 1 otherwise (silent check).
+kde_auto_args_preflight() {
+  # Check for KDE session
+  if [ -z "$KDE_FULL_SESSION" ]; then
+    return 1
+  fi
+  # Check that jq is available
+  if ! command -v jq >/dev/null 2>&1; then
+    return 1
+  fi
+  # Check that kscreen-doctor is available
+  if ! command -v "$KSCREEN_COMMAND" >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+# Validates capability to run $SCB_AUTO_* on GNOME with gdctl
+# Returns 0 if dependencies are met, 1 otherwise (silent check).
+gnome_gdctl_auto_args_preflight() {
+  # Check for GNOME session
+  if [ "$XDG_CURRENT_DESKTOP" != "GNOME" ] && [ "$DESKTOP_SESSION" != "gnome" ]; then
+    return 1
+  fi
+  # Check that jq is available
+  if ! command -v jq >/dev/null 2>&1; then
+    return 1
+  fi
+  # Check that gdctl is available and supports --format=json (upstream version check)
+  if ! command -v "$GDCTL_COMMAND" >/dev/null 2>&1; then
+    return 1
+  elif ! "$GDCTL_COMMAND" show --format=json >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+# Validates capability to run $SCB_AUTO_* on GNOME with gnome-randr
+# Returns 0 if dependencies are met, 1 otherwise (silent check).
+gnome_randr_auto_args_preflight() {
+  # Check for GNOME session
+  if [ "$XDG_CURRENT_DESKTOP" != "GNOME" ] && [ "$DESKTOP_SESSION" != "gnome" ]; then
+    return 1
+  fi
+  # Check that gnome-randr is available (using GNOME_RANDR_COMMAND which can be customized)
+  if ! command -v "$GNOME_RANDR_COMMAND" >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+# Validates capability to run $SCB_AUTO_* on a Wlroots compositor
+# Returns 0 if dependencies are met, 1 otherwise (silent check).
+wlr_auto_args_preflight() {
+  # Check that jq is available
+  if ! command -v jq >/dev/null 2>&1; then
+    return 1
+  fi
+  # Check that wlr-randr is available
+  if ! command -v "$WLR_RANDR_COMMAND" >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+# Gets the user's primary display via kscreen-doctor.
+# Returns a single kscreen JSON object for the display obj.
+kde_get_primary_display() {
+  # we want to respect user settings for -O or --prefer-output.
+  # if so, jsut get that by name.
+  local prefer="$1"
+  if [ -n "$prefer" ]; then
+    # Try to select the output by its exact name
+    "$KSCREEN_COMMAND" -j | jq -c --arg prefer "$prefer" '
+            .outputs | map(select(.name == $prefer)) | if length > 0 then .[0] else empty end
+        '
+  else
+    # if multidisplay, sort to get the "primary". KDE's settings panel
+    # has boolean style "primary" toggle, but kscreen uses a "priority" int value.
+    # If there's only one, we just get the first one.
+    "$KSCREEN_COMMAND" -j | jq -c '
+            if (.outputs | length) == 1 then
+                .outputs[0]
+            else
+                (.outputs | map(select(.enabled == true)) | sort_by(.priority))[0]
+            end
+        '
+  fi
+}
+# Selectively extracts mode info from kscreen doctor for use with SCB_AUTO_*.
+# More fields are available on the mode, the jq selection can be updated if more
+# fields are needed later.
+kde_get_mode_info() {
+  local prefer="$1"
+  # Ensure we're getting the enabled mode for the primary display or the -o/--prefer-output value
+  mode_id=$(kde_get_primary_display "$prefer" | jq -r '.currentModeId')
+  kde_get_primary_display | jq -r --arg mode_id "$mode_id" '
+        .modes[] | select(.id == $mode_id) | {width: .size.width, height: .size.height, refresh: .refreshRate}
+    '
+}
+# Gets the user's primary display via gdctl for GNOME.
+# Returns a single JSON object for the display.
+gnome_gdctl_get_primary_display() {
+  # we want to respect user settings for -O or --prefer-output.
+  # if so, just get that by connector name.
+  local prefer="$1"
+  # shellcheck disable=SC2155
+  local gdctl_output=$("$GDCTL_COMMAND" show --format json --current-mode --properties)
+  if [ -n "$prefer" ]; then
+    # Try to select the output by its connector name
+    echo "$gdctl_output" | jq -c --arg prefer "$prefer" '
+            .monitors | to_entries[] | select(.value.connector == $prefer) | .value
+        '
+  else
+    # Get the primary display from logical_monitors
+    echo "$gdctl_output" | jq -c '
+            (.logical_monitors[] | select(.primary == true) | .monitors[0]) as $primary_name |
+            .monitors | to_entries[] | select(.key == $primary_name) | .value
+        '
+  fi
+}
+# Selectively extracts mode info from gdctl for use with SCB_AUTO_*.
+gnome_gdctl_get_mode_info() {
+  local prefer="$1"
+  gnome_gdctl_get_primary_display "$prefer" | jq -r '
+        .current_mode | {width: .resolution.width, height: .resolution.height, refresh: .refresh_rate}
+    '
+}
+# Gets the user's primary display connector via gnome-randr for GNOME.
+# Returns the connector name (e.g., "DP-3").
+gnome_randr_get_primary_display() {
+  # we want to respect user settings for -O or --prefer-output.
+  local prefer="$1"
+  if [ -n "$prefer" ]; then
+    # Return the preferred output if specified
+    echo "$prefer"
+  else
+    # Get the primary display connector from gnome-randr query -s
+    "$GNOME_RANDR_COMMAND" query -s | awk '
+            /^logical monitor [0-9]+:/ { in_monitor=1; primary=0; next }
+            in_monitor && /primary: yes/ { primary=1; next }
+            in_monitor && /associated physical monitors:/ { in_physical=1; next }
+            in_physical && primary && /^\t[A-Z]/ {
+                # Extract the connector name (first field after tab)
+                match($0, /^\t([A-Z0-9-]+)/, arr)
+                print arr[1]
+                exit
+            }
+            /^logical monitor [0-9]+:/ { in_monitor=1; in_physical=0; primary=0 }
+        '
+  fi
+}
+# Selectively extracts mode info from gnome-randr for use with SCB_AUTO_*.
+# Returns JSON with width, height, and refresh rate of the active mode.
+gnome_randr_get_mode_info() {
+  local prefer="$1"
+  local connector
+  connector=$(gnome_randr_get_primary_display "$prefer" 2>/dev/null)
+
+  if [ -z "$connector" ]; then
+    echo "{}"
+    return
+  fi
+
+  # Query the specific connector and extract the active mode (marked with *)
+  "$GNOME_RANDR_COMMAND" query "$connector" | awk -v connector="$connector" '
+        # Look for lines with the active mode marked with *
+        /[0-9]+x[0-9]+@[0-9.]+/ {
+            # Check if this line contains the refresh rate with *
+            if (match($0, /([0-9]+)x([0-9]+)@[0-9.]+(\+vrr)?[[:space:]]+[0-9]+x[0-9]+[[:space:]]+([0-9.]+)\*/, arr)) {
+                width = arr[1]
+                height = arr[2]
+                refresh = arr[4]
+                printf "{\"width\": %s, \"height\": %s, \"refresh\": %s}\n", width, height, refresh
+                exit
+            }
+        }
+    '
+}
+# Check if VRR is active on the primary display via gnome-randr.
+# Returns "true" if VRR is active, "false" otherwise.
+gnome_randr_check_vrr() {
+  local prefer="$1"
+  local connector
+  connector=$(gnome_randr_get_primary_display "$prefer" 2>/dev/null)
+
+  if [ -z "$connector" ]; then
+    echo "false"
+    return
+  fi
+
+  # Query the specific connector and check if the active mode has +vrr
+  local vrr_result
+  vrr_result=$("$GNOME_RANDR_COMMAND" query "$connector" | awk '
+        # Look for the active mode line (contains *)
+        /[0-9]+x[0-9]+@[0-9.]+/ {
+            # Check if this line has * and +vrr
+            if ($0 ~ /\*/ && $0 ~ /\+vrr/) {
+                print "true"
+                found=1
+                exit
+            }
+        }
+        END {
+            if (!found) print "false"
+        }
+    ')
+  echo "$vrr_result"
+}
+# Gets the user's primary display via wlr-randr for Wlroots
+# Returns a single JSON object for the display.
+wlr_get_primary_display() {
+  local prefer="$1"
+  local gdctl_output
+  gdctl_output=$("$WLR_RANDR_COMMAND" --json) || show_error_dialog "Wlroots Error" "wlr-randr --json failed to run" 1
+  if [ -z "$gdctl_output" ] || ! echo "$gdctl_output" | jq -e . >/dev/null 2>&1; then
+    show_error_dialog "Wlroots Error" "wlr-randr --json returned no valid output" 1
+  fi
+  if [ -n "$prefer" ]; then
+    echo "$gdctl_output" | jq -c --arg prefer "$prefer" '
+            .[] | select(.name == $prefer)
+        '
+  else
+    # ponytail: no -O/--prefer-output given, wlr-randr has no "primary" concept,
+    # so fall back to the first enabled output (mirrors KDE's priority-sort fallback)
+    echo "$gdctl_output" | jq -c '
+            [.[] | select(.enabled == true)][0]
+        '
+  fi
+}
+# Selectively extracts mode info from wlr-randr for use with SCB_AUTO_*.
+wlr_get_mode_info() {
+  local prefer="$1"
+  wlr_get_primary_display "$prefer" | jq -r '
+        .modes[] | select(.current == true) | {width: .width, height: .height, refresh: .refresh}
+    '
+}
+# Check for non-steam appid patterns and return an standardized auto value for SCB_APPID
+nonsteam_appid_detect() {
+  local command="$1"
+  local SCB_CONFIGDIR="$2"
+  local AUTO_APPID="null"
+  local APPID_FOLDER="null"
+
+  # Detect Ubisoft Connect (uplay) games
+  if echo "$command" | grep "uplay://" >/dev/null; then
+    # Set APPID_FOLDER
+    APPID_FOLDER="ubisoft"
+    # Set auto appid
+    AUTO_APPID="$APPID_FOLDER/"$(echo "$command" | perl -pe 's/.+"uplay:\/\/launch\/(\d+)"\s+/\1/')
+  # Detect games launched by Heroic Games Launcher
+  elif echo "$command" | grep "heroic://" >/dev/null; then
+    # Set APPID_FOLDER
+    APPID_FOLDER="heroic"
+    # Set auto appid
+    AUTO_APPID="$APPID_FOLDER/"$(echo "$command" | perl -pe 's/.+"heroic:\/\/launch\?appName=(.+)&.+\s+/\1/')
+  fi
+
+  # Make config folder
+  if [ ! -d "$SCB_CONFIGDIR/AppID/$APPID_FOLDER" ] && [ "$APPID_FOLDER" != "null" ]; then
+    mkdir -p "$SCB_CONFIGDIR/AppID/$APPID_FOLDER"
+  fi
+
+  # Return the detected APPID
+  echo "$AUTO_APPID"
+}
+
+#######
+# Main
+#######
+echo "Running ScopeBuddy version: $SCB_VER"
+
+# If gamescope is not found, force SCB_NOSCOPE to 1
+if ! command -v "$GAMESCOPE_BIN" >/dev/null 2>&1; then
+  echo "Setting SCB_NOSCOPE=1 because gamescope was not found"
+  SCB_NOSCOPE=1
+fi
+
+# If SCB_NOSCOPE is set to 1 and we are not using a custom SCB_CONF
+if [ "$SCB_NOSCOPE" -eq 1 ] && [ "$SCB_CONF" == "scb.conf" ]; then
+  # Use noscope.conf for default values
+  SCB_CONF="noscope.conf"
+fi
+
+# If steam is potentially running inside gamescope
+# shellcheck disable=SC2009
+if ps ax | grep -P "steam.sh -.+ -steampal" | grep -v grep || [ "$XDG_CURRENT_DESKTOP" = "gamescope" ]; then
+  # If steam is potentially running in gamemode
+  # Force SCB_NOSCOPE to 1
+  SCB_NOSCOPE=1
+  # Set SCB_GAMEMODE to 1
+  SCB_GAMEMODE=1
+  # Use gamemode.conf for default values
+  SCB_CONF="gamemode.conf"
+fi
+
+# Finalize SCB_CONFIGFILE
+SCB_CONFIGFILE="$SCB_CONFIGDIR/$SCB_CONF"
+
+# Split the args at -- into gamescope_opts and command
+while [[ $# -gt 0 ]]; do
+  if [ "${1:-}" == "--" ]; then
+    shift
+    # Add remaining args as individually double quoted args (should stop double quoting being a requirement)
+    while [[ $# -gt 0 ]]; do
+      # Wrap each entry in %command% in quotes to make it easier for scripting
+      # Escape the last \ in $1 if the last character is \ otherwise the %command% will not launch
+      if [[ "$1" =~ \\$ ]]; then
+        # shellcheck disable=SC2089
+        command+=" \"$(echo "$1" | sed -E 's/\\$/\\\\/')\""
+      else
+        # shellcheck disable=SC2089
+        command+=" \"$1\""
+      fi
+      shift
+    done
+
+    # Exit loop when done
+    break
+  fi
+
+  # If the steam arg ignore function is enabled, ignore the -e and --steam flag in gamescope
+  if [ "$1" == "-e" ] || [ "$1" == "--steam" ] && [ "$SCB_STEAMARGIGNORE" == "1" ]; then
+    echo "Ignoring $1 flag for gamescope as it is currently broken"
+    shift
+  else
+    # Add arg to gamescope_opts and go to next loop
+    gamescope_opts+=" $1"
+    shift
+  fi
+done
+
+# If $SCB_APPID is not set, attempt to auto detect APPID for Steam
+if [ -z "$SCB_APPID" ]; then
+  # Get the Steam APPID from %command%
+  AUTO_APPID=$(echo "$command" | perl -pe 's/.+"AppId=(\d+)"\s.+/\1/')
+  if ! [[ $AUTO_APPID =~ ^[0-9]+$ ]]; then
+    AUTO_APPID=$(nonsteam_appid_detect "$command" "$SCB_CONFIGDIR")
+  fi
+  SCB_APPID="$AUTO_APPID"
+fi
+
+# Load the SCB config file if it exists then apply the default args
+if [ -f "$SCB_CONFIGFILE" ]; then
+  # Source the config from SCB_CONF
+  # shellcheck disable=SC1090
+  source "$SCB_CONFIGFILE"
+
+  # If a config exists for this games APPID and SCB_CONF is set to scb.conf (default)
+  if [ -f "$SCB_CONFIGDIR/AppID/${SCB_APPID}.conf" ]; then
+    # Source the APPID specific config, overriding any similar values set by SCB_CONF
+    # shellcheck disable=SC1090
+    source "$SCB_CONFIGDIR/AppID/${SCB_APPID}.conf"
+  fi
+
+  # If the user has supplied ANY args to gamescope, do not load the SCB_GAMESCOPE_ARGS
+  if [ -z "$gamescope_opts" ] && [ "$SCB_APPENDMODE" == 0 ]; then
+    gamescope_opts=$SCB_GAMESCOPE_ARGS
+  elif [ "$SCB_APPENDMODE" == 1 ]; then
+    gamescope_opts="$SCB_GAMESCOPE_ARGS $gamescope_opts"
+  fi
+
+  # Attempt to extract a preferred display from gamescope_opts.
+  # This sed command looks for either -O or --prefer-output followed by whitespace and a non‑space value.
+  PREFER_OUTPUT=$(echo "$gamescope_opts" | sed -nE 's/.*(-O|--prefer-output)[[:space:]]+([^[:space:]]+).*/\2/p')
+
+  # Determine which desktop environment backend to use for auto-detection.
+  # Run KDE/GNOME preflight once and remember the result to avoid repeated messages.
+  SCB_DETECT="none"
+  if kde_auto_args_preflight; then
+    SCB_DETECT="kde"
+  elif gnome_gdctl_auto_args_preflight; then
+    SCB_DETECT="gnome_gdctl"
+  elif gnome_randr_auto_args_preflight; then
+    SCB_DETECT="gnome_randr"
+  elif wlr_auto_args_preflight; then
+    SCB_DETECT="wlroots"
+  else
+    SCB_DETECT="none"
+  fi
+
+  # Warn if auto-detection is requested but no backend was detected
+  if [ "$SCB_DETECT" = "none" ] && [ "$SCB_ANY_AUTO_FEAT_ENABLED" -gt 0 ]; then
+    # Build list of enabled AUTO flags
+    ENABLED_FLAGS=""
+    [ "$SCB_AUTO_RES" -eq 1 ] && ENABLED_FLAGS="${ENABLED_FLAGS}SCB_AUTO_RES, "
+    [ "$SCB_AUTO_HDR" -eq 1 ] && ENABLED_FLAGS="${ENABLED_FLAGS}SCB_AUTO_HDR, "
+    [ "$SCB_AUTO_VRR" -eq 1 ] && ENABLED_FLAGS="${ENABLED_FLAGS}SCB_AUTO_VRR, "
+    [ "$SCB_AUTO_REFRESH" -eq 1 ] && ENABLED_FLAGS="${ENABLED_FLAGS}SCB_AUTO_REFRESH, "
+    [ "$SCB_AUTO_FRAME_LIMIT" -eq 1 ] && ENABLED_FLAGS="${ENABLED_FLAGS}SCB_AUTO_FRAME_LIMIT, "
+    ENABLED_FLAGS="${ENABLED_FLAGS%, }" # Remove trailing comma and space
+
+    ERROR_MSG="You have the following auto-detection flags enabled: ${ENABLED_FLAGS}
+
+However, your desktop environment doesn't support auto-detection.
+
+Please disable these flags in your ScopeBuddy configuration.
+
+Required dependencies:
+  • KDE Plasma: kscreen-doctor and jq
+  • GNOME: gdctl (with --format=json) or gnome-randr
+  • Wlroots: wlr-randr (with --json)
+
+Current desktop: ${XDG_CURRENT_DESKTOP:-not set}
+Session: ${DESKTOP_SESSION:-not set}
+
+For more information, see:
+https://github.com/HikariKnight/ScopeBuddy#auto-detection-features-scb_auto_"
+
+    show_error_dialog "ScopeBuddy Auto-Detection Error" "$ERROR_MSG" 1
+  fi
+
+  # Use the detected backend for SCB_AUTO_* checks
+  if [ "$SCB_AUTO_RES" -eq 1 ]; then
+    if [ "$SCB_DETECT" = "kde" ]; then
+      # width/height are mode-specific values from KDE
+      WIDTH=$(kde_get_mode_info "$PREFER_OUTPUT" | jq -r '.width')
+      HEIGHT=$(kde_get_mode_info "$PREFER_OUTPUT" | jq -r '.height')
+    elif [ "$SCB_DETECT" = "gnome_gdctl" ]; then
+      # width/height are mode-specific values from GNOME via gdctl
+      WIDTH=$(gnome_gdctl_get_mode_info "$PREFER_OUTPUT" | jq -r '.width')
+      HEIGHT=$(gnome_gdctl_get_mode_info "$PREFER_OUTPUT" | jq -r '.height')
+    elif [ "$SCB_DETECT" = "gnome_randr" ]; then
+      # width/height are mode-specific values from GNOME via gnome-randr
+      MODE_INFO=$(gnome_randr_get_mode_info "$PREFER_OUTPUT")
+      WIDTH=$(echo "$MODE_INFO" | jq -r '.width')
+      HEIGHT=$(echo "$MODE_INFO" | jq -r '.height')
+    elif [ "$SCB_DETECT" = "wlroots" ]; then
+      # width/height are mode-specific values from the Wlroots compositor via wlr-randr
+      MODE_INFO=$(wlr_get_mode_info "$PREFER_OUTPUT")
+      WIDTH=$(echo "$MODE_INFO" | jq -r '.width')
+      HEIGHT=$(echo "$MODE_INFO" | jq -r '.height')
+    else
+      WIDTH=""
+      HEIGHT=""
+    fi
+    if [ -n "$WIDTH" ] && [ -n "$HEIGHT" ]; then
+      gamescope_opts=$(replace_or_append_arg "$gamescope_opts" "-W[[:space:]]*[0-9]+" "-W $WIDTH")
+      gamescope_opts=$(replace_or_append_arg "$gamescope_opts" "-H[[:space:]]*[0-9]+" "-H $HEIGHT")
+    fi
+  fi
+  if [ "$SCB_AUTO_HDR" -eq 1 ]; then
+    # Combo var to determine if we should add wayland and wayland hdr
+    # variables in NOSCOPE mode.
+    if [ "$SCB_NOSCOPE" -eq 1 ] &&
+      [ "$SCB_GAMEMODE" -eq 0 ]; then
+      AUTO_WAYLAND_HDR_ENABLE=1
+    else
+      AUTO_WAYLAND_HDR_ENABLE=0
+    fi
+    if [ "$SCB_DETECT" = "kde" ]; then
+      KDE_HDR_STATE=$(kde_get_primary_display "$PREFER_OUTPUT" | jq -r '.hdr')
+      if [[ "$KDE_HDR_STATE" == "true" ]]; then
+        gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--hdr-enabled")
+      fi
+      if [ "$AUTO_WAYLAND_HDR_ENABLE" -eq 1 ]; then
+        export PROTON_ENABLE_WAYLAND=1
+        export PROTON_ENABLE_HDR=1
+      fi
+    elif [ "$SCB_DETECT" = "gnome_gdctl" ]; then
+      # Check if HDR is enabled on GNOME via gdctl (bt2100 color mode indicates HDR)
+      GNOME_GDCTL_HDR_STATE=$(gnome_gdctl_get_primary_display "$PREFER_OUTPUT" | jq -r '."color-mode"')
+      if [[ "$GNOME_GDCTL_HDR_STATE" == "bt2100" ]]; then
+        gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--hdr-enabled")
+      fi
+      if [ "$AUTO_WAYLAND_HDR_ENABLE" -eq 1 ]; then
+        export PROTON_ENABLE_WAYLAND=1
+        export PROTON_ENABLE_HDR=1
+      fi
+    elif [ "$SCB_DETECT" = "gnome_randr" ]; then
+      # Check if HDR is enabled on GNOME via gnome-randr (color-mode: 1 indicates HDR/bt2100)
+      CONNECTOR=$(gnome_randr_get_primary_display "$PREFER_OUTPUT" 2>/dev/null)
+      GNOME_RANDR_HDR_STATE=$("$GNOME_RANDR_COMMAND" query "$CONNECTOR" | awk '/^color-mode:/ {print $2}')
+      if [[ "$GNOME_RANDR_HDR_STATE" == "1" ]]; then
+        gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--hdr-enabled")
+      fi
+      if [ "$AUTO_WAYLAND_HDR_ENABLE" -eq 1 ]; then
+        export PROTON_ENABLE_WAYLAND=1
+        export PROTON_ENABLE_HDR=1
+      fi
+    elif [ "$SCB_DETECT" = "wlroots" ]; then
+      # Check if HDR is enabled on Wlroots
+      CONNECTOR=$(wlr_get_primary_display "$PREFER_OUTPUT" 2>/dev/null)
+      # TODO: Not supported; stub for future support
+      if [ "$AUTO_WAYLAND_HDR_ENABLE" -eq 1 ]; then
+        export PROTON_ENABLE_WAYLAND=1
+        export PROTON_ENABLE_HDR=1
+      fi
+    fi
+  fi
+  if [ "$SCB_AUTO_VRR" -eq 1 ]; then
+    if [ "$SCB_DETECT" = "kde" ]; then
+      KDE_VRR_STATE=$(kde_get_primary_display "$PREFER_OUTPUT" | jq -r '.vrrPolicy')
+      if [[ "$KDE_VRR_STATE" == 1 || "$KDE_VRR_STATE" == 2 ]]; then
+        gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--adaptive-sync")
+      fi
+    elif [ "$SCB_DETECT" = "gnome_gdctl" ]; then
+      # Check if VRR is enabled on GNOME via gdctl (refresh-rate-mode == "variable")
+      GNOME_GDCTL_VRR_STATE=$(gnome_gdctl_get_primary_display "$PREFER_OUTPUT" | jq -r '.current_mode.properties."refresh-rate-mode"')
+      if [[ "$GNOME_GDCTL_VRR_STATE" == "variable" ]]; then
+        gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--adaptive-sync")
+      fi
+    elif [ "$SCB_DETECT" = "gnome_randr" ]; then
+      # Check if VRR is enabled on GNOME via gnome-randr (active mode has +vrr)
+      GNOME_RANDR_VRR_STATE=$(gnome_randr_check_vrr "$PREFER_OUTPUT")
+      if [[ "$GNOME_RANDR_VRR_STATE" == "true" ]]; then
+        gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--adaptive-sync")
+      fi
+    elif [ "$SCB_DETECT" = "wlroots" ]; then
+      # Check if VRR is enabled on Wlroots via wlr-randr
+      WLR_VRR_STATE=$(wlr_get_primary_display "$PREFER_OUTPUT" | jq -r '.adaptive_sync')
+      if [[ "$WLR_VRR_STATE" == "true" ]]; then
+        gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--adaptive-sync")
+      fi
+    fi
+  fi
+  if [ "$SCB_AUTO_REFRESH" -eq 1 ]; then
+    if [ "$SCB_DETECT" = "kde" ]; then
+      REFRESH_RATE=$(kde_get_mode_info "$PREFER_OUTPUT" | jq -r '.refresh')
+    elif [ "$SCB_DETECT" = "gnome_gdctl" ]; then
+      REFRESH_RATE=$(gnome_gdctl_get_mode_info "$PREFER_OUTPUT" | jq -r '.refresh')
+    elif [ "$SCB_DETECT" = "gnome_randr" ]; then
+      MODE_INFO=$(gnome_randr_get_mode_info "$PREFER_OUTPUT")
+      REFRESH_RATE=$(echo "$MODE_INFO" | jq -r '.refresh')
+    elif [ "$SCB_DETECT" = "wlroots" ]; then
+      MODE_INFO=$(wlr_get_mode_info "$PREFER_OUTPUT")
+      REFRESH_RATE=$(echo "$MODE_INFO" | jq -r '.refresh')
+    else
+      REFRESH_RATE=""
+    fi
+    if [ -n "$REFRESH_RATE" ]; then
+      gamescope_opts=$(replace_or_append_arg "$gamescope_opts" "-r[[:space:]]*[0-9.]+" "-r $REFRESH_RATE")
+    fi
+  fi
+  if [ "$SCB_AUTO_FRAME_LIMIT" -eq 1 ]; then
+    if [ "$SCB_DETECT" = "kde" ]; then
+      REFRESH_RATE=$(kde_get_mode_info "$PREFER_OUTPUT" | jq -r '.refresh')
+    elif [ "$SCB_DETECT" = "gnome_gdctl" ]; then
+      REFRESH_RATE=$(gnome_gdctl_get_mode_info "$PREFER_OUTPUT" | jq -r '.refresh')
+    elif [ "$SCB_DETECT" = "gnome_randr" ]; then
+      MODE_INFO=$(gnome_randr_get_mode_info "$PREFER_OUTPUT")
+      REFRESH_RATE=$(echo "$MODE_INFO" | jq -r '.refresh')
+    elif [ "$SCB_DETECT" = "wlroots" ]; then
+      MODE_INFO=$(wlr_get_mode_info "$PREFER_OUTPUT")
+      REFRESH_RATE=$(echo "$MODE_INFO" | jq -r '.refresh')
+    else
+      REFRESH_RATE=""
+    fi
+    if [ -n "$REFRESH_RATE" ]; then
+      gamescope_opts=$(replace_or_append_arg "$gamescope_opts" "--framerate-limit[[:space:]]*[0-9.]+" "--framerate-limit $REFRESH_RATE")
+    fi
+  fi
+else
+  # Make the default config file
+  if [ ! -d "$SCB_CONFIGDIR/AppID" ]; then
+    mkdir -p "$SCB_CONFIGDIR/AppID"
+  fi
+  # TODO: this content is functionally impossible to update for existing users, so it's maybe
+  # not a great place to stuff README-style content. Once the file is created they'll never get new
+  # versions on subsequent scopebuddy releases.
+  cat <<'EOF' >"$SCB_CONFIGFILE"
+# This is the config file that let's you assign defaults for gamescope when using the scopebuddy script
+# lines starting with # are ignored
+# Conf files matching the games Steam AppID stored in ~/.conf/scopebuddy/AppID/ will be sourced after
+# ~/.config/scopebuddy/scb.conf or whichever file you specify with SCB_CONF=someotherfile.conf env var in the launch options.
+#
+# Example for always exporting specific environment variables for gamescope
+#export XKB_DEFAULT_LAYOUT=no
+#export MANGOHUD_CONFIG=preset=2
+#
+# Example for providing default gamescope arguments through scopebuddy if no arguments are given to the scopebuddy script, this does not need to be exported.
+# To not use this default set of arguments, just launch scb with SCB_NOSCOPE=1 or just add any gamescope argument before the '-- %command%' then this variable will be ignored
+#SCB_GAMESCOPE_ARGS="--mangoapp -f -w 2560 -h 1440 -W 2560 -H 1440 -r 180 --force-grab-cursor --hdr-enabled -e"
+#
+# To auto-detect display width, height, refresh, VRR and HDR states, you can use SCB_AUTO_* {RES|HDR|VRR}
+# These vars will override any previously set values for -W and -H or append --hdr-enabled and --adaptive-sync
+# automatically depending on the current settings for your active display, or the display chosen with -O /
+# --prefer-output flags in gamescope. This works on both KDE (via kscreen-doctor) and GNOME (via gdctl).
+#SCB_AUTO_RES=1
+#SCB_AUTO_HDR=1
+#SCB_AUTO_VRR=1
+# AUTO_HDR can also be applied without gamescope when running in NOSCOPE mode, however, this requires a Proton
+# version with wayland HDR support. This will automatically add PROTON_ENABLE_WAYLAND and PROTON_ENABLE_HDR to env.
+# Note that this WILL cause your game to run in wayland mode, which will break the steam overlay.
+# An additional variable is required to enable this behavior (SCB_AUTO_HDR must also be set to 1):
+#SCB_NOSCOPE_AUTO_HDR=1
+# For GNOME users: you can use either gdctl or gnome-randr for auto-detection
+# gdctl requires upstream version with --format=json support (will be tested automatically)
+# gnome-randr will be used as fallback if gdctl test fails
+# To specify a custom gdctl build (must support 'gdctl show --format=json'):
+#export GDCTL_COMMAND="$HOME/.local/bin/gdctl-mr4708"
+# To debug scopebuddy output, uncomment the following line. After launching games, the executed cmd will be output to ~/.config/scopebuddy/scopebuddy.log
+#SCB_DEBUG=1
+###
+## FOR ADVANCED USE INSIDE AN APPID CONFIG
+###
+# The config files are treated as a bash script by scopebuddy, this means you can use bash to do simple tasks before the game runs
+# or you can check which mode scopebuddy is running in and apply settings accordingly, below are some handy variables for scripting.
+# $SCB_NOSCOPE will be set to 1 if we are running in no gamescope mode
+# $SCB_GAMEMODE will be set to 1 if we are running inside steam gamemode (which means SCB_NOSCOPE will also be set to 1 due to nested gamescope not working in gamemode)
+# $command will contain everything steam expanded %command% into
+EOF
+fi
+
+pre_command() {
+  if [[ -n "$SCB_PRE_COMMAND" ]]; then
+    echo "Executing pre-command: $SCB_PRE_COMMAND"
+    eval "$SCB_PRE_COMMAND" || echo "Warning: SCB_PRE_COMMAND failed!"
+  fi
+}
+
+post_command() {
+  if [[ -n "$SCB_POST_COMMAND" ]]; then
+    echo "Executing post-command: $SCB_POST_COMMAND"
+    eval "$SCB_POST_COMMAND"
+  fi
+}
+
+# Bind post_command to exit signal
+trap post_command EXIT
+
+# If SCB_NOSCOPE is set to 1
+if [ "$SCB_NOSCOPE" -eq 1 ]; then
+  # If we are potentially in gamemode
+  if [ "$SCB_GAMEMODE" -eq 1 ]; then
+    # Force MANGOHUD=0
+    export MANGOHUD=0
+  fi
+
+  # Write logfile if SCB_DEBUG is enabled
+  LOGLINE="Launching: $(echo "$command" | sed -E 's/\\" /\\\\" /g')"
+  echo "$LOGLINE"
+  if [ "$SCB_DEBUG" -eq 1 ]; then
+    SCB_LOGFILE="$SCB_CONFIGDIR/scopebuddy.log"
+    echo -e "$LOGLINE" >"$SCB_LOGFILE"
+  fi
+
+  # Launch %command% without gamescope
+  eval "$command"
+else
+  # Set LD_PRELOAD_REAL to empty
+  LD_PRELOAD_REAL=""
+
+  # Apply nested gamescope fix for steam overlay and steam input
+  if [ "$SCB_NESTEDFIX" -eq 1 ]; then
+    # Transfer LD_PRELOAD before we unset it
+    LD_PRELOAD_REAL=$LD_PRELOAD
+  fi
+
+  # Unset LD_PRELOAD for gamescope (as it breaks the overlay) then start gamescope with LD_PRELOAD set for %command% instead
+  LOGLINE="Launching: env -u LD_PRELOAD $GAMESCOPE_BIN $gamescope_opts -- env LD_PRELOAD=\"$LD_PRELOAD_REAL\" $(echo "$command" | sed -E 's/\\" /\\\\" /g')"
+  echo "$LOGLINE"
+  if [ "$SCB_DEBUG" -eq 1 ]; then
+    SCB_LOGFILE="$SCB_CONFIGDIR/scopebuddy.log"
+    echo -e "$LOGLINE" >"$SCB_LOGFILE"
+  fi
+  # run pre_command before gamescope gets exec'd. will proceed even if pre_command fails.
+  pre_command
+  eval "env -u LD_PRELOAD $GAMESCOPE_BIN $gamescope_opts -- env LD_PRELOAD=\"$LD_PRELOAD_REAL\" $command"
+fi

@@ -7,6 +7,7 @@ Requisite=graphical-session.target
 
 [Service]
 Type=simple
+Environment="PATH=%h/.local/bin:%h/.local/bin/scripts:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/bin:/sbin"
 ExecCondition=/usr/bin/sh -c '[ "$XDG_CURRENT_DESKTOP" = "niri" ]'
 ExecStart=/usr/bin/kanshi
 ExecReload=/usr/bin/pkill --signal HUP -x kanshi

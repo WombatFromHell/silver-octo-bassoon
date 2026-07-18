@@ -99,12 +99,9 @@
     - name: Define required scripts configuration
       ansible.builtin.set_fact:
         dotfiles_required_scripts:
-          - path: "{{ scripts_dir }}/bazzite-steam.sh"
-            name: "bazzite-steam.sh"
-            required_for: ["steam"]
-          - path: "{{ scripts_dir }}/bazzite-steam-bpm.sh"
-            name: "bazzite-steam-bpm.sh"
-            required_for: ["gamescope"]
+          - path: "{{ scripts_dir }}/bazzified-steam.sh"
+            name: "bazzified-steam.sh"
+            required_for: ["steam", "gamescope"]
           - path: "{{ scripts_dir }}/steamos-session-select"
             name: "steamos-session-select"
             required_for: ["gamescope"]
@@ -113,19 +110,26 @@
     - name: Define Steam desktop files configuration
       ansible.builtin.set_fact:
         dotfiles_steam_desktop_files:
-          - script_path: "{{ scripts_dir }}/bazzite-steam.sh"
+          - script_path: "{{ scripts_dir }}/bazzified-steam.sh"
             template: "steam.desktop.j2"
             dest: "{{ home_realpath }}/.local/share/applications/steam.desktop"
-            script_name: "bazzite-steam.sh"
+            script_name: "bazzified-steam.sh"
             requires_scripts:
-              - name: "bazzite-steam.sh"
+              - name: "bazzified-steam.sh"
                 mode: "0755"
-          - script_path: "{{ scripts_dir }}/bazzite-steam-bpm.sh"
+          - script_path: "{{ scripts_dir }}/bazzified-steam.sh"
+            template: "steam-tenfoot.desktop.j2"
+            dest: "{{ home_realpath }}/.local/share/applications/steam-tenfoot.desktop"
+            script_name: "bazzified-steam.sh"
+            requires_scripts:
+              - name: "bazzified-steam.sh"
+                mode: "0755"
+          - script_path: "{{ scripts_dir }}/bazzified-steam.sh"
             template: "steam-gamescope.desktop.j2"
             dest: "{{ home_realpath }}/.local/share/applications/steam-gamescope.desktop"
-            script_name: "bazzite-steam-bpm.sh"
+            script_name: "bazzified-steam.sh"
             requires_scripts:
-              - name: "bazzite-steam-bpm.sh"
+              - name: "bazzified-steam.sh"
                 mode: "0755"
               - name: "steamos-session-select"
                 mode: "0755"

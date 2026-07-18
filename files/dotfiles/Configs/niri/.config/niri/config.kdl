@@ -78,6 +78,19 @@ window-rule {
     match app-id="steam" title="^notificationtoasts_\\d+_desktop$"
     default-floating-position x=10 y=10 relative-to="bottom-right"
 }
+window-rule {
+    match app-id="steam" title="Steam Big Picture Mode"
+    open-fullscreen true
+}
+window-rule {
+    match app-id="steam_app_default"
+    open-fullscreen true
+}
+window-rule {
+    match app-id="gamescope"
+    default-column-width {}
+    open-fullscreen true
+}
 // Open the Firefox picture-in-picture player as floating by default.
 window-rule {
     // This app-id regular expression will work for both:
@@ -122,11 +135,6 @@ window-rule {
     geometry-corner-radius 4
     clip-to-geometry true
 }
-// ensure gamescope/bazzite-steam-bpm.sh opens on the dummy-plug
-window-rule {
-    match app-id="^gamescope$"
-    open-on-output "HDMI-A-1"
-}
 //
 environment {
     QT_QPA_PLATFORMTHEME "qt6ct"
@@ -166,7 +174,7 @@ binds {
     }
     //
     Mod+Shift+Alt+P hotkey-overlay-title="Switch Kanshi Display Profile" {
-        spawn-sh "~/.local/bin/scripts/toggle-kanshi-outputs.sh"
+        spawn "~/.local/bin/scripts/toggle-kanshi-outputs.sh"
     }
     //
     Super+Ctrl+Shift+P hotkey-overlay-title="Hyprpicker" {
@@ -527,6 +535,3 @@ binds {
 }
 include "dms/cursor.kdl"
 include "dms/binds.kdl"
-include "dms/windowrules.kdl"
-include "dms/outputs.kdl"
-

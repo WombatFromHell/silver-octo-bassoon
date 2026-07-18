@@ -5,13 +5,7 @@ set -euo pipefail
 # Executes commands with standardized Steam environment variables
 
 # Base Steam environment variables (no exports, just for env command)
-STEAM_BASE_ENV_VARS=(
-  "WINEALSA_CHANNELS=2"
-  "WINEALSA_SPATIAL=1"
-  "WINEDLLOVERRIDES=winepulse.drv=d"
-  "PROTON_USE_NTSYNC=1"
-  "ENABLE_LAYER_MESA_ANTI_LAG=1"
-)
+STEAM_BASE_ENV_VARS=("PROTON_DXVK_LOWLATENCY=1")
 
 # Execute the provided command with Steam environment
 if [[ $# -gt 0 ]]; then

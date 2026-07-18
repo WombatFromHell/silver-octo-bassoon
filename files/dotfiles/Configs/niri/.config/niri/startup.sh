@@ -4,7 +4,7 @@
 sleep 1
 
 # 1. Import vital display variables to systemd and dbus activation environments
-/usr/bin/dbus-update-activation-environment --systemd \
+dbus-update-activation-environment --systemd \
   WAYLAND_DISPLAY \
   XDG_CURRENT_DESKTOP \
   DISPLAY \
