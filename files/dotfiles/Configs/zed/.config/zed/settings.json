@@ -126,6 +126,8 @@
       },
     },
   },
+  "tab_size": 2,
+  "hard_tabs": false,
   "show_whitespaces": "trailing",
   "vim_mode": true,
   "buffer_font_size": 15.0,
