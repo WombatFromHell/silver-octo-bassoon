@@ -11,6 +11,11 @@ dbus-update-activation-environment --systemd \
   QT_QPA_PLATFORMTHEME \
   QT_QPA_PLATFORM \
   QT_WAYLAND_DISABLE_WINDOWDECORATION
+systemctl --user import-environment \
+  XDG_CURRENT_DESKTOP \
+  XDG_SESSION_TYPE \
+  DISPLAY \
+  WAYLAND_DISPLAY
 
 # 2. Restart portals (which now have the correct environment variables)
 systemctl --user restart xdg-desktop-portal{,-gtk,-gnome} plasma-xdg-desktop-portal-kde 2>/dev/null

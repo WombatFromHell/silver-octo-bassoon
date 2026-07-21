@@ -60,6 +60,7 @@
   "blurEnabled": false,
   "blurForegroundLayers": true,
   "blurLayerOutlineOpacity": 0.12,
+  "blurBorderEnabled": true,
   "blurBorderColor": "outline",
   "blurBorderCustomColor": "#ffffff",
   "blurBorderOpacity": 1,
@@ -272,7 +273,7 @@
   "launcherStyle": "full",
   "spotlightBarShowModeChips": false,
   "keybindsFloatingWindow": false,
-  "useAutoLocation": true,
+  "useAutoLocation": false,
   "weatherEnabled": true,
   "dashTabs": [
     {
@@ -372,6 +373,7 @@
   "batteryLowNotificationType": 0,
   "batteryCriticalNotificationType": 0,
   "batteryAutoPowerSaver": false,
+  "lowerDisplayRefreshRateOnBattery": false,
   "lockBeforeSuspend": false,
   "loginctlLockIntegration": true,
   "fadeToLockEnabled": true,
@@ -469,6 +471,7 @@
   "notificationOverlayEnabled": false,
   "notificationPopupShadowEnabled": true,
   "notificationPopupPrivacyMode": false,
+  "notificationForegroundLayers": true,
   "modalDarkenBackground": true,
   "lockScreenShowPowerActions": true,
   "lockScreenShowSystemIcons": true,
@@ -486,6 +489,8 @@
   "lockPamPath": "",
   "lockPamInlineFprint": false,
   "lockPamInlineU2f": false,
+  "lockPamExternallyManaged": false,
+  "lockU2fPamPath": "",
   "lockScreenInactiveColor": "#000000",
   "lockScreenNotificationMode": 0,
   "lockScreenVideoEnabled": false,
@@ -558,14 +563,15 @@
       "vrrOnDemand": true
     },
     "LG Electronics LG TV SSCR2 0x01010101": {
+      "focusAtStartup": true,
       "vrrOnDemand": true
     },
     "LG Electronics 27GL850 910NTGY7B319": {
-      "disabled": false,
+      "focusAtStartup": true,
       "vrrOnDemand": true
     },
     "HDMI-A-1": {
-      "disabled": true
+      "disabled": null
     },
     "Ugreen Group Ltd. UGREEN 0x20200210": {
       "vrrOnDemand": true
@@ -576,9 +582,17 @@
     "niri": {}
   },
   "activeDisplayProfile": {
-    "niri": ""
+    "niri": "auto_d846e8c5"
   },
-  "displayProfileAutoSelect": false,
+  "activeDisplayProfileModes": {
+    "niri": {
+      "LG Electronics 27GL850 910NTGY7B319": {
+        "mode": "2560x1440@144.000"
+      }
+    }
+  },
+  "displayPreviousRefreshModes": {},
+  "displayProfileAutoSelect": true,
   "displayShowDisconnected": false,
   "displaySnapToEdge": true,
   "connectedFrameBarStyleBackups": {},

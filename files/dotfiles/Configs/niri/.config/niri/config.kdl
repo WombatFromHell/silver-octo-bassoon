@@ -173,8 +173,9 @@ binds {
         spawn-sh "niri msg action screenshot"
     }
     //
-    Mod+Shift+Alt+P hotkey-overlay-title="Switch Kanshi Display Profile" {
-        spawn "~/.local/bin/scripts/toggle-kanshi-outputs.sh"
+    Mod+Shift+Alt+P hotkey-overlay-title="Switch Display Profile" {
+        // spawn "~/.local/bin/scripts/toggle-kanshi-outputs.sh"
+        spawn-sh "dms ipc call outputs cycleProfile"
     }
     //
     Super+Ctrl+Shift+P hotkey-overlay-title="Hyprpicker" {
@@ -535,3 +536,4 @@ binds {
 }
 include "dms/cursor.kdl"
 include "dms/binds.kdl"
+include "dms/outputs.kdl"
