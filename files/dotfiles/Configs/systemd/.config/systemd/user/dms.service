@@ -3,11 +3,11 @@ Description=DMS Service
 PartOf=graphical-session.target
 After=graphical-session.target
 Requisite=graphical-session.target
+ConditionEnvironment=XDG_CURRENT_DESKTOP=niri
 
 [Service]
 Type=dbus
 BusName=org.freedesktop.Notifications
-ExecCondition=/usr/bin/sh -c '[ "$XDG_CURRENT_DESKTOP" = "niri" ]'
 ExecStart=/usr/bin/dms run --session
 ExecReload=/usr/bin/pkill -USR1 -x dms
 Restart=on-failure

@@ -3,10 +3,10 @@ Description=Niri VRR/Fullscreen Watcher
 PartOf=graphical-session.target
 After=graphical-session.target
 Requisite=graphical-session.target
+ConditionEnvironment=XDG_CURRENT_DESKTOP=niri
 
 [Service]
 Type=simple
-ExecCondition=/usr/bin/sh -c '[ "$XDG_CURRENT_DESKTOP" = "niri" ]'
 ExecStartPre=/usr/bin/systemctl --user import-environment WAYLAND_DISPLAY
 ExecStart=/usr/local/bin/niri-watcher
 Restart=on-failure
