@@ -213,8 +213,8 @@ build_steam_command() {
   done
 
   # Gamescope/nscb wrapper (if configured)
-  if [[ -n ${NSCB_PATH:-} ]]; then
-    STEAM_CMD+=("$NSCB_PATH" "${GAMESCOPE_ARGS[@]}")
+  if [[ -n ${GAMESCOPE_PATH:-} ]]; then
+    STEAM_CMD+=("$GAMESCOPE_PATH" "${GAMESCOPE_ARGS[@]}")
   fi
 
   # Steam binary + args
@@ -245,7 +245,7 @@ run_session() {
   setup_signal_handlers
 
   shutdown_if_allowed "$mode"
-  acquire_lock
+  acquire_lock true
   launch_steam
   cleanup_lock_files
 }
@@ -266,7 +266,11 @@ cleanup_lock_files() {
     "${XDG_RUNTIME_DIR:-}/bazzite-steam-nested.lock"
 }
 
+# ponytail: `quiet` suppresses the final error notification — used when
+# contention is expected (e.g., we just killed Steam via the replacement
+# matrix in shutdown_if_allowed and the peer's lock hasn't released yet).
 acquire_lock() {
+  local quiet="${1:-false}"
   open_lock_fd
 
   # Fast path: lock acquired immediately
@@ -287,7 +291,9 @@ acquire_lock() {
   log_info "Lock held by another session — waiting (5s timeout)..."
   wait_lock 5 && return 0
 
-  log_error "Could not acquire lock after 5s"
+  if ! $quiet; then
+    log_error "Could not acquire lock after 5s"
+  fi
   return 1
 }
 
@@ -337,7 +343,7 @@ main() {
   # ponytail: declared here (not just inside `nested`) so build_steam_command's
   # dependency on these is visible in one place instead of tribal knowledge.
   # STEAM_ENV_VARS is set per-case below; user can shadow it via env override.
-  NSCB_PATH=""
+  GAMESCOPE_PATH=""
   GAMESCOPE_ARGS=()
 
   STEAM="$(command -v bazzite-steam || command -v steam)" || {
@@ -356,23 +362,23 @@ main() {
     ;;
   tenfoot)
     MODE_TAG="bazzified-steam-tenfoot"
-    STEAM_ARGS=(-gamepadui "${extra_args[@]}")
+    STEAM_ARGS+=(-gamepadui -pipewire "${extra_args[@]}")
     WRAPPERS=("gamemode --")
     [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=()
     run_session "tenfoot"
     ;;
   nested)
     MODE_TAG="bazzified-steam-nested"
-    STEAM_ARGS=(-gamepadui -steamos3 "${extra_args[@]}")
-    NSCB_PATH="$(command -v nscb 2>/dev/null)" || {
-      log_error "Missing dependency: nscb"
+    STEAM_ARGS+=(-gamepadui -pipewire -steamos3 "${extra_args[@]}")
+    GAMESCOPE_PATH="$(command -v nscb 2>/dev/null)" || {
+      log_error "Missing gamescope dependency!"
       exit 1
     }
-    GAMESCOPE_ARGS=(-p std -e --backend wayland --force-grab-cursor -g --)
-    WRAPPERS=(
-      "env PROTON_ENABLE_WAYLAND=1 gamemode -- gamescope-jiggle.sh --"
+    GAMESCOPE_ARGS=(-f -W 2560 -H 1440 -e --)
+    WRAPPERS=("gamemode --")
+    [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=(
+      PROTON_ENABLE_WAYLAND=1
     )
-    [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=()
     run_session "nested"
     ;;
   *)
