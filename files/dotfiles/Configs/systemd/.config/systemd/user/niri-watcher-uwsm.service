@@ -1,0 +1,19 @@
+[Unit]
+Description=Niri VRR/Fullscreen Watcher
+PartOf=wayland-session@niri.target
+After=wayland-session@niri.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/systemctl --user import-environment WAYLAND_DISPLAY
+ExecStart=/usr/local/bin/niri-watcher
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=5
+ExecStop=/usr/bin/pkill -TERM -f "gamemode" || true
+Environment=WATCHER_HOOK_ON="%h/.local/bin/gamemode on"
+Environment=WATCHER_HOOK_OFF="%h/.local/bin/gamemode off"
+
+[Install]
+WantedBy=wayland-session@niri.target
