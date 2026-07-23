@@ -28,8 +28,8 @@ if status is-interactive
     setup_podman_sock
     # update_wayland_env_vars
 
-    set -g ZELLIJ_ENABLED false
-    set -g TMUX_ENABLED true
+    set -g ZELLIJ_ENABLED true
+    set -g TMUX_ENABLED false
     # set -g TMUX_AUTO_ATTACH false
 
     set -x GPG_TTY (tty)
