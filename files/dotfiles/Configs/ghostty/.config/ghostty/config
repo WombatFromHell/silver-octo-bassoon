@@ -24,3 +24,5 @@ keybind = shift+enter=text:\n
 #
 clipboard-read = allow
 clipboard-write = allow
+#
+command = ~/.local/bin/scripts/fish.sh
