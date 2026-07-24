@@ -61,6 +61,8 @@ keybinds clear-defaults=true {
             NewTab
             SwitchToMode "normal"
         }
+        // Embeds the pane if floating, then breaks it out into a new tab
+        bind "t" { TogglePaneEmbedOrFloating; BreakPane; SwitchToMode "normal"; }
         bind "H" {
             GoToPreviousTab
             SwitchToMode "normal"
@@ -133,6 +135,7 @@ keybinds clear-defaults=true {
         // layout
         bind "space" {
             NextSwapLayout
+            SwitchToMode "normal"
         }
         // rename
         bind "," {
@@ -150,7 +153,7 @@ keybinds clear-defaults=true {
             }
             SwitchToMode "normal"
         }
-        bind "l" {
+        bind "Ctrl l" {
             LaunchOrFocusPlugin "zellij:layout-manager" {
                 floating true
                 move_to_focused_tab true
