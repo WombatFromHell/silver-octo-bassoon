@@ -86,6 +86,7 @@ if command -q bat
     alias pcat='cat -P'
 end
 
+alias e='edit.sh'
 alias vi='$EDITOR'
 alias vim='$EDITOR'
 alias lg='lazygit'
