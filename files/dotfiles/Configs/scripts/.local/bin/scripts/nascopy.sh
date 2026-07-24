@@ -37,11 +37,26 @@ Profile Format (in ~/.config/nascopyrc):
   MYBACKUP=--delete --progress /source/path user@host:/backup/path
 
 Notes:
-  - Automatically uses .gitignore in current directory if it exists
-  - Remove --dry-run from the script to actually perform the copy
+  - Automatically uses .gitignore in the first source directory if it exists
   - All rsync options are supported and passed through
-  - Profile definitions are loaded from ~/.config/nascopy/nascopyrc or $XDG_CONFIG_HOME/nascopy/nascopyrc
+  - Profile definitions are loaded from \$XDG_CONFIG_HOME/nascopyrc or ~/.config/nascopyrc
 EOF
+}
+
+# Resolve a path to an absolute path, without requiring it to exist.
+# Usage: abs_path <path>
+abs_path() {
+  local path="$1"
+  if command -v realpath &>/dev/null; then
+    # Note: no -m here — BSD/macOS realpath doesn't support it (GNU-only).
+    # Callers already verify the path exists before calling abs_path.
+    realpath "$path"
+  else
+    case "$path" in
+    /*) echo "$path" ;;
+    *) echo "$(cd "$(dirname "$path")" && pwd)/$(basename "$path")" ;;
+    esac
+  fi
 }
 
 # Check if .gitignore exists in a source directory
@@ -49,15 +64,10 @@ EOF
 check_gitignore() {
   local source_dir="$1"
 
-  # Skip remote destinations
-  case "$source_dir" in
-  *:* | */*)
-    # Check if it looks like a remote destination (contains :)
-    if [[ "$source_dir" == *:* ]]; then
-      return 1
-    fi
-    ;;
-  esac
+  # Skip remote destinations (user@host:/path or host:/path)
+  if [[ "$source_dir" == *:* ]]; then
+    return 1
+  fi
 
   # Resolve to absolute directory path (strip trailing slash)
   source_dir="${source_dir%/}"
@@ -65,12 +75,7 @@ check_gitignore() {
   local gitignore_path="${source_dir}/.gitignore"
 
   if [ -f "$gitignore_path" ]; then
-    # Get absolute path
-    if command -v realpath &>/dev/null; then
-      EXCLUDE_FILE="$(realpath "$gitignore_path")"
-    else
-      EXCLUDE_FILE="$(cd "$source_dir" && pwd)/.gitignore"
-    fi
+    EXCLUDE_FILE="$(abs_path "$gitignore_path")"
     echo "Found .gitignore in '${source_dir}' - will use it for exclusions"
     return 0
   fi
@@ -166,8 +171,12 @@ validate_arguments() {
 # Extract sources and destination
 extract_paths() {
   # Extract destination (last argument)
-  DESTINATION="${POSITIONAL_ARGS[-1]}"
-  unset "POSITIONAL_ARGS[${#POSITIONAL_ARGS[@]}-1]"
+  # Note: negative indices like POSITIONAL_ARGS[-1] require bash 4.3+ and
+  # raise "bad array subscript" on bash 3.2 (macOS default), so compute the
+  # last index explicitly instead.
+  local last_idx=$((${#POSITIONAL_ARGS[@]} - 1))
+  DESTINATION="${POSITIONAL_ARGS[$last_idx]}"
+  unset "POSITIONAL_ARGS[$last_idx]"
 
   # Remaining arguments are sources
   SOURCES=("${POSITIONAL_ARGS[@]}")
@@ -175,16 +184,13 @@ extract_paths() {
 
 # Build and execute rsync command
 build_and_execute_rsync() {
-  local RSYNC_CMD=("rsync" "${RSYNC_FLAGS[@]}")
   local has_exclude_from=false
 
-  # Resolve relative --exclude-from paths to absolute, skip if file doesn't exist
-  # First, find the source directory for relative path resolution
+  # Resolve relative --exclude-from paths against the first source directory
   local resolve_dir=""
   if [ ${#SOURCES[@]} -gt 0 ]; then
-    resolve_dir="${SOURCES[0]}"
-    resolve_dir="${resolve_dir%/}"
-    # Skip remote destinations
+    resolve_dir="${SOURCES[0]%/}"
+    # Skip remote sources
     if [[ "$resolve_dir" == *:* ]]; then
       resolve_dir=""
     fi
@@ -192,9 +198,8 @@ build_and_execute_rsync() {
 
   # Process flags: resolve relative --exclude-from paths to absolute
   local processed_flags=()
-  local i
-  for i in "${!RSYNC_CMD[@]}"; do
-    local flag="${RSYNC_CMD[$i]}"
+  local flag
+  for flag in "${RSYNC_FLAGS[@]}"; do
     case "$flag" in
     --exclude-from=*)
       has_exclude_from=true
@@ -202,17 +207,9 @@ build_and_execute_rsync() {
       # Resolve relative paths to absolute, skip if file doesn't exist
       if [[ "$exclude_path" != /* ]]; then
         if [ -f "$exclude_path" ]; then
-          if command -v realpath &>/dev/null; then
-            exclude_path="$(realpath "$exclude_path")"
-          else
-            exclude_path="$(cd "$(dirname "$exclude_path")" && pwd)/$(basename "$exclude_path")"
-          fi
+          exclude_path="$(abs_path "$exclude_path")"
         elif [ -n "$resolve_dir" ] && [ -f "${resolve_dir}/${exclude_path}" ]; then
-          if command -v realpath &>/dev/null; then
-            exclude_path="$(realpath "${resolve_dir}/${exclude_path}")"
-          else
-            exclude_path="${resolve_dir}/${exclude_path}"
-          fi
+          exclude_path="$(abs_path "${resolve_dir}/${exclude_path}")"
         else
           # File doesn't exist anywhere — skip this flag
           echo "Warning: --exclude-from='${flag#--exclude-from=}' file not found, skipping" >&2
@@ -232,53 +229,65 @@ build_and_execute_rsync() {
     processed_flags+=("--exclude-from=$EXCLUDE_FILE")
   fi
 
-  # Add sources and destination
-  processed_flags+=("${SOURCES[@]}" "$DESTINATION")
+  local rsync_cmd=("rsync" "${processed_flags[@]}" "${SOURCES[@]}" "$DESTINATION")
 
-  echo "Executing: ${processed_flags[*]}"
-  exec "${processed_flags[@]}"
+  echo "Executing: ${rsync_cmd[*]}"
+  exec "${rsync_cmd[@]}"
 }
 
 # Expand profile if specified
 expand_profile() {
-  if [ -n "$PROFILE_VAR" ]; then
-    local profile_content
-    profile_content=$(parse_profile "$PROFILE_VAR")
+  if [ -z "$PROFILE_VAR" ]; then
+    return 0
+  fi
 
-    if profile_content=$(parse_profile "$PROFILE_VAR"); then
-      echo "Using profile: $PROFILE_VAR"
+  local profile_content
+  if ! profile_content=$(parse_profile "$PROFILE_VAR"); then
+    echo "No profile expansion performed" >&2
+    return 0
+  fi
 
-      # Parse the profile content and split into rsync flags and positional args
-      # Format: --blah /source /anothersource user@somehost:/target
-      # Use eval to properly handle quoted arguments and spaces
-      local profile_args
-      eval "profile_args=($profile_content)"
+  echo "Using profile: $PROFILE_VAR"
 
-      local profile_flags=()
-      local profile_paths=()
-      local arg
-      for arg in "${profile_args[@]}"; do
-        case "$arg" in
-        -*)
-          profile_flags+=("$arg")
-          ;;
-        *)
-          profile_paths+=("$arg")
-          ;;
-        esac
-      done
+  # Parse the profile content and split into rsync flags and positional args
+  # Format: --blah /source /anothersource user@somehost:/target
+  # ponytail: eval is used to honor quoting/tilde-expansion in profile entries.
+  # nascopyrc is a trusted, user-owned local config file, not external input.
+  local profile_args
+  eval "profile_args=($profile_content)"
 
-      # Prepend profile flags to RSYNC_FLAGS
-      if [ ${#profile_flags[@]} -gt 0 ]; then
-        RSYNC_FLAGS=("${profile_flags[@]}" "${RSYNC_FLAGS[@]}")
-      fi
+  local profile_flags=()
+  local profile_paths=()
+  local arg
+  for arg in "${profile_args[@]-}"; do
+    [ -z "$arg" ] && continue
+    case "$arg" in
+    -*)
+      profile_flags+=("$arg")
+      ;;
+    *)
+      profile_paths+=("$arg")
+      ;;
+    esac
+  done
 
-      # Prepend profile paths to POSITIONAL_ARGS
-      if [ ${#profile_paths[@]} -gt 0 ]; then
-        POSITIONAL_ARGS=("${profile_paths[@]}" "${POSITIONAL_ARGS[@]}")
-      fi
+  # Prepend profile flags to RSYNC_FLAGS
+  if [ ${#profile_flags[@]} -gt 0 ]; then
+    RSYNC_FLAGS=("${profile_flags[@]}" "${RSYNC_FLAGS[@]}")
+  fi
+
+  # Prepend profile paths to POSITIONAL_ARGS
+  # Note: POSITIONAL_ARGS may be empty here (e.g. `--profile X` with no other
+  # args). On bash 3.2 (macOS default) "${arr[@]}" on an empty array trips
+  # `set -u`'s unbound-variable check, but "${arr[@]-}" is NOT a safe fix:
+  # when the array is truly empty, bash 3.2 substitutes the default as one
+  # literal (empty-string) word instead of zero words, injecting a phantom
+  # positional arg. Check length explicitly instead.
+  if [ ${#profile_paths[@]} -gt 0 ]; then
+    if [ ${#POSITIONAL_ARGS[@]} -gt 0 ]; then
+      POSITIONAL_ARGS=("${profile_paths[@]}" "${POSITIONAL_ARGS[@]}")
     else
-      echo "No profile expansion performed" >&2
+      POSITIONAL_ARGS=("${profile_paths[@]}")
     fi
   fi
 }
