@@ -34,7 +34,7 @@ if [[ "$(uname)" == "Darwin" ]]; then
 fi
 
 SSHFS_CONNECTION_OPTS=(-o "delay_connect,reconnect,ServerAliveInterval=30,ConnectTimeout=3,ConnectionAttempts=1")
-SSHFS_OPTS=(-o "follow_symlinks,noatime,compression=no")
+SSHFS_OPTS=(-o "follow_symlinks")
 #
 LINUX_SSHFS_OPTS=(-o "idmap=user")
 MAC_SSHFS_OPTS=(-o "noappledouble,noapplexattr")
@@ -42,7 +42,7 @@ if ! $IS_MACOS; then
   # idmap=user is Linux-FUSE-only; macFUSE/fuse-t's sshfs rejects it
   SSHFS_OPTS+=("${SSHFS_CONNECTION_OPTS[@]}" "${LINUX_SSHFS_OPTS[@]}")
 else
-  SSHFS_OPTS+=("${SSHFS_CONNECTION_OPTS[@]}" "${MAC_SSHFS_OPTS[@]}")
+  SSHFS_OPTS+=("${MAC_SSHFS_OPTS[@]}")
 fi
 
 # `mountpoint` doesn't exist on macOS (even under fuse-t); use mount(1) instead
