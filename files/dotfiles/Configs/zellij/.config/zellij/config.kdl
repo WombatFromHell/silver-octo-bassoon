@@ -3,14 +3,22 @@ keybinds clear-defaults=true {
     // autolock plugin handles TUI editors. Ctrl-Shift-G toggles locked mode.
     // everything behind Ctrl-s (tmux mode) except global navigation shortcuts.
     normal {
-
-    }
-    locked {
         bind "Ctrl G" {
-            SwitchToMode "normal"
+            MessagePlugin "autolock" {
+                payload "toggle"
+            }
         }
+    }
+
+    locked {
         bind "Ctrl s" {
-            SwitchToMode "tmux"
+            Write 19
+        }
+        bind "Ctrl G" {
+            MessagePlugin "autolock" {
+                payload "toggle"
+            }
+            SwitchToMode "normal"
         }
     }
     // ── tmux mode: the primary interface ──────────────────────────────
@@ -464,21 +472,21 @@ plugins {
     plugin-manager location="zellij:plugin-manager"
     session-manager location="zellij:session-manager"
     strider location="zellij:strider"
-    // autolock location="https://github.com/fresh2dev/zellij-autolock/releases/latest/download/zellij-autolock.wasm" {
-    //     triggers "nvim|vim|v|nv"
-    //     watch_triggers "fzf|zoxide|atuin|atac"
-    //     watch_interval "1.0"
-    // }
+    autolock location="https://github.com/fresh2dev/zellij-autolock/releases/latest/download/zellij-autolock.wasm" {
+        is_enabled true
+        triggers "ssh|fzf|zoxide|atuin"
+        reaction_seconds "1.0"
+    }
 }
 load_plugins {
-
+    autolock
 }
 web_client {
     font "monospace"
 }
 theme "catppuccin-mocha-teal"
 default_mode "normal"
-default_shell "fish"
+default_shell "fish.sh"
 default_layout "topbar"
 mouse_mode true
 pane_frames false
@@ -488,4 +496,3 @@ scrollback_editor "edit.sh"
 copy_on_select true
 session_serialization false
 show_startup_tips false
-
