@@ -21,6 +21,7 @@ if status is-interactive
     end
     function update_env_on_prompt --on-event fish_prompt
         update_wayland_env_vars
+        update_gpg_env
     end
 
     set -g fish_greeting # disable initial fish greeting
@@ -33,9 +34,9 @@ if status is-interactive
     set -g ZELLIJ_ENABLED true
     set -g TMUX_ENABLED false
 
-    set -x GPG_TTY (tty)
     set -x XDG_DATA_HOME $HOME/.local/share
     set -x XDG_CONFIG_HOME $HOME/.config
+    set -gx TERMINFO_DIRS /usr/share/terminfo $TERMINFO_DIRS
 
     set -gx GOPATH $HOME/.local/share/go
     set -gx GOMODCACHE $GOPATH/pkg/mod

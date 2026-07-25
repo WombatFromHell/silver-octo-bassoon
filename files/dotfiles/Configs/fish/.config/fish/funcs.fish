@@ -204,29 +204,27 @@ function clean_fish
 end
 
 function update_wayland_env_vars -d "Update NIRI_SOCKET and WAYLAND_DISPLAY to match current session"
-    if test -n "$XDG_RUNTIME_DIR" -a "$XDG_CURRENT_DESKTOP" = niri
-        if test -z "$SUDO_USER"
-            dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP NIRI_SOCKET
-        end
+    test "$XDG_CURRENT_DESKTOP" = niri -a -n "$XDG_RUNTIME_DIR"; or return
 
-        # Find the most recent niri socket (sorted by modification time)
-        # NOTE: Must use glob directly — fish does NOT expand globs inside variables
-        set -l socket_listing (command ls -t $XDG_RUNTIME_DIR/niri.*.sock 2>/dev/null)
+    # NOTE: fish doesn't expand globs inside variables — must glob directly
+    set -l new_socket (command ls -t $XDG_RUNTIME_DIR/niri.*.sock 2>/dev/null)[1]
+    test -n "$new_socket" -a "$new_socket" != "$NIRI_SOCKET"; or return
 
-        if test -n "$socket_listing"
-            set -l new_socket $socket_listing[1]
-            set -gx NIRI_SOCKET $new_socket
+    set -gx NIRI_SOCKET $new_socket
+    set -gx WAYLAND_DISPLAY (string replace -r '^niri\.(.*)\.[0-9]+\.sock$' '$1' -- (basename $new_socket))
 
-            # Extract WAYLAND_DISPLAY from the socket filename
-            # Format: niri.{WAYLAND_DISPLAY}.{PID}.sock (e.g., niri.wayland-1.35831.sock)
-            set -l filename (basename $new_socket)
-            set -l display_name (echo $filename | string replace -r '^niri\.(.*)\.[0-9]+\.sock$' '$1')
-
-            if test -n "$display_name" -a "$display_name" != "$filename"
-                set -gx WAYLAND_DISPLAY $display_name
-            end
-        end
+    if test -z "$SUDO_USER"
+        dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP NIRI_SOCKET
     end
+end
+
+function update_gpg_env
+    set -l current_tty (tty)
+    test "$current_tty" != "$GPG_TTY"; or return
+
+    set -gx GPG_TTY $current_tty
+    command -q gpg-connect-agent; or return
+    gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
 end
 
 if command -q nix
