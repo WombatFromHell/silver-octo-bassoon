@@ -21,7 +21,7 @@ background-blur-radius = 20
 window-save-state = always
 quit-after-last-window-closed = true
 keybind = shift+enter=text:\n
-macos-option-as-alt = true
+macos-option-as-alt = left
 #
 clipboard-read = allow
 clipboard-write = allow
