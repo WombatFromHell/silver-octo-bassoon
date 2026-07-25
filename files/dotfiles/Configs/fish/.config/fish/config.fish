@@ -19,6 +19,9 @@ if status is-interactive
     if test -r "$FUNCS_FISH_SRC"
         source "$FUNCS_FISH_SRC"
     end
+    function update_env_on_prompt --on-event fish_prompt
+        update_wayland_env_vars
+    end
 
     set -g fish_greeting # disable initial fish greeting
     set -gx SHELL $(command -v fish) # ensure fish can run inside multiplexers
@@ -26,7 +29,6 @@ if status is-interactive
 
     set_editor
     setup_podman_sock
-    # update_wayland_env_vars
 
     set -g ZELLIJ_ENABLED true
     set -g TMUX_ENABLED false
