@@ -219,11 +219,15 @@ function update_wayland_env_vars -d "Update NIRI_SOCKET and WAYLAND_DISPLAY to m
 end
 
 function update_gpg_env
-    set -l current_tty (tty)
-    test "$current_tty" != "$GPG_TTY"; or return
+    set -l current_tty (tty 2>/dev/null); or return
+    command -q gpg-connect-agent; or return
+
+    set -l agent_alive (gpg-connect-agent /bye 2>&1)
+    if test "$current_tty" = "$GPG_TTY"; and test -z "$agent_alive"
+        return
+    end
 
     set -gx GPG_TTY $current_tty
-    command -q gpg-connect-agent; or return
     gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
 end
 
