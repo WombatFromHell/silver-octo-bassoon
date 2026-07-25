@@ -481,18 +481,17 @@ plugins {
 load_plugins {
     autolock
 }
-web_client {
-    font "monospace"
-}
 theme "catppuccin-mocha-teal"
 default_mode "normal"
 default_shell "fish.sh"
-default_layout "topbar"
+default_layout "compact"
+simplified_ui true
 mouse_mode true
 pane_frames false
 on_force_close "detach"
-scroll_buffer_size 100000
+scroll_buffer_size 10000
 scrollback_editor "edit.sh"
 copy_on_select true
 session_serialization false
+pane_frame_serialization false
 show_startup_tips false

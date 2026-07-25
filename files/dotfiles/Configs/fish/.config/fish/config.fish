@@ -12,7 +12,7 @@ if status is-interactive
         set -gx HOME $user_home # update $HOME so everything else just works
     end
 
-    fish_config theme choose catppuccin-mocha --color-theme=dark
+    # fish_config theme choose catppuccin-mocha --color-theme=dark
 
     # functions that should be loaded before anything else
     set FUNCS_FISH_SRC "$HOME/.config/fish/funcs.fish"
@@ -30,7 +30,6 @@ if status is-interactive
 
     set -g ZELLIJ_ENABLED true
     set -g TMUX_ENABLED false
-    # set -g TMUX_AUTO_ATTACH false
 
     set -x GPG_TTY (tty)
     set -x XDG_DATA_HOME $HOME/.local/share

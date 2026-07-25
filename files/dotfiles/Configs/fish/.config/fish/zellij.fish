@@ -9,7 +9,7 @@ string match -qir '^(1|true|yes|on)$' "$ZELLIJ_ENABLED"; or return 0
 
 # --- Configuration ---
 set -q ZELLIJ_DEFAULT_SESSION; or set -g ZELLIJ_DEFAULT_SESSION main
-set -q ZELLIJ_ON_SSH; or set -g ZELLIJ_ON_SSH true
+set -q ZELLIJ_ON_SSH; or set -g ZELLIJ_ON_SSH false
 set -q EXIT_SHELL_ON_ZELLIJ_EXIT; or set -g EXIT_SHELL_ON_ZELLIJ_EXIT false
 # Master switch for auto-attach on shell start. Set to false to require `za`.
 set -q ZELLIJ_AUTO_ATTACH; or set -g ZELLIJ_AUTO_ATTACH true
