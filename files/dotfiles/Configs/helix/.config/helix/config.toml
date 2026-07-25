@@ -7,7 +7,7 @@ auto-completion = true
 auto-format = true
 [editor.indent-guides]
 render = true
-character = "⸽"
+character = "│"
 skip-levels = 1
 
 [editor.cursor-shape]
