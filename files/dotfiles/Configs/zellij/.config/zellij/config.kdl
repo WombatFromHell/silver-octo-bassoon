@@ -480,7 +480,8 @@ plugins {
     plugin-manager location="zellij:plugin-manager"
     session-manager location="zellij:session-manager"
     strider location="zellij:strider"
-    autolock location="https://github.com/fresh2dev/zellij-autolock/releases/latest/download/zellij-autolock.wasm" {
+    // autolock location="https://github.com/fresh2dev/zellij-autolock/releases/latest/download/zellij-autolock.wasm" {
+    autolock location="file:~/.config/zellij/plugins/zellij-autolock.wasm" {
         is_enabled true
         triggers "ssh|fzf|zoxide|atuin"
         reaction_seconds "1.0"
@@ -488,11 +489,14 @@ plugins {
 }
 load_plugins {
     autolock
+    // "https://github.com/dj95/zjstatus/releases/latest/download/zjframes.wasm"
+    "file:~/.config/zellij/plugins/zjframes.wasm"
 }
 theme "catppuccin-macchiato"
 default_mode "normal"
 default_shell "fish.sh"
-default_layout "compact"
+// default_layout "compact"
+default_layout "zjstatus"
 simplified_ui true
 stacked_resize true
 mouse_mode true
