@@ -183,12 +183,17 @@ complete -c tmk -f -a "(__tmux_list_session_names)"
 # so pinentry (routed through the popup wrapper) attaches to the pane
 # you're actually in rather than a stale one from an earlier session.
 function __tmux_update_gpg_tty --on-event fish_prompt
-    set -q TMUX; or return 0
     command -q gpg-connect-agent; or return 0
 
     set -l current_tty (tty 2>/dev/null); or return 0
-    test "$current_tty" = "$GPG_TTY"; and return 0
+    if test "$current_tty" != "$GPG_TTY"
+        set -gx GPG_TTY $current_tty
+        gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
+    end
 
-    set -gx GPG_TTY $current_tty
-    gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
+    if set -q TMUX
+        gpg-connect-agent "OPTION putenv=TMUX=$TMUX" /bye >/dev/null 2>&1
+    else
+        gpg-connect-agent "OPTION putenv=TMUX" /bye >/dev/null 2>&1
+    end
 end

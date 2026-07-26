@@ -68,12 +68,17 @@ end
 # current pane's TTY, since zellij has no server-side focus hook to do
 # this automatically the way tmux's set-hook can.
 function __zellij_update_gpg_tty --on-event fish_prompt
-    set -q ZELLIJ; or return 0
     command -q gpg-connect-agent; or return 0
 
     set -l current_tty (tty 2>/dev/null); or return 0
-    test "$current_tty" = "$GPG_TTY"; and return 0
+    if test "$current_tty" != "$GPG_TTY"
+        set -gx GPG_TTY $current_tty
+        gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
+    end
 
-    set -gx GPG_TTY $current_tty
-    gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
+    if set -q ZELLIJ
+        gpg-connect-agent "OPTION putenv=ZELLIJ=$ZELLIJ" /bye >/dev/null 2>&1
+    else
+        gpg-connect-agent "OPTION putenv=ZELLIJ" /bye >/dev/null 2>&1
+    end
 end
