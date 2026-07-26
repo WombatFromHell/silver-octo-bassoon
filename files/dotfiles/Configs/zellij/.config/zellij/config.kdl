@@ -136,6 +136,10 @@ keybinds clear-defaults=true {
             TogglePaneEmbedOrFloating
             SwitchToMode "normal"
         }
+        bind "i" {
+            TogglePanePinned
+            SwitchToMode "normal"
+        }
         bind "f" {
             TogglePaneFrames
             SwitchToMode "normal"
@@ -401,32 +405,36 @@ keybinds clear-defaults=true {
         bind "Alt l" {
             GoToNextTab
         }
-        // strict pane navigation (no tab fallback)
-        bind "Alt left" {
+        bind "Alt Left" {
             MoveFocus "left"
         }
-        bind "Alt down" {
+        bind "Alt Down" {
             MoveFocus "down"
         }
-        bind "Alt up" {
+        bind "Alt Up" {
             MoveFocus "up"
         }
-        bind "Alt right" {
+        bind "Alt Right" {
             MoveFocus "right"
         }
-        // resize focused pane (tiled splits)
-        bind "Alt Shift h" {
-            Resize "Increase left"
-        }
-        bind "Alt Shift l" {
-            Resize "Decrease right"
-        }
-        // resize focused pane (floating: non-directional)
-        bind "Alt Shift j" {
+        // quick resize shortcuts for splits
+        bind "Alt =" {
             Resize "Increase"
         }
-        bind "Alt Shift k" {
+        bind "Alt -" {
             Resize "Decrease"
+        }
+        bind "Alt Shift h" {
+            Resize "Increase Right"
+        }
+        bind "Alt Shift l" {
+            Resize "Decrease Right"
+        }
+        bind "Alt Shift j" {
+            Resize "Decrease Up"
+        }
+        bind "Alt Shift k" {
+            Resize "Increase Up"
         }
     }
     // scroll mode entry from anywhere (except locked, tmux, scroll, search)
@@ -481,11 +489,12 @@ plugins {
 load_plugins {
     autolock
 }
-theme "catppuccin-mocha-teal"
+theme "catppuccin-macchiato"
 default_mode "normal"
 default_shell "fish.sh"
 default_layout "compact"
 simplified_ui true
+stacked_resize true
 mouse_mode true
 pane_frames false
 on_force_close "detach"
