@@ -67,9 +67,10 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   output_a) switch_audio_to "$OUTPUT_A_NAME" ;;
   output_b) switch_audio_to "$OUTPUT_B_NAME" ;;
   -h | --help)
-    echo "Usage: $(basename "$0") [output_a|output_b|<sink-name>]"
+    echo "Usage: $(basename "$0") [ output_a | output_b | <sink-name> | -c]"
     exit 0
     ;;
+  -c) wpctl clear-default ;;
   *) switch_audio_to "$1" ;;
   esac
 fi

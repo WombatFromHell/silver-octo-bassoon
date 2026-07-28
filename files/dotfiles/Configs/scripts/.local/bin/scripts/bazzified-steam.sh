@@ -410,7 +410,7 @@ main() {
     [[ ${#GAMESCOPE_ARGS[@]} -eq 0 ]] && GAMESCOPE_ARGS=(--)
     WRAPPERS=("gamemode --")
     [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=(PROTON_ENABLE_WAYLAND=1)
-    _setup_nested_audio
+    # _setup_nested_audio
     run_session "nested"
     ;;
   *)
