@@ -29,6 +29,24 @@
   "mangoLayoutRadiusOverride": -1,
   "mangoLayoutBorderSize": -1,
   "mangoTrackpadNaturalScrolling": true,
+  "mouseAccelProfile": "default",
+  "mouseAccelSpeed": 0,
+  "mouseLeftHanded": false,
+  "mouseMiddleEmulation": false,
+  "mouseNaturalScroll": false,
+  "mouseScrollFactor": 1,
+  "mouseScrollMethod": "default",
+  "touchpadAccelProfile": "default",
+  "touchpadAccelSpeed": 0,
+  "touchpadDisableOnExternalMouse": false,
+  "touchpadDisableWhileTyping": true,
+  "touchpadDragLock": false,
+  "touchpadMiddleEmulation": false,
+  "touchpadNaturalScroll": true,
+  "touchpadScrollFactor": 1,
+  "touchpadScrollMethod": "default",
+  "touchpadTapAndDrag": true,
+  "touchpadTapToClick": true,
   "firstDayOfWeek": -1,
   "showWeekNumber": false,
   "calendarBackend": "auto",
@@ -157,7 +175,7 @@
     }
   ],
   "showWorkspaceIndex": true,
-  "showWorkspaceName": false,
+  "showWorkspaceName": true,
   "showWorkspacePadding": false,
   "workspaceScrolling": false,
   "showWorkspaceApps": false,
@@ -503,6 +521,7 @@
   "notificationTimeoutLow": 5000,
   "notificationTimeoutNormal": 5000,
   "notificationTimeoutCritical": 0,
+  "notificationIgnoreAppTimeout": false,
   "notificationCompactMode": false,
   "notificationShowTimeoutBar": false,
   "notificationDedupeEnabled": true,
@@ -563,7 +582,7 @@
       "vrrOnDemand": true
     },
     "LG Electronics LG TV SSCR2 0x01010101": {
-      "focusAtStartup": true,
+      "focusAtStartup": false,
       "vrrOnDemand": true
     },
     "LG Electronics 27GL850 910NTGY7B319": {
@@ -582,17 +601,13 @@
     "niri": {}
   },
   "activeDisplayProfile": {
-    "niri": "auto_d846e8c5"
+    "niri": ""
   },
   "activeDisplayProfileModes": {
-    "niri": {
-      "LG Electronics 27GL850 910NTGY7B319": {
-        "mode": "2560x1440@144.000"
-      }
-    }
+    "niri": {}
   },
   "displayPreviousRefreshModes": {},
-  "displayProfileAutoSelect": true,
+  "displayProfileAutoSelect": false,
   "displayShowDisconnected": false,
   "displaySnapToEdge": true,
   "connectedFrameBarStyleBackups": {},

@@ -20,49 +20,46 @@ log_error() {
   $HAS_NOTIFY && notify-send -u critical "$MODE_TAG" "$*" 2>/dev/null || true
 }
 
-# ── Process Helpers ──────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 is_steam_running() {
   pgrep -x steam >/dev/null 2>&1
 }
 
-# ── Audio Output Switching ───────────────────────────────────────────────────
-
-# SWITCH_OUTPUT='<pipewire sink name, from `wpctl status -n`>' — optional.
-# Best-effort: a missing node or missing tooling logs a warning and continues,
-# it never blocks Steam from launching.
-# ponytail: resolves via wpctl only (not pw-cli) — pw-cli returns PipeWire's
-# global object IDs, a different numbering than the WirePlumber IDs
-# `wpctl set-default` expects, which silently no-ops on a mismatched ID.
-switch_audio_output() {
-  [[ -z ${SWITCH_OUTPUT:-} ]] && return 0
-
-  if ! command -v wpctl &>/dev/null; then
-    log_warn "SWITCH_OUTPUT set but wpctl not found; skipping audio switch"
-    return 0
-  fi
-
-  # `wpctl status -n` lines look like " │  *   51. <name> [vol: 1.00]" — id
-  # and name are the first two space-separated tokens after the optional
-  # tree glyphs/asterisk.
-  local node_id
-  node_id="$(wpctl status -n 2>/dev/null |
-    sed -nE 's/^[│ ]*\*?[[:space:]]*([0-9]+)\.[[:space:]]+([^[:space:]]+).*/\1 \2/p' |
-    awk -v n="$SWITCH_OUTPUT" '$2 == n {print $1; exit}')"
-
-  if [[ -z "$node_id" ]]; then
-    log_warn "Audio output '$SWITCH_OUTPUT' not found; skipping audio switch"
-    return 0
-  fi
-
-  if wpctl set-default "$node_id" 2>/dev/null; then
-    log_info "Switched audio output to $SWITCH_OUTPUT (ID: $node_id)"
-  else
-    log_warn "Failed to set default audio output to '$SWITCH_OUTPUT' (ID: $node_id)"
-  fi
+# ponytail: sourced functions called directly; no subprocess per switch.
+# Names reflect intent (game/desktop/toggle) not implementation (output_a/b).
+_setup_nested_audio() {
+  _ensure_audio_sourced || return 0
+  switch_audio_to "$OUTPUT_A_NAME" || true
 }
 
-# ── Steam Shutdown Logic (formerly restart-steam.sh) ────────────────────────
+_restore_desktop_audio() {
+  _ensure_audio_sourced || return 0
+  switch_audio_to "$OUTPUT_B_NAME" || true
+}
+
+_toggle_audio() {
+  _ensure_audio_sourced || return 0
+  toggle_audio_output || true
+}
+
+_ensure_audio_sourced() {
+  # ponytail: idempotent source guard; avoids re-sourcing on every call.
+  # Functions are defined in global scope after first source.
+  declare -f switch_audio_to &>/dev/null && return 0
+
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [[ -f "${script_dir}/switch-audio-out.sh" ]]; then
+    # shellcheck source=switch-audio-out.sh
+    source "${script_dir}/switch-audio-out.sh"
+    return 0
+  fi
+  log_warn "switch-audio-out.sh not found; audio switching disabled"
+  return 1
+}
+
+# ── Steam Shutdown Logic ─────────────────────────────────────────────────────
 
 wait_for_steam_exit() {
   local elapsed=0
@@ -132,32 +129,75 @@ check_dependencies() {
   fi
 }
 
-# ── State ────────────────────────────────────────────────────────────────────
+# ── State & Signal Handling ──────────────────────────────────────────────────
 
-# Track the child PID so we can forward signals and clean up on interrupt.
 STEAM_CHILD_PID=0
 
 forward_signal() {
   local sig="$1"
-  local exit_code=$((128 + sig))
-
   if ((STEAM_CHILD_PID > 0)); then
-    kill -"$sig" "$STEAM_CHILD_PID" 2>/dev/null || true
-    wait "$STEAM_CHILD_PID" 2>/dev/null || true
-    # ponytail: shutdown_steam_if_running blocks up to STEAM_SHUTDOWN_TIMEOUT
-    # (10s); acceptable for interactive launcher. If signal latency matters,
-    # background it: shutdown_steam_if_running & disown
-    shutdown_steam_if_running
+    log_info "Received SIG${sig}, initiating graceful Steam shutdown..."
+    steam -shutdown 2>/dev/null || true
+    wait_for_steam_exit
     cleanup_lock_files
+    # ponytail: mirror run_session's restore; mode tag tells us if nested
+    [[ "$MODE_TAG" == *"nested"* ]] && _restore_desktop_audio
   fi
-
-  exit "$exit_code"
+  exit "$((128 + $(kill -l "$sig" 2>/dev/null || echo 0)))"
 }
 
 setup_signal_handlers() {
+  # ponytail: pass signal name as quoted argument to avoid unbound variable
+  # under set -u; trap handler receives literal string, not expanded var.
   trap 'forward_signal INT' INT
   trap 'forward_signal TERM' TERM
   trap 'forward_signal HUP' HUP
+}
+
+# ── Monitor Detection ────────────────────────────────────────────────────────
+
+detect_gamescope_profile_niri() {
+  command -v niri &>/dev/null || return 1
+  command -v jq &>/dev/null || {
+    log_warn "jq not found; skipping monitor detection"
+    return 1
+  }
+
+  local active_output=""
+  local attempt=0
+
+  # ponytail: niri msg -j outputs returns an object (not array) with no
+  # .connected field — key presence = connected. Retry loop absorbs UTH handoff.
+  while ((attempt < 3)); do
+    active_output="$(niri msg -j outputs 2>/dev/null | jq -r '
+      keys |
+      if any(startswith("HDMI-A-")) then "HDMI-A-1"
+      elif any(startswith("DP-")) then "DP-1"
+      else empty
+      end
+    ' 2>/dev/null)" && [[ -n "$active_output" ]] && break
+
+    ((attempt++))
+    sleep 0.5
+  done
+
+  if [[ -z "$active_output" ]]; then
+    local connected_names
+    connected_names="$(niri msg -j outputs 2>/dev/null | jq -r 'keys | join(", ")' 2>/dev/null)"
+    log_warn "No known monitor after ${attempt} attempts (connected: ${connected_names:-none}); using default gamescope args"
+    return 1
+  fi
+
+  case "$active_output" in
+  HDMI-A-1)
+    GAMESCOPE_ARGS=(-p std,vsr4k,hdr -e)
+    log_info "Detected HDMI-A-* → 4K HDR profile"
+    ;;
+  DP-1)
+    GAMESCOPE_ARGS=(-p std -e)
+    log_info "Detected DP-* → SDR profile"
+    ;;
+  esac
 }
 
 # ── Session Cleanup ──────────────────────────────────────────────────────────
@@ -193,8 +233,6 @@ cleanup_orphaned_session() {
 
 # ── Command Building ─────────────────────────────────────────────────────────
 
-# Populates STEAM_CMD array with the full command chain.
-# WRAPPERS is extensible — end-users can add pre-launch hooks here.
 build_steam_command() {
   # Environment variables
   STEAM_CMD=(env "${STEAM_ENV_VARS[@]}")
@@ -248,6 +286,9 @@ run_session() {
   acquire_lock true
   launch_steam
   cleanup_lock_files
+  # ponytail: restore desktop audio after session ends (normal or signaled).
+  # Placed after cleanup_lock_files so audio state never outlives lock ownership.
+  [[ "$mode" == "nested" ]] && _restore_desktop_audio
 }
 
 # ── Lock Management ──────────────────────────────────────────────────────────
@@ -319,30 +360,20 @@ run_plain() {
 
 main() {
   local args=("$@")
-  local mode_args=()
-  local extra_args=()
-  local found_sep=false
+  local mode_args=() extra_args=() found_sep=false
 
   for arg in "${args[@]}"; do
     if [[ "$arg" == "--" ]]; then
       found_sep=true
       continue
     fi
-    if "$found_sep"; then
-      extra_args+=("$arg")
-    else
-      mode_args+=("$arg")
-    fi
+    if "$found_sep"; then extra_args+=("$arg"); else mode_args+=("$arg"); fi
   done
 
   local cmd="${mode_args[0]:-}"
-
   MODE_TAG="bazzified-steam"
   STEAM_ARGS=(+gyro_force_sensor_rate 250)
   WRAPPERS=()
-  # ponytail: declared here (not just inside `nested`) so build_steam_command's
-  # dependency on these is visible in one place instead of tribal knowledge.
-  # STEAM_ENV_VARS is set per-case below; user can shadow it via env override.
   GAMESCOPE_PATH=""
   GAMESCOPE_ARGS=()
 
@@ -351,10 +382,8 @@ main() {
     exit 1
   }
 
-  # Applies uniformly to every mode — one call site instead of duplicating
-  # per-case, and it's independent of Steam's lock/session state.
-  switch_audio_output
-
+  # ponytail: single case block sets all mode-specific state AND dispatches.
+  # No separate config phase; no duplicated mode matching; no intermediate vars.
   case "$cmd" in
   "")
     [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=()
@@ -374,11 +403,14 @@ main() {
       log_error "Missing gamescope dependency!"
       exit 1
     }
-    GAMESCOPE_ARGS=(-f -W 2560 -H 1440 -e --)
+    # ponytail: detect first (sets base profile), then append user args + terminator.
+    # Detection failure leaves GAMESCOPE_ARGS empty → fallback below handles it.
+    detect_gamescope_profile_niri || true
+    GAMESCOPE_ARGS+=("${extra_args[@]}" --)
+    [[ ${#GAMESCOPE_ARGS[@]} -eq 0 ]] && GAMESCOPE_ARGS=(--)
     WRAPPERS=("gamemode --")
-    [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=(
-      PROTON_ENABLE_WAYLAND=1
-    )
+    [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=(PROTON_ENABLE_WAYLAND=1)
+    _setup_nested_audio
     run_session "nested"
     ;;
   *)

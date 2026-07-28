@@ -73,23 +73,47 @@ screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 animations {
 
 }
+workspace "gamescope" {
+    open-on-output "HDMI-A-1"
+}
+workspace "gaming" {
+    open-on-output "DP-1"
+}
 // https://yalter.github.io/niri/Configuration:-Window-Rules
 window-rule {
     match app-id="steam" title="^notificationtoasts_\\d+_desktop$"
     default-floating-position x=10 y=10 relative-to="bottom-right"
 }
+// matches for XWayland Steam BPM and game windows
 window-rule {
     match app-id="steam" title="Steam Big Picture Mode"
     open-fullscreen true
+    open-focused true
+    open-on-workspace "gaming"
+}
+window-rule {
+    match app-id="steam" title="Steam"
+    open-on-workspace "gaming"
+    open-focused true
 }
 window-rule {
     match app-id="steam_app_default"
     open-fullscreen true
+    open-focused true
+    open-on-workspace "gaming"
+}
+// matches for gamescope on HDMI-A-1>DP-1
+window-rule {
+    match app-id="gamescope"
+    open-fullscreen true
+    open-focused true
+    open-on-workspace "gamescope"
 }
 window-rule {
     match app-id="gamescope"
-    default-column-width {}
     open-fullscreen true
+    open-focused true
+    open-on-workspace "gaming"
 }
 // Open the Firefox picture-in-picture player as floating by default.
 window-rule {
@@ -537,3 +561,4 @@ binds {
 include "dms/cursor.kdl"
 include "dms/binds.kdl"
 include "dms/outputs.kdl"
+
