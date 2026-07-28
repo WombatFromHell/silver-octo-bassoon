@@ -10,7 +10,7 @@ string match -qir '^(1|true|yes|on)$' "$ZELLIJ_ENABLED"; or return 0
 # --- Configuration ---
 set -q ZELLIJ_DEFAULT_SESSION; or set -g ZELLIJ_DEFAULT_SESSION main
 set -q ZELLIJ_ON_SSH; or set -g ZELLIJ_ON_SSH false
-set -q EXIT_SHELL_ON_ZELLIJ_EXIT; or set -g EXIT_SHELL_ON_ZELLIJ_EXIT false
+set -q ZELLIJ_EXIT_ON_DETACH; or set -g ZELLIJ_EXIT_ON_DETACH true
 # Master switch for auto-attach on shell start. Set to false to require `za`.
 set -q ZELLIJ_AUTO_ATTACH; or set -g ZELLIJ_AUTO_ATTACH true
 
@@ -32,6 +32,13 @@ complete -c zk -a "(__zj_sessions)"
 
 # --- Public API ---
 function za -d "Attach to session, creating it if missing (default: \$ZELLIJ_DEFAULT_SESSION)"
+    # Don't start zellij inside a tmux session that has auto-attach enabled
+    if set -q TMUX
+        and string match -qir '^(1|true|yes|on)$' "$TMUX_ENABLED"
+        and string match -qir '^(1|true|yes|on)$' "$TMUX_AUTO_ATTACH"
+        echo "Error: Cannot attach to zellij while inside tmux with TMUX_AUTO_ATTACH enabled. Detach from tmux first (prefix d)." >&2
+        return 1
+    end
     zellij attach -c (__zj_session_arg $argv[1] $ZELLIJ_DEFAULT_SESSION)
 end
 function zd -d "Delete a session (default: current)"
@@ -59,8 +66,11 @@ if status is-interactive; and not set -q ZELLIJ
     else if test -n "$SSH_TTY"; and not string match -qir '^(1|true|yes|on)$' $ZELLIJ_ON_SSH
         return 0
     end
-    zellij attach -c $ZELLIJ_DEFAULT_SESSION
-    string match -qir '^(1|true|yes|on)$' $EXIT_SHELL_ON_ZELLIJ_EXIT; and exit
+    if string match -qir '^(1|true|yes|on)$' $ZELLIJ_EXIT_ON_DETACH
+        exec zellij attach -c $ZELLIJ_DEFAULT_SESSION
+    else
+        zellij attach -c $ZELLIJ_DEFAULT_SESSION
+    end
 end
 
 # --- GPG pinentry TTY sync ---

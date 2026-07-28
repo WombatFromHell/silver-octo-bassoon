@@ -34,7 +34,7 @@ end
 set -q TMUX_DEFAULT_SESSION; or set -g TMUX_DEFAULT_SESSION main
 set -q TMUX_ON_SSH; or set -g TMUX_ON_SSH false
 set -q TMUX_AUTO_ATTACH; or set -g TMUX_AUTO_ATTACH true
-set -q EXIT_SHELL_ON_TMUX_EXIT; or set -g EXIT_SHELL_ON_TMUX_EXIT false
+set -q TMUX_EXIT_ON_DETACH; or set -g TMUX_EXIT_ON_DETACH true
 
 # --- Helper Functions ---
 
@@ -78,6 +78,14 @@ function tma -d "Attach to session (create if missing)"
 
     # Default to configured main session if no argument
     test -z "$target"; and set target $TMUX_DEFAULT_SESSION
+
+    # Don't start tmux inside a zellij session that has auto-attach enabled
+    if set -q ZELLIJ
+        and __tmux_is_truthy "$ZELLIJ_ENABLED"
+        and __tmux_is_truthy "$ZELLIJ_AUTO_ATTACH"
+        echo "Error: Cannot attach to tmux while inside a zellij session with ZELLIJ_AUTO_ATTACH enabled. Detach from zellij first (Ctrl-o d)." >&2
+        return 1
+    end
 
     __tmux_ensure_session "$target"
     __tmux_attach "$target"
@@ -160,13 +168,10 @@ if status is-interactive; and not set -q TMUX
         # This prevents "stealing" the session from another window/term.
         set -l clients (tmux list-clients -F '#{session_name}' 2>/dev/null)
         if not string match -q -- $target $clients
-            __tmux_attach "$target"
-
-            # Optional: Exit the shell if the tmux session was killed during the session
-            if __tmux_is_truthy "$EXIT_SHELL_ON_TMUX_EXIT"
-                if not __tmux_session_exists "$target" 2>/dev/null
-                    exit
-                end
+            if __tmux_is_truthy "$TMUX_EXIT_ON_DETACH"
+                exec tmux attach-session -t "$target"
+            else
+                __tmux_attach "$target"
             end
         end
 
