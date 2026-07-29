@@ -175,12 +175,12 @@
     }
   ],
   "showWorkspaceIndex": true,
-  "showWorkspaceName": true,
-  "showWorkspacePadding": false,
+  "showWorkspaceName": false,
+  "showWorkspacePadding": true,
   "workspaceScrolling": false,
-  "showWorkspaceApps": false,
+  "showWorkspaceApps": true,
   "workspaceDragReorder": false,
-  "maxWorkspaceIcons": 3,
+  "maxWorkspaceIcons": 5,
   "workspaceAppIconSizeOffset": 0,
   "groupWorkspaceApps": true,
   "groupActiveWorkspaceApps": false,
@@ -787,6 +787,9 @@
   "builtInPluginSettings": {
     "dms_settings_search": {
       "trigger": "?"
+    },
+    "dms_clipboard_search": {
+      "trigger": "cb"
     }
   },
   "clipboardClickToPaste": false,

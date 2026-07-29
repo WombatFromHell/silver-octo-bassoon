@@ -73,6 +73,9 @@ screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 animations {
 
 }
+workspace "main" {
+
+}
 workspace "gamescope" {
     open-on-output "HDMI-A-1"
 }
@@ -159,6 +162,7 @@ window-rule {
     geometry-corner-radius 4
     clip-to-geometry true
 }
+spawn-at-startup "niri" "msg" "action" "focus-workspace" "main"
 //
 // environment {
 //     QT_QPA_PLATFORMTHEME "qt6ct"

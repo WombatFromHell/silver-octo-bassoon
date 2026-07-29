@@ -1,9 +1,1 @@
-{
-  "qalcLauncher": {
-    "enabled": true
-  },
-  "calculator": {
-    "enabled": true,
-    "trigger": "="
-  }
-}
+/home/josh/.config/dotfiles/Configs/niri/.config/DankMaterialShell/plugin_settings.json
