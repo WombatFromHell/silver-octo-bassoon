@@ -43,6 +43,12 @@ keybinds clear-defaults=true {
         bind "o" {
             FocusNextPane
         }
+        bind "Alt h" {
+            MoveTab "left"
+        }
+        bind "Alt l" {
+            MoveTab "right"
+        }
         // pane creation (exit tmux)
         bind "p" {
             NewPane
