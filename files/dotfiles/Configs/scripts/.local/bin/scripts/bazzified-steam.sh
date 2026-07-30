@@ -371,14 +371,14 @@ main() {
     GAMESCOPE_ARGS+=("${extra_args[@]}" --)
     [[ ${#GAMESCOPE_ARGS[@]} -eq 0 ]] && GAMESCOPE_ARGS=(--)
     WRAPPERS=(
-      "$HOME/.local/bin/scripts/lgc1-wol.py"
+      "$HOME/.local/bin/scripts/lgc1-wol.py --"
       "gamemode --"
       "$HOME/.local/bin/scripts/pactl_gate_sentinel.sh"
     )
     [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=(
       PROTON_ENABLE_WAYLAND=1
-      IDLE_CMD='$HOME/.local/bin/scripts/on_idle.sh idle'
-      ACTIVE_CMD='$HOME/.local/bin/scripts/on_idle.sh active'
+      IDLE_CMD="$HOME/.local/bin/scripts/on_idle.sh idle"
+      ACTIVE_CMD="$HOME/.local/bin/scripts/on_idle.sh active"
       IDLE_TIMEOUT=300 # DPMS off after 5 mins
     )
     run_session "nested"

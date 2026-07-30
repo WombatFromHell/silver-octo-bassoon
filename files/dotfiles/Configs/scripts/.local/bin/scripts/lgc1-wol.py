@@ -221,7 +221,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Wake an LG TV and switch input via WebSocket SSAP.",
         epilog=(
             "All options can also be set via environment variables: "
-            "TV_IP, TV_MAC, WS_PORT, KEY_FILE, TV_INPUT."
+            "TV_IP, TV_MAC, WS_PORT, KEY_FILE, TV_INPUT. "
+            "Pass -- <cmd> to exec a command after waking the TV."
         ),
     )
     p.add_argument("--ip", default=CFG_IP, help="TV IP (env: TV_IP)")
@@ -243,6 +244,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main():
+    cmd = None
+    if "--" in sys.argv:
+        idx = sys.argv.index("--")
+        cmd = sys.argv[idx + 1:]
+        sys.argv = sys.argv[:idx]
     args = parse_args()
     print("Waking TV...")
     wol(args.mac)
@@ -252,6 +258,8 @@ def main():
         sys.exit(1)
     print(f"Switching to {args.input}...")
     switch_lg_input(args.ip, args.port, args.key_file, args.input)
+    if cmd:
+        os.execvp(cmd[0], cmd)
     print("Done.")
 
 
