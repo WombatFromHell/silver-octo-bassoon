@@ -1,124 +1,70 @@
 -- browser-custom-route.lua
 --
--- Desktop web browser audio (Brave, Waterfox, ...) should NEVER play
--- through the HDMI/TV sink, even though HDMI is the highest-priority
--- sink per monitor.alsa.rules. Everything else (games, gamescope, Steam,
--- etc.) is left alone and simply falls through to the default
--- priority-based routing already defined in 80-output-priorities.conf:
---   Bluetooth (2000) > HDMI (1900) > Arctis wired (1800)
+-- HDMI is excluded from default audio routing UNLESS a "gate_sentinel"
+-- null-sink exists (spawned externally, e.g. via gate-wrap.sh using
+-- `pactl load-module module-null-sink sink_name=gate_sentinel`).
 --
--- This script pins matched browser streams to:
---   - the Bluetooth sink, if one is currently active
---   - otherwise, the wired Arctis sink
--- ...and never to HDMI.
---
--- Install:
---   ~/.config/wireplumber/scripts/browser-custom-route.lua
--- Enable via:
---   ~/.config/wireplumber/wireplumber.conf.d/99-browser-custom-route.conf
---     wireplumber.components = [
---       { name = "browser-custom-route.lua", type = "script/lua", provides = "custom.browser-custom-route" }
---     ]
+-- Mechanism: toggle HDMI's own priority.session/priority.driver between
+-- its normal value (from 80-output-priorities.conf) and a value below
+-- the Arctis wired fallback. This reuses the existing priority-based
+-- routing instead of introducing a second routing mechanism.
 
--- EDIT THIS to match your exact wired fallback sink node name (check with `wpctl status`)
-local fallback_node_name = "alsa_output.usb-SteelSeries_SteelSeries_Arctis_7-00.stereo-game"
+local hdmi_node_name = "alsa_output.pci-0000_03_00.1.hdmi-stereo-extra3"  -- match your wpctl status name
+local hdmi_prio_normal = 1900    -- matches 80-output-priorities.conf
+local hdmi_prio_excluded = 1700  -- below Arctis (1800)
+local gate_sink_name = "gate_sentinel"
 
 local log = Log.open_topic("s-browser-custom-route")
 
--- Track bluez sink nodes and their state, and their node.name for routing
-local bluez_nodes = {}      -- bound_id -> node
-local active_bluez_name = nil
+local hdmi_nodes = {}  -- bound_id -> node
+local gate_ids = {}    -- bound_id -> true; presence == gate open
 
-om_bluez = ObjectManager {
+om_hdmi = ObjectManager {
+  Interest {
+    type = "node",
+    Constraint { "node.name", "equals", hdmi_node_name },
+  }
+}
+
+om_gate = ObjectManager {
   Interest {
     type = "node",
     Constraint { "media.class", "equals", "Audio/Sink" },
-    Constraint { "node.name", "matches", "bluez_output.*" },
+    Constraint { "node.name", "equals", gate_sink_name },
   }
 }
 
-om_streams = ObjectManager {
-  Interest {
-    type = "node",
-    Constraint { "media.class", "equals", "Stream/Output/Audio" },
-  }
-}
-
-om_metadata = ObjectManager {
-  Interest { type = "metadata", Constraint { "metadata.name", "equals", "default" } }
-}
-
-function get_active_bluez_sink_name()
-  for id, node in pairs(bluez_nodes) do
-    local state = node.properties and node.properties["node.state"]
-    if state == "running" or state == "idle" then
-      return node.properties["node.name"]
-    end
+local function set_hdmi_priority(value)
+  for _, node in pairs(hdmi_nodes) do
+    node:set_property("priority.session", tostring(value))
+    node:set_property("priority.driver", tostring(value))
   end
-  return nil
+  log:info("set HDMI priority to " .. value)
 end
 
-function get_default_metadata()
-  for m in om_metadata:iterate() do
-    return m
+om_hdmi:connect("object-added", function (_, node)
+  hdmi_nodes[node["bound-id"]] = node
+  -- new HDMI node appearing while gate is closed should come up excluded
+  if not next(gate_ids) then
+    set_hdmi_priority(hdmi_prio_excluded)
   end
-  return nil
-end
-
-function route_node_away_from_hdmi(node)
-  local metadata = get_default_metadata()
-  if not metadata then
-    log:warning("no default metadata object found, cannot route node")
-    return
-  end
-
-  local bound_id = node["bound-id"]
-  if not bound_id then
-    log:warning("node has no bound-id yet, skipping")
-    return
-  end
-
-  local target = get_active_bluez_sink_name() or fallback_node_name
-
-  metadata:set(bound_id, "target.node", "Spa:Id", target)
-  log:info("routed node " .. tostring(bound_id) .. " (" ..
-    tostring(node.properties["application.name"]) .. ") to " .. target)
-end
-
-om_bluez:connect("object-added", function (_, node)
-  bluez_nodes[node["bound-id"]] = node
+end)
+om_hdmi:connect("object-removed", function (_, node)
+  hdmi_nodes[node["bound-id"]] = nil
 end)
 
-om_bluez:connect("object-removed", function (_, node)
-  bluez_nodes[node["bound-id"]] = nil
+om_gate:connect("object-added", function (_, node)
+  gate_ids[node["bound-id"]] = true
+  log:info(gate_sink_name .. " detected, reroute gate open")
+  set_hdmi_priority(hdmi_prio_normal)
 end)
-
--- Match Brave specifically. Using process.binary is the most stable signal.
-local target_binaries = {
-  ["brave"] = true,
-  ["waterfox"] = true,
-}
-
-local target_ids = {
-  ["com.brave.Browser"] = true,
-  ["net.waterfox.waterfox"] = true,
-}
-
-om_streams:connect("object-added", function (_, node)
-  local app = node.properties["application.name"] or ""
-  local binary = node.properties["application.process.binary"] or ""
-  local portal_id = node.properties["pipewire.access.portal.app_id"] or ""
-
-  local is_target = target_binaries[binary] or target_ids[portal_id]
-
-  if not is_target then
-    log:debug("ignoring stream: app=" .. app .. " binary=" .. binary)
-    return
+om_gate:connect("object-removed", function (_, node)
+  gate_ids[node["bound-id"]] = nil
+  if not next(gate_ids) then
+    log:info(gate_sink_name .. " gone, reroute gate closed")
+    set_hdmi_priority(hdmi_prio_excluded)
   end
-
-  route_node_away_from_hdmi(node)
 end)
 
-om_bluez:activate()
-om_streams:activate()
-om_metadata:activate()
+om_hdmi:activate()
+om_gate:activate()

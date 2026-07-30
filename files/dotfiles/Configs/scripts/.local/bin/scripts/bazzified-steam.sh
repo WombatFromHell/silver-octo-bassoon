@@ -26,39 +26,6 @@ is_steam_running() {
   pgrep -x steam >/dev/null 2>&1
 }
 
-# ponytail: sourced functions called directly; no subprocess per switch.
-# Names reflect intent (game/desktop/toggle) not implementation (output_a/b).
-_setup_nested_audio() {
-  _ensure_audio_sourced || return 0
-  switch_audio_to "$OUTPUT_A_NAME" || true
-}
-
-_restore_desktop_audio() {
-  _ensure_audio_sourced || return 0
-  switch_audio_to "$OUTPUT_B_NAME" || true
-}
-
-_toggle_audio() {
-  _ensure_audio_sourced || return 0
-  toggle_audio_output || true
-}
-
-_ensure_audio_sourced() {
-  # ponytail: idempotent source guard; avoids re-sourcing on every call.
-  # Functions are defined in global scope after first source.
-  declare -f switch_audio_to &>/dev/null && return 0
-
-  local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  if [[ -f "${script_dir}/switch-audio-out.sh" ]]; then
-    # shellcheck source=switch-audio-out.sh
-    source "${script_dir}/switch-audio-out.sh"
-    return 0
-  fi
-  log_warn "switch-audio-out.sh not found; audio switching disabled"
-  return 1
-}
-
 # ── Steam Shutdown Logic ─────────────────────────────────────────────────────
 
 wait_for_steam_exit() {
@@ -140,8 +107,6 @@ forward_signal() {
     steam -shutdown 2>/dev/null || true
     wait_for_steam_exit
     cleanup_lock_files
-    # ponytail: mirror run_session's restore; mode tag tells us if nested
-    [[ "$MODE_TAG" == *"nested"* ]] && _restore_desktop_audio
   fi
   exit "$((128 + $(kill -l "$sig" 2>/dev/null || echo 0)))"
 }
@@ -190,7 +155,7 @@ detect_gamescope_profile_niri() {
 
   case "$active_output" in
   HDMI-A-1)
-    GAMESCOPE_ARGS=(-p std,vsr4k,hdr -e)
+    GAMESCOPE_ARGS=(-p "std,vsr4k,hdr" -e)
     log_info "Detected HDMI-A-* → 4K HDR profile"
     ;;
   DP-1)
@@ -286,9 +251,6 @@ run_session() {
   acquire_lock true
   launch_steam
   cleanup_lock_files
-  # ponytail: restore desktop audio after session ends (normal or signaled).
-  # Placed after cleanup_lock_files so audio state never outlives lock ownership.
-  [[ "$mode" == "nested" ]] && _restore_desktop_audio
 }
 
 # ── Lock Management ──────────────────────────────────────────────────────────
@@ -372,7 +334,7 @@ main() {
 
   local cmd="${mode_args[0]:-}"
   MODE_TAG="bazzified-steam"
-  STEAM_ARGS=(+gyro_force_sensor_rate 250)
+  STEAM_ARGS=()
   WRAPPERS=()
   GAMESCOPE_PATH=""
   GAMESCOPE_ARGS=()
@@ -408,9 +370,16 @@ main() {
     detect_gamescope_profile_niri || true
     GAMESCOPE_ARGS+=("${extra_args[@]}" --)
     [[ ${#GAMESCOPE_ARGS[@]} -eq 0 ]] && GAMESCOPE_ARGS=(--)
-    WRAPPERS=("gamemode --")
-    [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=(PROTON_ENABLE_WAYLAND=1)
-    # _setup_nested_audio
+    WRAPPERS=(
+      "gamemode --"
+      "$HOME/.local/bin/scripts/pactl_gate_sentinel.sh"
+    )
+    [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=(
+      PROTON_ENABLE_WAYLAND=1
+      IDLE_CMD='$HOME/.local/bin/scripts/on_idle.sh idle'
+      ACTIVE_CMD='$HOME/.local/bin/scripts/on_idle.sh active'
+      IDLE_TIMEOUT=300 # DPMS off after 5 mins
+    )
     run_session "nested"
     ;;
   *)

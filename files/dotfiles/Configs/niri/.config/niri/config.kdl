@@ -110,13 +110,13 @@ window-rule {
     match app-id="gamescope"
     open-fullscreen true
     open-focused true
-    open-on-workspace "gamescope"
+    open-on-workspace "gaming"
 }
 window-rule {
     match app-id="gamescope"
     open-fullscreen true
     open-focused true
-    open-on-workspace "gaming"
+    open-on-workspace "gamescope"
 }
 // Open the Firefox picture-in-picture player as floating by default.
 window-rule {
