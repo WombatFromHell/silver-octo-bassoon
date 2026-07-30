@@ -1,22 +1,22 @@
+"/home/josh/.config/zellij/plugins/zellij-autolock.wasm" {
+    ChangeApplicationState
+    ReadApplicationState
+}
 "https://github.com/fresh2dev/zellij-autolock/releases/latest/download/zellij-autolock.wasm" {
     ChangeApplicationState
     ReadApplicationState
 }
-"/home/josh/.config/zellij/plugins/zjstatus.wasm" {
-    ChangeApplicationState
-    ReadApplicationState
-    RunCommands
-}
-"/home/josh/.config/zellij/plugins/zellij-autolock.wasm" {
-    ReadApplicationState
-    ChangeApplicationState
-}
 "https://github.com/dj95/zjstatus/releases/latest/download/zjstatus.wasm" {
-    ReadApplicationState
     RunCommands
     ChangeApplicationState
+    ReadApplicationState
 }
 "/home/josh/.config/zellij/plugins/zjframes.wasm" {
     ChangeApplicationState
     ReadApplicationState
+}
+"/home/josh/.config/zellij/plugins/zjstatus.wasm" {
+    ReadApplicationState
+    ChangeApplicationState
+    RunCommands
 }
