@@ -371,6 +371,7 @@ main() {
     GAMESCOPE_ARGS+=("${extra_args[@]}" --)
     [[ ${#GAMESCOPE_ARGS[@]} -eq 0 ]] && GAMESCOPE_ARGS=(--)
     WRAPPERS=(
+      "$HOME/.local/bin/scripts/lgc1-wol.py"
       "gamemode --"
       "$HOME/.local/bin/scripts/pactl_gate_sentinel.sh"
     )
