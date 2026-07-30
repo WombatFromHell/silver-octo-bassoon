@@ -126,6 +126,7 @@
       },
     },
   },
+  "auto_update": false,
   "tab_size": 2,
   "hard_tabs": false,
   "show_whitespaces": "trailing",
