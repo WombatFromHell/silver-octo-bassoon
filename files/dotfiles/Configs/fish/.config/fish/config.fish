@@ -55,6 +55,8 @@ if status is-interactive
     set -x LLAMA_API_KEY llama-cpp
     set -gx CREDENTIALS_DIRECTORY "$HOME/.local/share/credentials"
 
+    set -gx SSH_AUTH_SOCK "$XDG_RUNTIME_DIR/ssh-agent.socket"
+
     set --erase fish_user_paths
     fish_add_path ~/.local/bin ~/.local/bin/scripts /usr/local/bin $RUSTUP_HOME $CARGO_HOME/bin $MISE_SHIMS $GOBIN $LMS_BIN
 
