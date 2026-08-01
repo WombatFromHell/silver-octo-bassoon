@@ -15,6 +15,8 @@ if command -q nix
     alias hmrm='home-manager remove-generations'
     alias hmrb='home-manager switch --rollback'
     #
+    alias hmfs="hm_fswitch $FLAKE_ROOT $(whoami)@$(hostname)"
+    #
     alias nhb='nh os switch -n $FLAKE_ROOT'
     alias nhs='nh os switch $FLAKE_ROOT'
     alias nls='nh os info'
