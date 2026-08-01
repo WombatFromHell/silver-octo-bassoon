@@ -188,7 +188,6 @@ if command -q nix-fast-build
     function nixos_deploy_nas
         set -l flake_root $HOME/Projects/nasty-config
         nixos_fdeploy $flake_root nasty homenas-deployer \
-            --impure \
             --option extra-substituters "https://nasty.cachix.org" \
             --option extra-trusted-public-keys "nasty.cachix.org-1:s+X88yw6+asphCNphTId/RQZHfmDF4fQ0uyzEz5SxLc=" \
             $argv
