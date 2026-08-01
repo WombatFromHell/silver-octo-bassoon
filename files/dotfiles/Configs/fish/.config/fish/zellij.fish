@@ -1,11 +1,35 @@
 #!/usr/bin/env fish
-# Abort if zellij is not installed or already loaded.
+
+# ==============================================================================
+# ZELLIJ HELPER
+# ------------------------------------------------------------------------------
+# A unified wrapper for zellij session management.
+#
+# Commands:
+#   za [session]  Attach to session (creates if missing, defaults to 'main').
+#   zd [session]  Delete session (defaults to current session).
+#   zk [session]  Kill session (defaults to current session).
+#   zda           Delete all sessions.
+#   zka           Kill all sessions.
+#   zls           List all sessions.
+# ==============================================================================
+
+# --- Gatekeeper ---
+# Abort silently if zellij is not installed or already loaded.
 command -q zellij; or return 0
 set -q __zellij_loaded; and return 0
 set -g __zellij_loaded
+
+# Check if a string represents a truthy value (1, true, yes, on).
+function __zj_is_truthy -d "Check if argument is truthy"
+    string match -qir '^(1|true|yes|on)$' $argv[1]
+end
+
 # Abort if ZELLIJ_ENABLED is false
 set -q ZELLIJ_ENABLED; or set -g ZELLIJ_ENABLED true
-string match -qir '^(1|true|yes|on)$' "$ZELLIJ_ENABLED"; or return 0
+if not __zj_is_truthy "$ZELLIJ_ENABLED"
+    return 0
+end
 
 # --- Configuration ---
 set -q ZELLIJ_DEFAULT_SESSION; or set -g ZELLIJ_DEFAULT_SESSION main
@@ -34,8 +58,8 @@ complete -c zk -a "(__zj_sessions)"
 function za -d "Attach to session, creating it if missing (default: \$ZELLIJ_DEFAULT_SESSION)"
     # Don't start zellij inside a tmux session that has auto-attach enabled
     if set -q TMUX
-        and string match -qir '^(1|true|yes|on)$' "$TMUX_ENABLED"
-        and string match -qir '^(1|true|yes|on)$' "$TMUX_AUTO_ATTACH"
+        and __zj_is_truthy "$TMUX_ENABLED"
+        and __zj_is_truthy "$TMUX_AUTO_ATTACH"
         echo "Error: Cannot attach to zellij while inside tmux with TMUX_AUTO_ATTACH enabled. Detach from tmux first (prefix d)." >&2
         return 1
     end
@@ -59,14 +83,14 @@ end
 
 # --- Auto-Start ---
 if status is-interactive; and not set -q ZELLIJ
-    if not string match -qir '^(1|true|yes|on)$' $ZELLIJ_AUTO_ATTACH
+    if not __zj_is_truthy "$ZELLIJ_AUTO_ATTACH"
         return 0
     else if string match -qir '^(vscode|cursor|windsurf|zed|hyper)$' "$TERM_PROGRAM"; or set -q INSIDE_EMACS; or set -q JETBRAINS_IDE
         return 0
-    else if test -n "$SSH_TTY"; and not string match -qir '^(1|true|yes|on)$' $ZELLIJ_ON_SSH
+    else if test -n "$SSH_TTY"; and not __zj_is_truthy "$ZELLIJ_ON_SSH"
         return 0
     end
-    if string match -qir '^(1|true|yes|on)$' $ZELLIJ_EXIT_ON_DETACH
+    if __zj_is_truthy "$ZELLIJ_EXIT_ON_DETACH"
         exec zellij attach -c $ZELLIJ_DEFAULT_SESSION
     else
         zellij attach -c $ZELLIJ_DEFAULT_SESSION

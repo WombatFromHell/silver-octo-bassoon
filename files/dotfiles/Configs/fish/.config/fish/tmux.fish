@@ -161,20 +161,13 @@ if status is-interactive; and not set -q TMUX
     end
 
     if not $skip_autostart
-        set -l target $TMUX_DEFAULT_SESSION
-        __tmux_ensure_session "$target"
-
-        # Only attach if the session is not currently attached elsewhere.
-        # This prevents "stealing" the session from another window/term.
-        set -l clients (tmux list-clients -F '#{session_name}' 2>/dev/null)
-        if not string match -q -- $target $clients
-            if __tmux_is_truthy "$TMUX_EXIT_ON_DETACH"
-                exec tmux attach-session -t "$target"
-            else
-                __tmux_attach "$target"
-            end
+        # ponytail: single create-if-missing + attach like zellij's `attach -c`.
+        # no-steal guard dropped; attaching to an in-use session takes it over.
+        if __tmux_is_truthy "$TMUX_EXIT_ON_DETACH"
+            exec tmux new-session -A -s $TMUX_DEFAULT_SESSION
+        else
+            tmux new-session -A -s $TMUX_DEFAULT_SESSION
         end
-
     end
 end
 
