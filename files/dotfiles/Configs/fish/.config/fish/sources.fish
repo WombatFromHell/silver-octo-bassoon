@@ -48,6 +48,10 @@ if command -q nix
     if test -r "$NIX_SESSION_VARS"
         fenv source "$NIX_SESSION_VARS"
     end
+    set NIX_HELPERS $HOME/.config/fish/nix.fish
+    if test -r "$NIX_HELPERS"
+        source "$NIX_HELPERS"
+    end
 end
 
 set CATPPUCCIN_MOCHA_FISH_SRC $HOME/.config/fish/catppuccin-fzf-mocha.fish

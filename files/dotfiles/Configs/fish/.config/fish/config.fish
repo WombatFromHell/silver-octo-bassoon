@@ -32,9 +32,9 @@ if status is-interactive
     setup_podman_sock
 
     set -g ZELLIJ_ENABLED true
-    set -g ZELLIJ_AUTO_ATTACH true
+    set -g ZELLIJ_AUTO_ATTACH false
     set -g TMUX_ENABLED true
-    set -g TMUX_AUTO_ATTACH false
+    set -g TMUX_AUTO_ATTACH true
 
     set -x XDG_DATA_HOME $HOME/.local/share
     set -x XDG_CONFIG_HOME $HOME/.config
@@ -64,8 +64,8 @@ if status is-interactive
     # exclude some common cli tools from done notifications
     set -U --erase __done_exclude
     set -g __done_exclude '^git (?!push|pull|fetch)'
-    set -g --append __done_exclude '^(nvim|nano|bat|cat|less|lazygit|lg)'
-    set -g --append __done_exclude '^sudo (nvim|nano|bat|cat|less|qwen|gemini)'
+    set -g --append __done_exclude '^(nvim|nano|bat|cat|less|lazygit|lg|ssh|tmux|zellij|hx|zed)'
+    set -g --append __done_exclude '^sudo (nvim|nano|bat|cat|less|qwen|gemini|hx)'
     set -g --append __done_exclude '^sedit'
 
     # functions and evals that can be loaded after everything else
