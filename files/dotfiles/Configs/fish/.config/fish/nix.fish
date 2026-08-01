@@ -4,7 +4,7 @@ if command -q nix-fast-build
     set -g NFB_COMMON_OPTS \
         --max-jobs $NIX_MAX_JOBS \
         --option show-trace true \
-        --option extra-deprecated-features "or-as-identifier broken-string-escape" \
+        --option extra-deprecated-features or-as-identifier \
         --option extra-experimental-festures "nix-command flakes eval-cache"
 
     function nix_build
