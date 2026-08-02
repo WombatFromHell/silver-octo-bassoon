@@ -1,3 +1,8 @@
+if test -z "$SSH_AUTH_SOCK"
+    set -gx SSH_ASKPASS_REQUIRE=prefer
+    eval (ssh-agent -c)
+end
+
 set CREDS_FISH_SRC $HOME/.config/fish/creds.fish
 if test -r "$CREDS_FISH_SRC"
     source "$CREDS_FISH_SRC"

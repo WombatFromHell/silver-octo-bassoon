@@ -221,12 +221,11 @@ end
 function update_gpg_env
     set -l current_tty (tty 2>/dev/null); or return
     command -q gpg-connect-agent; or return
-
-    set -l agent_alive (gpg-connect-agent /bye 2>&1)
-    if test "$current_tty" = "$GPG_TTY"; and test -z "$agent_alive"
+    if test "$current_tty" = "$GPG_TTY"
+        # tty unchanged; only pay for a liveness probe occasionally,
+        # not every prompt
         return
     end
-
     set -gx GPG_TTY $current_tty
     gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
 end
