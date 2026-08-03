@@ -1,1 +1,6 @@
-/home/josh/.config/dotfiles/Configs/niri/.config/DankMaterialShell/plugin_settings.json
+{
+  "calculator": {
+    "enabled": true,
+    "trigger": "="
+  }
+}

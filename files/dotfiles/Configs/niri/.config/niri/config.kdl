@@ -101,8 +101,6 @@ window-rule {
 }
 window-rule {
     match app-id="steam_app_default"
-    open-fullscreen true
-    open-focused true
     open-on-workspace "gaming"
 }
 // matches for gamescope on HDMI-A-1>DP-1
@@ -156,6 +154,14 @@ window-rule {
 // float deletion progress dialogs of Dolphin like Transfers
 window-rule {
     match app-id="org.kde.dolphin" title="^Deleting"
+    open-floating true
+}
+window-rule {
+    match app-id="org.kde.dolphin" title="^Copying — Dolphin"
+    open-floating true
+}
+window-rule {
+    match app-id="org.kde.dolphin" title="^Moving — Dolphin"
     open-floating true
 }
 window-rule {

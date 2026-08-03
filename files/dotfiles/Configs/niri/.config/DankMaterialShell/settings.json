@@ -588,10 +588,17 @@
     "niri": {}
   },
   "activeDisplayProfile": {
-    "niri": ""
+    "niri": "profile_1785720624293_oynk8lw"
   },
   "activeDisplayProfileModes": {
-    "niri": {}
+    "niri": {
+      "LG Electronics 27GL850 910NTGY7B319": {
+        "mode": "2560x1440@144.000"
+      },
+      "LG Electronics LG TV SSCR2 0x01010101": {
+        "mode": "2560x1440@119.998"
+      }
+    }
   },
   "displayPreviousRefreshModes": {},
   "displayProfileAutoSelect": false,
