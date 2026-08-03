@@ -218,16 +218,51 @@ function update_wayland_env_vars -d "Update NIRI_SOCKET and WAYLAND_DISPLAY to m
     end
 end
 
-function update_gpg_env
-    set -l current_tty (tty 2>/dev/null); or return
-    command -q gpg-connect-agent; or return
-    if test "$current_tty" = "$GPG_TTY"
-        # tty unchanged; only pay for a liveness probe occasionally,
-        # not every prompt
-        return
+if command -q gpg-connect-agent
+    function reload_gpg_agent
+        gpgconf --kill gpg-agent
+        gpg-connect-agent /bye >/dev/null 2>&1
     end
-    set -gx GPG_TTY $current_tty
-    gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
+    function update_gpg_env
+        # In SSH sessions, prefer $SSH_TTY over `tty` for reliability
+        if test -n "$SSH_CLIENT"
+            set -l ssh_tty "$SSH_TTY"
+            if test -z "$ssh_tty"; or not test -w "$ssh_tty"
+                set ssh_tty (tty 2>/dev/null); or return
+            end
+            set -l current_tty "$ssh_tty"
+        else
+            set -l current_tty (tty 2>/dev/null); or return
+        end
+
+        command -q gpg-connect-agent; or return
+
+        # Always update in SSH: agent cache is often stale across sessions
+        # For local sessions, skip if TTY unchanged (existing optimization)
+        if test -z "$SSH_CLIENT"; and test "$current_tty" = "$GPG_TTY"
+            return
+        end
+
+        set -gx GPG_TTY "$current_tty"
+        gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
+
+        # Fix SSH agent socket when in SSH session
+        if test -n "$SSH_CLIENT"
+            set -l sock (gpgconf --list-dirs agent-ssh-socket 2>/dev/null)
+            if test -n "$sock"; and test -S "$sock"
+                set -gx SSH_AUTH_SOCK "$sock"
+            end
+        end
+    end
+    function __update_pinentry_env --on-event fish_prompt
+        if test -n "$TMUX"
+            set -gx PINENTRY_USER_DATA tmux
+        else if test -n "$ZELLIJ"
+            set -gx PINENTRY_USER_DATA zellij
+        else
+            set -e PINENTRY_USER_DATA
+        end
+    end
 end
 
 function sudoe --description "sudo with preserved PATH and Fish function support"

@@ -1,5 +1,4 @@
 if test -z "$SSH_AUTH_SOCK"
-    set -gx SSH_ASKPASS_REQUIRE=prefer
     eval (ssh-agent -c)
 end
 

@@ -106,13 +106,7 @@ function __zellij_update_gpg_tty --on-event fish_prompt
 
     set -l current_tty (tty 2>/dev/null); or return 0
     if test "$current_tty" != "$GPG_TTY"
-        set -gx GPG_TTY $current_tty
+        set -gx GPG_TTY "$current_tty"
         gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
-    end
-
-    if set -q ZELLIJ
-        gpg-connect-agent "OPTION putenv=ZELLIJ=$ZELLIJ" /bye >/dev/null 2>&1
-    else
-        gpg-connect-agent "OPTION putenv=ZELLIJ" /bye >/dev/null 2>&1
     end
 end

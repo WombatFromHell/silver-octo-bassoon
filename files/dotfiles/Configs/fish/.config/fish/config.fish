@@ -30,6 +30,9 @@ if status is-interactive
 
     set_editor
     setup_podman_sock
+    if functions -q reload_gpg_agent
+        reload_gpg_agent
+    end
 
     if test (uname) = Darwin
         set -g ZELLIJ_ENABLED true
