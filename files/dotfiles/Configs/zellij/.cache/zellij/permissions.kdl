@@ -4,6 +4,15 @@
 }
 "/home/josh/.config/zellij/plugins/zjstatus.wasm" {
     ReadApplicationState
+    ChangeApplicationState
     RunCommands
+}
+"/Users/josh/.config/zellij/plugins/zjstatus.wasm" {
+    ChangeApplicationState
+    ReadApplicationState
+    RunCommands
+}
+"/Users/josh/.config/zellij/plugins/zellij-autolock.wasm" {
+    ReadApplicationState
     ChangeApplicationState
 }
