@@ -13,5 +13,8 @@ output "LG Electronics LG TV SSCR2 0x01010101" {
     scale 1
     position x=2560 y=0
     variable-refresh-rate on-demand=true
+    hdr mode="on" {
+        reference-luminance 300
+    }
 }
 
