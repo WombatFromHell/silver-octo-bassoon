@@ -1,103 +1,175 @@
 -- browser-gate-route.lua
--- While gate_sentinel exists, pin Brave/Waterfox streams to Arctis.
--- When gate closes, unpin them.
-
-local fallback_node_name = "alsa_output.usb-SteelSeries_SteelSeries_Arctis_7-00.stereo-game"
-local gate_sink_name = "gate_sentinel"
+-- WirePlumber 0.5.x | YAGNI/KISS/DRY/SoC/Composable
 
 local log = Log.open_topic("s-browser-gate-route")
 
-local gate_open = false
-local routed_ids = {}
-
-om_gate = ObjectManager({
-  Interest({
-    type = "node",
-    Constraint({ "media.class", "equals", "Audio/Sink" }),
-    Constraint({ "node.name", "equals", gate_sink_name }),
-  }),
-})
-
-om_streams = ObjectManager({
-  Interest({
-    type = "node",
-    Constraint({ "media.class", "equals", "Stream/Output/Audio" }),
-  }),
-})
-
-om_metadata = ObjectManager({
-  Interest({ type = "metadata", Constraint({ "metadata.name", "equals", "default" }) }),
-})
-
-local target_binaries = {
-  ["brave"] = true,
-  ["waterfox"] = true,
-}
-local target_ids = {
-  ["com.brave.Browser"] = true,
-  ["net.waterfox.waterfox"] = true,
+-------------------------------------------------------------------------------
+-- CONFIGURATION (Single source of truth - KISS/YAGNI)
+-------------------------------------------------------------------------------
+local CONFIG = {
+  gate_sink    = "gate_sentinel",
+  target_sink  = "alsa_output.usb-SteelSeries_SteelSeries_Arctis_7-00.stereo-game",
+  match_tokens = { "brave", "waterfox" },
 }
 
-local function pin_node(node)
-  local metadata
-  for m in om_metadata:iterate() do metadata = m; break end
-  if not metadata then
-    log:warning("no default metadata found, cannot route node")
-    return
-  end
-  local bound_id = node["bound-id"]
-  if not bound_id then
-    log:warning("node has no bound-id yet, skipping")
-    return
-  end
-  metadata:set(bound_id, "target.object", "Spa:Utf8", fallback_node_name)
-  routed_ids[bound_id] = true
-  log:info("pinned node " .. bound_id .. " (" .. (node.properties["application.name"] or "") .. ") to " .. fallback_node_name)
+-------------------------------------------------------------------------------
+-- MATCHER MODULE (SoC: Pure function, no side effects, reusable)
+-------------------------------------------------------------------------------
+local Matcher = {}
+
+--- Build a normalized search string from node properties once
+function Matcher.build_haystack(node)
+  if not node or not node.properties then return "" end
+  local props = node.properties
+  return table.concat({
+    tostring(props["application.process.binary"] or ""),
+    tostring(props["application.name"] or ""),
+    tostring(props["node.name"] or ""),
+    tostring(props["pipewire.access.portal.app_id"] or ""),
+    tostring(props["app.id"] or ""),
+  }, " "):lower()
 end
 
-local function unpin_all()
-  local metadata
-  for m in om_metadata:iterate() do metadata = m; break end
-  if not metadata then return end
-  for bound_id in pairs(routed_ids) do
-    metadata:clear(bound_id, "target.object")
+--- Check if haystack contains any configured token (DRY: single loop)
+function Matcher.is_target(node)
+  local haystack = Matcher.build_haystack(node)
+  for _, token in ipairs(CONFIG.match_tokens) do
+    if haystack:find(token, 1, true) then return true end
   end
-  routed_ids = {}
+  return false
 end
 
-local function is_target(node)
-  local binary = node.properties["application.process.binary"] or ""
-  local portal_id = node.properties["pipewire.access.portal.app_id"] or ""
-  return target_binaries[binary] or target_ids[portal_id]
+-------------------------------------------------------------------------------
+-- ROUTER MODULE (SoC: Only knows about metadata + pin/unpin)
+-------------------------------------------------------------------------------
+local Router      = {}
+Router._metadata  = nil
+Router._routed    = {}
+
+-- Acquire metadata via ObjectManager (compatible with all 0.5.x builds)
+local om_metadata = ObjectManager({
+  Interest({
+    type = "metadata",
+    Constraint({ "metadata.name", "=", "default" }),
+  })
+})
+
+function Router.init()
+  -- Use iterate() instead of lookup() for universal 0.5.x compatibility
+  for md in om_metadata:iterate() do
+    Router._metadata = md
+    break
+  end
+  if not Router._metadata then
+    log:error("Failed to acquire default metadata")
+    return false
+  end
+  return true
 end
 
-local function pin_existing_targets()
-  for s in om_streams:iterate() do
-    if is_target(s) and not routed_ids[s["bound-id"]] then
-      pin_node(s)
+function Router.pin(node)
+  local id = node and node["bound-id"]
+  if not id or not Router._metadata then return end
+
+  Router._metadata:set(id, "target.object", "Spa:String", CONFIG.target_sink)
+  Router._routed[id] = true
+  log:info(string.format("Pinned %d (%s) → %s",
+    id,
+    tostring(node.properties and node.properties["application.name"] or "?"),
+    CONFIG.target_sink))
+end
+
+function Router.unpin_all()
+  if not Router._metadata then return end
+  for id in pairs(Router._routed) do
+    Router._metadata:set(id, "target.object", nil, nil)
+    log:info(string.format("Unpinned %d", id))
+  end
+  Router._routed = {} -- DRY: reset in one place
+end
+
+function Router.forget(id)
+  Router._routed[id] = nil
+end
+
+-------------------------------------------------------------------------------
+-- GATE CONTROLLER (SoC: Orchestrates Matcher + Router based on gate state)
+-------------------------------------------------------------------------------
+local Gate = {}
+Gate._open = false
+
+local om_gate = ObjectManager({
+  Interest({
+    type = "node",
+    Constraint({ "media.class", "=", "Audio/Sink" }),
+    Constraint({ "node.name", "=", CONFIG.gate_sink }),
+  })
+})
+
+local om_streams = ObjectManager({
+  Interest({
+    type = "node",
+    Constraint({ "media.class", "=", "Stream/Output/Audio" })
+  })
+})
+
+--- Evaluate all existing streams against current gate state
+local function reconcile()
+  if not Gate._open then return end
+  for node in om_streams:iterate() do
+    if Matcher.is_target(node) then
+      Router.pin(node)
     end
   end
 end
 
+function Gate.open()
+  if Gate._open then return end -- KISS: idempotent
+  Gate._open = true
+  log:info("Gate OPEN → routing browser streams")
+  reconcile()
+end
+
+function Gate.close()
+  if not Gate._open then return end -- KISS: idempotent
+  Gate._open = false
+  log:info("Gate CLOSED → clearing overrides")
+  Router.unpin_all()
+end
+
+-- Wire events (thin glue layer - SoC)
 om_gate:connect("object-added", function()
-  gate_open = true
-  log:info(gate_sink_name .. " detected, gate open")
-  pin_existing_targets()
+  if om_gate:get_n_objects() >= 1 then Gate.open() end
 end)
+
 om_gate:connect("object-removed", function()
-  gate_open = false
-  log:info(gate_sink_name .. " gone, gate closed")
-  unpin_all()
+  if om_gate:get_n_objects() == 0 then Gate.close() end
 end)
 
 om_streams:connect("object-added", function(_, node)
-  if not gate_open then return end
-  if is_target(node) then pin_node(node) end
-end)
-om_streams:connect("object-removed", function(_, node)
-  routed_ids[node["bound-id"]] = nil
+  if Gate._open and Matcher.is_target(node) then
+    Router.pin(node)
+  end
 end)
 
+om_streams:connect("object-removed", function(_, node)
+  Router.forget(node and node["bound-id"])
+end)
+
+-------------------------------------------------------------------------------
+-- ACTIVATION (Composition root)
+-------------------------------------------------------------------------------
 om_gate:activate()
 om_streams:activate()
 om_metadata:activate()
+
+Core.sync(function()
+  if not Router.init() then return end
+
+  if om_gate:get_n_objects() > 0 then
+    Gate.open()
+    log:info("browser-gate-route initialized (gate OPEN)")
+  else
+    log:info("browser-gate-route initialized (gate CLOSED)")
+  end
+end)

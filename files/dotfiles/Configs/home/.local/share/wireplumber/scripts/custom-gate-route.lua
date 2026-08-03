@@ -1,94 +1,204 @@
+-- custom-gate-route.lua
+-- WirePlumber 0.5.x | Manages system default sink based on gate_sentinel state.
+-- YAGNI/KISS/DRY/SoC/Composable
+
 local log = Log.open_topic("s-custom-gate-route")
 
-local GATE_NAME = "gate_sentinel"
-local ARCTIS_GAME = "alsa_output.usb-SteelSeries_SteelSeries_Arctis_7-00.stereo-game"
-local ARCTIS_PREFIX = "alsa_output.usb-SteelSeries_SteelSeries_Arctis_7-00."
+-------------------------------------------------------------------------------
+-- CONFIGURATION
+-------------------------------------------------------------------------------
+local CONFIG = {
+  gate_sink     = "gate_sentinel",
+  fallback_sink = "alsa_output.usb-SteelSeries_SteelSeries_Arctis_7-00.stereo-game",
+  hdmi_primary  = "extra3", -- Preferred HDMI identifier
+  hdmi_fallback = "hdmi",   -- Secondary HDMI identifier
+  hook_priority = 100000,
+}
 
-local PRIO_BLUEZ      = 3000
-local PRIO_HDMI       = 2000
-local PRIO_ARCTIS     = 1000
-local PRIO_ARCTIS_SUB = 500
+-------------------------------------------------------------------------------
+-- HDMI RESOLVER (SoC: Caches best available HDMI sink, invalidates on change)
+-------------------------------------------------------------------------------
+local HdmiResolver = {}
+HdmiResolver._cached_name = nil
+HdmiResolver._dirty = true
 
-local gate_open = false
-local initialized = false
+--- Re-scan sinks to find best HDMI target (called only when dirty)
+function HdmiResolver._resolve(om_sinks)
+  local primary, fallback = nil, nil
 
-local function set_prio(node, prio)
-  local cur = tonumber(node.properties["priority.session"]) or 0
-  if cur ~= prio then
-    for md in om_metadata:iterate() do
-      md:set(node.id, "priority.session", "Spa:Int", tostring(prio))
-      break
+  for node in om_sinks:iterate() do
+    local name = node.properties and node.properties["node.name"] or ""
+    if name:find(CONFIG.hdmi_primary, 1, true) then
+      primary = name
+      break -- Primary found, no need to continue
+    elseif not fallback and name:find(CONFIG.hdmi_fallback, 1, true) then
+      fallback = name
     end
-    log:info(string.format("%s prio → %d (was %d)", node.properties["node.name"], prio, cur))
+  end
+
+  HdmiResolver._cached_name = primary or fallback
+  HdmiResolver._dirty = false
+
+  if HdmiResolver._cached_name then
+    log:info(string.format("HDMI resolved → %s (%s)",
+      HdmiResolver._cached_name,
+      primary and "primary" or "fallback"))
+  else
+    log:warning("No HDMI sink available")
   end
 end
 
-local function set_default_pin(node_name)
+function HdmiResolver.get(om_sinks)
+  if HdmiResolver._dirty then
+    HdmiResolver._resolve(om_sinks)
+  end
+  return HdmiResolver._cached_name
+end
+
+function HdmiResolver.invalidate()
+  HdmiResolver._dirty = true
+end
+
+-------------------------------------------------------------------------------
+-- DEFAULT SINK CONTROLLER (SoC: Only knows about metadata mutations)
+-------------------------------------------------------------------------------
+local DefaultSink = {}
+DefaultSink._metadata = nil
+
+-- Acquire metadata via ObjectManager (compatible with all 0.5.x builds)
+local om_metadata = ObjectManager({
+  Interest({
+    type = "metadata",
+    Constraint({ "metadata.name", "=", "default" }),
+  })
+})
+
+function DefaultSink.init()
+  -- Use iterate() instead of lookup() for universal 0.5.x compatibility
   for md in om_metadata:iterate() do
-    if node_name then
-      md:set(0, "default.audio.sink", "Spa:String:JSON",
-          Json.Object({ ["name"] = node_name }):to_string())
-      log:info("Pinned default sink → " .. node_name)
-    else
-      md:set(0, "default.audio.sink", "Spa:String:JSON", "{}")
-      log:info("Cleared default sink pin (waiting for node)")
-    end
+    DefaultSink._metadata = md
     break
   end
+  if not DefaultSink._metadata then
+    log:error("Failed to acquire default metadata")
+    return false
+  end
+  return true
 end
 
-local function find_hdmi_sink()
-  for node in om_sinks:iterate() do
-    local name = node.properties["node.name"] or ""
-    if name:find("hdmi-stereo", 1, true) and name:find("pci-0000_03_00.1", 1, true) then
-      return name
-    end
-  end
-  return nil
+--- Escape a string for safe embedding in a JSON value
+local function json_escape(s)
+  return s:gsub('\\', '\\\\'):gsub('"', '\\"')
 end
 
-local function apply_priorities()
-  local hdmi_name = find_hdmi_sink()
+--- Set or clear the default.audio.sink metadata pin
+function DefaultSink.set(sink_name)
+  if not DefaultSink._metadata then return end
 
-  for node in om_sinks:iterate() do
-    local name = node.properties["node.name"] or ""
-    if name:match("^bluez_output%.") then
-      set_prio(node, PRIO_BLUEZ)
-    elseif name == ARCTIS_GAME then
-      set_prio(node, gate_open and 0 or PRIO_ARCTIS)
-    elseif name:sub(1, #ARCTIS_PREFIX) == ARCTIS_PREFIX then
-      set_prio(node, gate_open and 0 or PRIO_ARCTIS_SUB)
-    elseif hdmi_name and name == hdmi_name then
-      set_prio(node, gate_open and PRIO_HDMI or 0)
-    end
+  if sink_name then
+    -- Manual JSON construction: avoids dependency on Json global
+    local json = string.format('{"name":"%s"}', json_escape(sink_name))
+    DefaultSink._metadata:set(0, "default.audio.sink", "Spa:String:JSON", json)
+    log:info(string.format("Pinned default.audio.sink → %s", sink_name))
+  else
+    DefaultSink._metadata:set(0, "default.audio.sink", "Spa:String:JSON", "{}")
+    log:info("Cleared default.audio.sink pin")
   end
+end
 
-  if gate_open then
-    if hdmi_name then
-      set_default_pin(hdmi_name)
+-------------------------------------------------------------------------------
+-- GATE ORCHESTRATOR (SoC: Composes Resolver + DefaultSink based on gate state)
+-------------------------------------------------------------------------------
+local Gate = {}
+Gate._open = false
+Gate._om_sinks = nil -- Injected reference for resolver
+
+local om_gate = ObjectManager({
+  Interest({
+    type = "node",
+    Constraint({ "media.class", "=", "Audio/Sink" }),
+    Constraint({ "node.name", "=", CONFIG.gate_sink }),
+  })
+})
+
+local om_sinks = ObjectManager({
+  Interest({
+    type = "node",
+    Constraint({ "media.class", "=", "Audio/Sink" }),
+  })
+})
+
+Gate._om_sinks = om_sinks
+
+--- Apply routing policy based on current gate state
+local function apply_policy()
+  if Gate._open then
+    local hdmi = HdmiResolver.get(om_sinks)
+    if hdmi then
+      DefaultSink.set(hdmi)
     else
-      log:info("Gate OPEN but HDMI node not yet enumerated; waiting for node event")
-      set_default_pin(nil)
+      log:warning("Gate OPEN but no HDMI sink; clearing pin")
+      DefaultSink.set(nil)
     end
   else
-    set_default_pin(ARCTIS_GAME)
+    DefaultSink.set(CONFIG.fallback_sink)
   end
 end
 
-local function gate_count()
-  local n = 0
-  for _ in om_gate:iterate() do n = n + 1 end
-  return n
+function Gate.open()
+  if Gate._open then return end
+  Gate._open = true
+  log:info("Gate OPEN")
+  apply_policy()
 end
 
-local function set_gate(open)
-  if gate_open == open then return end
-  gate_open = open
-  log:info("Gate " .. (open and "OPEN" or "CLOSED"))
-  apply_priorities()
+function Gate.close()
+  if not Gate._open then return end
+  Gate._open = false
+  log:info("Gate CLOSED")
+  apply_policy()
 end
 
-SimpleEventHook {
+function Gate.is_open()
+  return Gate._open
+end
+
+-- Gate events (thin glue)
+om_gate:connect("object-added", function()
+  if om_gate:get_n_objects() >= 1 then Gate.open() end
+end)
+
+om_gate:connect("object-removed", function()
+  if om_gate:get_n_objects() == 0 then Gate.close() end
+end)
+
+-- Sink hotplug: invalidate cache and re-evaluate
+om_sinks:connect("object-added", function(_, node)
+  local name = node.properties and node.properties["node.name"] or ""
+  if name:find(CONFIG.hdmi_primary, 1, true) or name:find(CONFIG.hdmi_fallback, 1, true) then
+    Core.sync(function()
+      HdmiResolver.invalidate()
+      log:info(string.format("HDMI sink added (%s) → re-evaluating", name))
+      apply_policy()
+    end)
+  end
+end)
+
+om_sinks:connect("object-removed", function(_, node)
+  local name = node.properties and node.properties["node.name"] or ""
+  if name:find(CONFIG.hdmi_primary, 1, true) or name:find(CONFIG.hdmi_fallback, 1, true) then
+    Core.sync(function()
+      HdmiResolver.invalidate()
+      log:info(string.format("HDMI sink removed (%s) → re-evaluating", name))
+      apply_policy()
+    end)
+  end
+end)
+
+-------------------------------------------------------------------------------
+-- OVERRIDE HOOK (SoC: Reads from Gate + Resolver, never mutates state)
+-------------------------------------------------------------------------------
+local override_hook = SimpleEventHook {
   name = "custom-gate-route/override-default-sink",
   after = { "default-nodes/find-best-default-node" },
   interests = {
@@ -96,69 +206,37 @@ SimpleEventHook {
       Constraint { "event.type", "=", "select-default-node" },
     },
   },
-  execute = function (event)
+  execute = function(event)
     local props = event:get_properties()
-    if props["default-node.type"] == "audio.sink" and gate_open then
-      local hdmi = find_hdmi_sink()
-      if hdmi then
-        event:set_data("selected-node", hdmi)
-        event:set_data("selected-node-priority", PRIO_HDMI)
-      end
+    if props["default-node.type"] ~= "audio.sink" then return end
+    if not Gate.is_open() then return end
+
+    local hdmi = HdmiResolver.get(om_sinks)
+    if hdmi then
+      event:set_data("selected-node", hdmi)
+      event:set_data("selected-node-priority", CONFIG.hook_priority)
+      log:info(string.format("Override hook enforced → %s", hdmi))
     end
-  end
-}:register()
+  end,
+}
 
-om_gate = ObjectManager({ Interest({ type = "node",
-    Constraint({ "media.class", "=", "Audio/Sink" }),
-    Constraint({ "node.name", "=", GATE_NAME }) }) })
-
-om_sinks = ObjectManager({ Interest({ type = "node",
-    Constraint({ "media.class", "=", "Audio/Sink" }) }) })
-
-om_metadata = ObjectManager({ Interest({ type = "metadata",
-    Constraint({ "metadata.name", "=", "default" }) }) })
-
-om_gate:connect("object-added", function() if gate_count() >= 1 then set_gate(true) end end)
-om_gate:connect("object-removed", function() if gate_count() == 0 then set_gate(false) end end)
-
-om_sinks:connect("object-added", function(_, node)
-  if not initialized then return end
-  local name = node.properties["node.name"] or ""
-  if name:match("^alsa_output%.pci%-0000_03_00_1%.hdmi%-stereo%-") then
-    Core.sync(function()
-      log:info("HDMI node appeared → re-evaluating routes")
-      apply_priorities()
-    end)
-  else
-    apply_priorities()
-  end
-end)
-
+-------------------------------------------------------------------------------
+-- ACTIVATION (Composition root - single deterministic init path)
+-------------------------------------------------------------------------------
 om_gate:activate()
 om_sinks:activate()
 om_metadata:activate()
-
-local function do_init()
-  if initialized then return end
-  initialized = true
-  local current_gate_count = gate_count()
-  gate_open = current_gate_count > 0
-  log:info("Initial gate: " .. (gate_open and "OPEN" or "CLOSED") .. " (count: " .. current_gate_count .. ")")
-  apply_priorities()
-  log:info("custom-gate-route initialized (post-policy)")
-end
-
-om_metadata:connect("object-added", function(_, md)
-  md:connect("changed", function(_, key)
-    if key == "default.audio.sink" and not initialized then
-      do_init()
-    end
-  end)
-end)
+override_hook:register()
 
 Core.sync(function()
-  if not initialized then
-    log:warning("Metadata listener missed; forcing init")
-    do_init()
+  if not DefaultSink.init() then return end
+
+  -- Deterministic initial state: no race, no metadata-changed trigger needed
+  if om_gate:get_n_objects() > 0 then
+    Gate.open()
+    log:info("custom-gate-route initialized (gate OPEN)")
+  else
+    Gate.close()
+    log:info("custom-gate-route initialized (gate CLOSED)")
   end
 end)
