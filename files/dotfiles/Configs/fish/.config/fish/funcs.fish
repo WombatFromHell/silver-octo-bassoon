@@ -203,18 +203,54 @@ function clean_fish
     end
 end
 
-function update_wayland_env_vars -d "Update NIRI_SOCKET and WAYLAND_DISPLAY to match current session"
-    test "$XDG_CURRENT_DESKTOP" = niri -a -n "$XDG_RUNTIME_DIR"; or return
+function update_wayland_env_vars -d "Aggressively pull active GUI environment into multiplexer shell"
+    # Guard: Ensure runtime dir exists
+    set -q XDG_RUNTIME_DIR; or set -gx XDG_RUNTIME_DIR "/run/user/"(id -u)
+    test -d "$XDG_RUNTIME_DIR"; or return
 
-    # NOTE: fish doesn't expand globs inside variables — must glob directly
-    set -l new_socket (command ls -t $XDG_RUNTIME_DIR/niri.*.sock 2>/dev/null)[1]
-    test -n "$new_socket" -a "$new_socket" != "$NIRI_SOCKET"; or return
+    # 1. Seed from systemd user session (bulk parse)
+    set -l sys_env (systemctl --user show-environment 2>/dev/null)
+    set -l target_wayland (string match -r 'WAYLAND_DISPLAY=(.*)' -- $sys_env)[2]
+    set -l target_display (string match -r 'DISPLAY=(.*)' -- $sys_env)[2]
+    set -l target_desktop (string match -r 'XDG_CURRENT_DESKTOP=(.*)' -- $sys_env)[2]
+    set -l target_niri (string match -r 'NIRI_SOCKET=(.*)' -- $sys_env)[2]
 
-    set -gx NIRI_SOCKET $new_socket
-    set -gx WAYLAND_DISPLAY (string replace -r '^niri\.(.*)\.[0-9]+\.sock$' '$1' -- (basename $new_socket))
+    # 2. Fallback: Live socket probing (most-recent-wins via ls -t)
+    # Niri socket → also derives WAYLAND_DISPLAY if missing
+    if set -l niri_sock (command ls -t $XDG_RUNTIME_DIR/niri.*.sock 2>/dev/null)[1]
+        test -S "$niri_sock"; and begin
+            set target_niri "$niri_sock"
+            set -q target_wayland[1]; or set target_wayland \
+                (string replace -r '^niri\.(.*)\.[0-9]+\.sock$' '$1' -- (basename "$niri_sock"))
+        end
+    end
 
-    if test -z "$SUDO_USER"
-        dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP NIRI_SOCKET
+    # Generic Wayland socket
+    if not set -q target_wayland[1]; or not test -S "$XDG_RUNTIME_DIR/$target_wayland"
+        if set -l wl_sock (command ls -t $XDG_RUNTIME_DIR/wayland-* 2>/dev/null)[1]
+            test -S "$wl_sock"; and set target_wayland (basename "$wl_sock")
+        end
+    end
+
+    # Xwayland DISPLAY
+    if not set -q target_display[1]
+        if set -l x_sock (command ls -t /tmp/.X11-unix/X* 2>/dev/null)[1]
+            test -S "$x_sock"; and set target_display ":"(string replace -r '.*/X' '' -- "$x_sock")
+        end
+    end
+
+    # 3. Sync to shell + tmux global environment
+    for var in WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP NIRI_SOCKET
+        set -l new_val $$var
+        set -l cur_val (eval echo "\$$var") # safe indirection
+
+        if set -q new_val[1] && test "$cur_val" != "$new_val"
+            set -gx $var "$new_val"
+            set -q TMUX; and tmux set-environment -g $var "$new_val" 2>/dev/null
+        else if not set -q new_val[1] && set -q cur_val[1]
+            set -e $var
+            set -q TMUX; and tmux unset-environment -g $var 2>/dev/null
+        end
     end
 end
 
