@@ -4,10 +4,14 @@ if command -q nix
     alias nhmb='nh home switch -n $FLAKE_ROOT'
     alias nhms='nh home switch $FLAKE_ROOT'
     alias nhmu='nh home switch -u $FLAKE_ROOT'
-    alias nhccu='nh clean user --optimise'
-    alias nhcu='nhccu --no-gcroots'
-    alias nhcca='nh clean all --optimise'
-    alias nhca='nhcca --no-gcroots'
+    #
+    alias nhccu='nh clean user'
+    alias nhcu='nhccu --no-gcroots --no-direnv --no-gc'
+    alias nhcuo='nhccu --optimise'
+    #
+    alias nhcca='nh clean all'
+    alias nhca='nhcca --no-gcroots --no-direnv --no-gc'
+    alias nhcao='nhca --optimise'
     #
     alias hmb='home-manager build --flake $FLAKE_ROOT --dry-run'
     alias hms='home-manager switch --flake $FLAKE_ROOT'

@@ -15,8 +15,8 @@ end
 # backwards compatibility:
 # export all user-defined FORGIT variables to make them available in git-forgit
 set unexported_vars 0
-set | awk -F ' ' '{ print $1 }' | grep FORGIT_ | while read var
-    if not set -x | grep -q "^$var\b"
+for var in (set -n | string match -er '^FORGIT_')
+    if not set -xn | string match -qr "^$var\$"
         if test $unexported_vars = 0
             forgit::warn "Config options have to be exported in future versions of forgit."
             forgit::warn "Please update your config accordingly:"
@@ -50,6 +50,7 @@ end
 if test -z "$FORGIT_NO_ALIASES"
     abbr -a -- (string collect $forgit_add; or string collect "ga") git-forgit add
     abbr -a -- (string collect $forgit_reset_head; or string collect "grh") git-forgit reset_head
+    abbr -a -- (string collect $forgit_restore; or string collect "grs") git-forgit restore
     abbr -a -- (string collect $forgit_log; or string collect "glo") git-forgit log
     abbr -a -- (string collect $forgit_reflog; or string collect "grl") git-forgit reflog
     abbr -a -- (string collect $forgit_diff; or string collect "gd") git-forgit diff
