@@ -36,6 +36,70 @@ set -q TMUX_ON_SSH; or set -g TMUX_ON_SSH false
 set -q TMUX_AUTO_ATTACH; or set -g TMUX_AUTO_ATTACH true
 set -q TMUX_EXIT_ON_DETACH; or set -g TMUX_EXIT_ON_DETACH true
 
+# --- SSH nesting guard ---
+# Problem: SSH does not forward $TMUX (or $TMUX_PANE) to the remote shell,
+# even when "remote" is the very host you're already tmux'd into. So a
+# shell reached via `ssh <same host>` from inside a pane looks, to fish,
+# indistinguishable from a totally fresh login. If that shell then runs
+# `tma` (manually, or via TMUX_AUTO_ATTACH), it will happily
+# create-or-attach the *same* session it's already a pane of, which
+# produces a self-referential attach and a resize feedback loop.
+#
+# Fix: since it really is the same host, it's also the same tmux *server*
+# (same default socket), which persists independently of any one client's
+# environment. We use that server as shared, out-of-band storage: right
+# before running `ssh` from inside tmux, bump a depth counter in the
+# server's global environment; right after `ssh` returns, decrement it.
+# A shell that lost $TMUX can still ask the (same) server "is there an
+# SSH hop in flight from you?" and get a truthful answer.
+#
+# This is scoped correctly because the "am I nested" check below only
+# ever matters when $TMUX is *absent* locally -- a sibling pane that
+# still has $TMUX set is never affected by the global counter, even
+# though the counter itself is server-wide.
+
+function __tmux_ssh_depth -d "Read the current nested-ssh depth from the tmux server"
+    set -l line (tmux show-environment -g TMUX_NESTED_SSH_DEPTH 2>/dev/null)
+    set -l val (string replace -r '^TMUX_NESTED_SSH_DEPTH=' '' -- $line)
+    if test -z "$val"
+        echo 0
+    else
+        echo $val
+    end
+end
+
+function __tmux_ssh_preexec -d "Mark an outgoing ssh hop on the tmux server" --on-event fish_preexec
+    set -q TMUX; or return
+    string match -qr '(^|[\s;&|]+)ssh($|\s)' -- "$argv[1]"; or return
+    tmux set-environment -g TMUX_NESTED_SSH_DEPTH (math (__tmux_ssh_depth) + 1) 2>/dev/null
+end
+
+function __tmux_ssh_postexec -d "Clear the outgoing ssh hop marker" --on-event fish_postexec
+    set -q TMUX; or return
+    string match -qr '(^|[\s;&|]+)ssh($|\s)' -- "$argv[1]"; or return
+    set -l depth (math (__tmux_ssh_depth) - 1)
+    if test $depth -le 0
+        tmux set-environment -gu TMUX_NESTED_SSH_DEPTH 2>/dev/null
+    else
+        tmux set-environment -g TMUX_NESTED_SSH_DEPTH $depth 2>/dev/null
+    end
+end
+
+# Check if the *current* shell is a tmux pane that reached us over SSH and
+# lost $TMUX along the way. Only meaningful when $TMUX is unset locally --
+# if it's set, we're a normal pane and are never "nested" regardless of
+# what the server-wide counter says.
+function __tmux_is_nested_ssh -d "Detect nested tmux over SSH"
+    set -q TMUX; and return 1
+    # Only relevant if *this shell* is itself the product of an SSH
+    # connection -- a plain local shell must never be blocked just
+    # because some unrelated SSH session elsewhere left the counter
+    # above zero.
+    set -q SSH_TTY; or set -q SSH_CONNECTION; or return 1
+    command -q tmux; or return 1
+    test (__tmux_ssh_depth) -gt 0
+end
+
 # --- Helper Functions ---
 
 # Check if a tmux session exists.
@@ -65,6 +129,14 @@ end
 # --- Public API ---
 
 function tma -d "Attach to session (create if missing)"
+    # Block manual attachment if we're a tmux pane that reached this shell
+    # over SSH without $TMUX being forwarded (prevents self-referential
+    # nesting / resize loops).
+    if __tmux_is_nested_ssh
+        echo "Error: Already inside a tmux session reached over SSH (\$TMUX wasn't forwarded). Refusing to nest 'tma' to avoid a broken attach." >&2
+        return 1
+    end
+
     set -l target "$argv[1]"
 
     # Handle '.' to use directory name with spaces as hyphens (lowercase)
@@ -78,14 +150,6 @@ function tma -d "Attach to session (create if missing)"
 
     # Default to configured main session if no argument
     test -z "$target"; and set target $TMUX_DEFAULT_SESSION
-
-    # Don't start tmux inside a zellij session that has auto-attach enabled
-    if set -q ZELLIJ
-        and __tmux_is_truthy "$ZELLIJ_ENABLED"
-        and __tmux_is_truthy "$ZELLIJ_AUTO_ATTACH"
-        echo "Error: Cannot attach to tmux while inside a zellij session with ZELLIJ_AUTO_ATTACH enabled. Detach from zellij first (Ctrl-o d)." >&2
-        return 1
-    end
 
     __tmux_ensure_session "$target"
     __tmux_attach "$target"
@@ -123,6 +187,9 @@ function tmk -d "Kill session"
     if test -z "$target"
         if set -q TMUX
             set target (tmux display-message -p '#{session_name}')
+        else if set -q TMUX_PANE
+            # Fallback for unforwarded SSH nesting: use the pane ID
+            set target (tmux display-message -p -t "$TMUX_PANE" '#{session_name}')
         else
             echo "Error: Please specify a session name." >&2
             return 1
@@ -144,9 +211,13 @@ end
 # --- Auto-Start Logic ---
 # Only runs in interactive shells not currently in tmux.
 if status is-interactive; and not set -q TMUX
+    # If we're a pane that reached this shell over SSH without $TMUX being
+    # forwarded, abort immediately -- don't auto-attach into ourselves.
+    if __tmux_is_nested_ssh
+        return 0
+    end
+
     # Conditions to skip auto-start:
-    # 1. Inside VS Code terminal
-    # 2. Inside SSH (unless TMUX_ON_SSH is true)
     set -l skip_autostart false
     if not __tmux_is_truthy "$TMUX_AUTO_ATTACH"
         set skip_autostart true
@@ -162,7 +233,6 @@ if status is-interactive; and not set -q TMUX
 
     if not $skip_autostart
         # ponytail: single create-if-missing + attach like zellij's `attach -c`.
-        # no-steal guard dropped; attaching to an in-use session takes it over.
         if __tmux_is_truthy "$TMUX_EXIT_ON_DETACH"
             exec tmux new-session -A -s $TMUX_DEFAULT_SESSION
         else
@@ -177,9 +247,7 @@ complete -c tmr -f -a "(__tmux_list_session_names) -"
 complete -c tmk -f -a "(__tmux_list_session_names)"
 
 # --- GPG pinentry TTY sync ---
-# Keeps gpg-agent's registered TTY current as you move between tmux panes,
-# so pinentry (routed through the popup wrapper) attaches to the pane
-# you're actually in rather than a stale one from an earlier session.
+# Keeps gpg-agent's registered TTY current as you move between tmux panes.
 function __tmux_update_gpg_tty --on-event fish_prompt
     command -q gpg-connect-agent; or return 0
 

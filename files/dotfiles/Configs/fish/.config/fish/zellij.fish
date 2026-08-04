@@ -38,6 +38,68 @@ set -q ZELLIJ_EXIT_ON_DETACH; or set -g ZELLIJ_EXIT_ON_DETACH true
 # Master switch for auto-attach on shell start. Set to false to require `za`.
 set -q ZELLIJ_AUTO_ATTACH; or set -g ZELLIJ_AUTO_ATTACH true
 
+# --- SSH nesting guard ---
+# Same problem as tmux: SSH doesn't forward $ZELLIJ (or $ZELLIJ_SOCKET_DIR)
+# to the remote shell, even when "remote" is the same host you're already
+# in a zellij session on. Unlike tmux, zellij has no single always-on
+# server shared by every session, so we can't stash state on "the server".
+# Instead we use a fixed, $HOME-rooted file as shared out-of-band storage
+# -- $HOME survives the SSH hop because it's the same user on the same
+# host, even though no zellij-specific env var does.
+#
+# Right before running `ssh` from inside zellij, bump a depth counter in
+# that file; right after `ssh` returns, decrement it. A shell that lost
+# $ZELLIJ can still check the (same, filesystem-backed) counter to learn
+# "is there an SSH hop in flight from a zellij pane on this host?".
+#
+# This is scoped correctly because the "am I nested" check below only
+# ever matters when $ZELLIJ is *absent* locally -- a sibling pane that
+# still has $ZELLIJ set is never affected by the shared counter file.
+
+set -g __zj_guard_file "$HOME/.cache/zellij-fish/nested_ssh_depth"
+
+function __zj_ssh_depth -d "Read the current nested-ssh depth from the guard file"
+    if test -f "$__zj_guard_file"
+        set -l val (cat "$__zj_guard_file" 2>/dev/null)
+        if string match -qr '^[0-9]+$' -- "$val"
+            echo $val
+            return
+        end
+    end
+    echo 0
+end
+
+function __zj_ssh_preexec -d "Mark an outgoing ssh hop for zellij nesting detection" --on-event fish_preexec
+    set -q ZELLIJ; or return
+    string match -qr '(^|[\s;&|]+)ssh($|\s)' -- "$argv[1]"; or return
+    mkdir -p (dirname "$__zj_guard_file") 2>/dev/null
+    math (__zj_ssh_depth) + 1 >"$__zj_guard_file" 2>/dev/null
+end
+
+function __zj_ssh_postexec -d "Clear the outgoing ssh hop marker" --on-event fish_postexec
+    set -q ZELLIJ; or return
+    string match -qr '(^|[\s;&|]+)ssh($|\s)' -- "$argv[1]"; or return
+    set -l depth (math (__zj_ssh_depth) - 1)
+    if test $depth -le 0
+        rm -f "$__zj_guard_file" 2>/dev/null
+    else
+        echo $depth >"$__zj_guard_file" 2>/dev/null
+    end
+end
+
+# Check if the *current* shell is a zellij pane that reached us over SSH
+# and lost $ZELLIJ along the way. Only meaningful when $ZELLIJ is unset
+# locally -- if it's set, we're a normal pane and are never "nested"
+# regardless of what the shared guard file says.
+function __zj_is_nested_ssh -d "Detect nested zellij over SSH"
+    set -q ZELLIJ; and return 1
+    # Same reasoning as tmux: only a shell that's itself reached via SSH
+    # can be the nested case. A plain local shell is exempt even if the
+    # shared guard file says an unrelated SSH session is in flight.
+    set -q SSH_TTY; or set -q SSH_CONNECTION; or return 1
+    test (__zj_ssh_depth) -gt 0
+end
+
 # --- Helpers ---
 function __zj_sessions -d "List session names for completions"
     zellij list-sessions 2>/dev/null \
@@ -56,33 +118,64 @@ complete -c zk -a "(__zj_sessions)"
 
 # --- Public API ---
 function za -d "Attach to session, creating it if missing (default: \$ZELLIJ_DEFAULT_SESSION)"
-    # Don't start zellij inside a tmux session that has auto-attach enabled
-    if set -q TMUX
-        and __zj_is_truthy "$TMUX_ENABLED"
-        and __zj_is_truthy "$TMUX_AUTO_ATTACH"
-        echo "Error: Cannot attach to zellij while inside tmux with TMUX_AUTO_ATTACH enabled. Detach from tmux first (prefix d)." >&2
+    # Block manual attachment if we're a zellij pane that reached this
+    # shell over SSH without $ZELLIJ being forwarded (prevents broken
+    # self-referential nesting).
+    if __zj_is_nested_ssh
+        echo "Error: Already inside a zellij session reached over SSH (\$ZELLIJ wasn't forwarded). Refusing to nest 'za' to avoid a broken attach." >&2
         return 1
     end
-    zellij attach -c (__zj_session_arg $argv[1] $ZELLIJ_DEFAULT_SESSION)
+
+    set -l target (__zj_session_arg $argv[1] $ZELLIJ_DEFAULT_SESSION)
+
+    zellij attach -c $target
 end
+
 function zd -d "Delete a session (default: current)"
-    zellij delete-session (__zj_session_arg $argv[1] $ZELLIJ_SESSION_NAME)
+    set -l target $argv[1]
+    # Resolve current session natively even if $ZELLIJ_SESSION_NAME isn't forwarded
+    if test -z "$target"
+        if set -q ZELLIJ_SESSION_NAME
+            set target $ZELLIJ_SESSION_NAME
+        else
+            set target (basename $PWD)
+        end
+    end
+    zellij delete-session $target
 end
+
 function zk -d "Kill a session (default: current)"
-    zellij kill-session (__zj_session_arg $argv[1] $ZELLIJ_SESSION_NAME)
+    set -l target $argv[1]
+    if test -z "$target"
+        if set -q ZELLIJ_SESSION_NAME
+            set target $ZELLIJ_SESSION_NAME
+        else
+            set target (basename $PWD)
+        end
+    end
+    zellij kill-session $target
 end
+
 function zda -d "Delete all sessions"
     zellij delete-all-sessions
 end
+
 function zka -d "Kill all sessions"
     zellij kill-all-sessions
 end
+
 function zls -d "List all sessions"
     zellij list-sessions
 end
 
 # --- Auto-Start ---
 if status is-interactive; and not set -q ZELLIJ
+    # If we're a pane that reached this shell over SSH without $ZELLIJ
+    # being forwarded, abort immediately -- don't auto-attach into ourselves.
+    if __zj_is_nested_ssh
+        return 0
+    end
+
     if not __zj_is_truthy "$ZELLIJ_AUTO_ATTACH"
         return 0
     else if string match -qir '^(vscode|cursor|windsurf|zed|hyper)$' "$TERM_PROGRAM"; or set -q INSIDE_EMACS; or set -q JETBRAINS_IDE
@@ -90,6 +183,7 @@ if status is-interactive; and not set -q ZELLIJ
     else if test -n "$SSH_TTY"; and not __zj_is_truthy "$ZELLIJ_ON_SSH"
         return 0
     end
+
     if __zj_is_truthy "$ZELLIJ_EXIT_ON_DETACH"
         exec zellij attach -c $ZELLIJ_DEFAULT_SESSION
     else
