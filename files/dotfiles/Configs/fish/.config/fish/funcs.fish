@@ -217,7 +217,7 @@ function update_wayland_env_vars -d "Aggressively pull active GUI environment in
 
     # 2. Fallback: Live socket probing (most-recent-wins via ls -t)
     # Niri socket → also derives WAYLAND_DISPLAY if missing
-    if set -l niri_sock (command ls -t $XDG_RUNTIME_DIR/niri.*.sock 2>/dev/null)[1]
+    if set -l niri_sock (command ls -t "$XDG_RUNTIME_DIR/niri.*.sock" 2>/dev/null)[1]
         test -S "$niri_sock"; and begin
             set target_niri "$niri_sock"
             set -q target_wayland[1]; or set target_wayland \
@@ -227,14 +227,14 @@ function update_wayland_env_vars -d "Aggressively pull active GUI environment in
 
     # Generic Wayland socket
     if not set -q target_wayland[1]; or not test -S "$XDG_RUNTIME_DIR/$target_wayland"
-        if set -l wl_sock (command ls -t $XDG_RUNTIME_DIR/wayland-* 2>/dev/null)[1]
+        if set -l wl_sock (command ls -t "$XDG_RUNTIME_DIR/wayland-*" 2>/dev/null)[1]
             test -S "$wl_sock"; and set target_wayland (basename "$wl_sock")
         end
     end
 
     # Xwayland DISPLAY
     if not set -q target_display[1]
-        if set -l x_sock (command ls -t /tmp/.X11-unix/X* 2>/dev/null)[1]
+        if set -l x_sock (command ls -t "/tmp/.X11-unix/X*" 2>/dev/null)[1]
             test -S "$x_sock"; and set target_display ":"(string replace -r '.*/X' '' -- "$x_sock")
         end
     end
@@ -304,7 +304,7 @@ if command -q gpg-connect-agent
     if not set -q __gpg_agent_initialized
         set -g __gpg_agent_initialized
         if test -z "$SSH_AUTH_SOCK"; or not ssh-add -l >/dev/null 2>&1
-            eval (ssh-agent -c)
+            eval (ssh-agent -c | string match -v 'echo Agent pid*')
         end
     end
 end
