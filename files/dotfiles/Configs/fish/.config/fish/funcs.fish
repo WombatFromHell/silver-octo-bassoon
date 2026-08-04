@@ -256,6 +256,7 @@ end
 
 if command -q gpg-connect-agent
     function reload_gpg_agent
+        pkill -x ssh-agent
         gpgconf --kill gpg-agent
         gpg-connect-agent /bye >/dev/null 2>&1
     end
@@ -297,6 +298,13 @@ if command -q gpg-connect-agent
             set -gx PINENTRY_USER_DATA zellij
         else
             set -e PINENTRY_USER_DATA
+        end
+    end
+
+    if not set -q __gpg_agent_initialized
+        set -g __gpg_agent_initialized
+        if test -z "$SSH_AUTH_SOCK"; or not ssh-add -l >/dev/null 2>&1
+            eval (ssh-agent -c)
         end
     end
 end

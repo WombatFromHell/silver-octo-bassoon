@@ -1,7 +1,3 @@
-if test -z "$SSH_AUTH_SOCK"
-    eval (ssh-agent -c)
-end
-
 set CREDS_FISH_SRC $HOME/.config/fish/creds.fish
 if test -r "$CREDS_FISH_SRC"
     source "$CREDS_FISH_SRC"
