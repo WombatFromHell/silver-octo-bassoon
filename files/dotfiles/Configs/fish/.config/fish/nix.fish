@@ -36,6 +36,17 @@ if command -q nix
             set -l target $argv[2]
             set -l extra_args $argv[3..-1]
 
+            # Target attribute for HM closure
+            set -l attr "$flake_path#homeConfigurations.\"$target\".activationPackage"
+
+            # Dry-Run (Parallel Evaluation Only via nix-eval-jobs)
+            if contains -- --dry-run $extra_args
+                set -l extra_args (string match -v -- '--dry-run' $extra_args)
+                echo "Evaluating $target via nix-eval-jobs..."
+                nix_eval --flake $attr $extra_args
+                return 0
+            end
+
             # Expand relative paths or environment variables safely
             nix_build \
                 --flake "$flake_path#homeConfigurations.\"$target\".activationPackage" \
@@ -58,7 +69,7 @@ if command -q nix
 
             # MODE 1: Dry-Run (Parallel Evaluation Only via nix-eval-jobs)
             if contains -- --dry-run $remaining
-                set -l extra_args (string match -v '--dry-run' $remaining)
+                set -l extra_args (string match -v -- '--dry-run' $remaining)
                 echo "Evaluating $target_host via nix-eval-jobs..."
                 nix_eval --flake $attr $extra_args
                 return 0
