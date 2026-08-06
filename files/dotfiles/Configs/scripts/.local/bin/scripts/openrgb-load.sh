@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-set -euxo pipefail
-
-# Loads OpenRGB "lightsout" profile asynchronously.
-RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID}"
-LOG_FILE="$RUNTIME_DIR/openrgb-lightsout.log"
+set -euo pipefail
 
 # Resolve OpenRGB binary
 find_openrgb() {
@@ -23,5 +19,4 @@ OPENRGB="$(find_openrgb)" || {
   exit 0
 }
 
-$OPENRGB --noautoconnect -p lightsout >"$LOG_FILE" 2>&1 &
-disown
+$OPENRGB --noautoconnect -p lightsout &

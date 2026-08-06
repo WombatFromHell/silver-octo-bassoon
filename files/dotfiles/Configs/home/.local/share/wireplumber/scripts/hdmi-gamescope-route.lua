@@ -17,23 +17,13 @@ local CONFIG = {
 -------------------------------------------------------------------------------
 local SessionDetector = {}
 
---- Two-tier Gamescope detection via environment variables only.
--- Env vars are authoritative, race-free, and set before WP starts.
--- Process scanning is intentionally omitted: it races with short-lived PIDs,
--- triggers wp-proc-utils GLib warnings, and adds no real detection coverage
--- since Gamescope always sets at least one of these variables.
 function SessionDetector.detect()
-  -- Tier 1: Desktop environment variable (set by gamescope-session or compositor)
   local desktop = os.getenv("XDG_CURRENT_DESKTOP") or ""
-  if desktop ~= "" then
-    return desktop:lower():find("gamescope", 1, true) ~= nil
+  for segment in desktop:gmatch("[^:]+") do
+    if segment:lower() == "gamescope" then
+      return true
+    end
   end
-
-  -- Tier 2: Gamescope Wayland socket (set by gamescope itself)
-  if os.getenv("GAMESCOPE_WAYLAND_DISPLAY") then
-    return true
-  end
-
   return false
 end
 
