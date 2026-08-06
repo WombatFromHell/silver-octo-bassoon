@@ -1,0 +1,73 @@
+onboarding = false
+
+[terminal]
+default_shell = "fish.sh"
+
+[theme]
+name = "catppuccin"
+auto_switch = false
+
+[update]
+version_check = false
+
+[ui]
+sidebar_start_collapsed = true
+confirm_close = false
+prompt_new_tab_name = false
+prompt_new_workspace_name = false
+show_agent_labels_on_pane_borders = true
+
+[keys]
+prefix = "ctrl+s"
+settings = "prefix+shift+s"
+focus_pane_left = ["ctrl+alt+h","prefix+h"]
+focus_pane_down = ["ctrl+alt+j","prefix+j"]
+focus_pane_up = ["ctrl+alt+k","prefix+k"]
+focus_pane_right = ["ctrl+alt+l","prefix+l"]
+next_tab = ["alt+l","prefix+n"]
+previous_tab = ["alt+h","prefix+p"]
+new_tab = "prefix+t"
+close_tab = "prefix+q"
+detach = "prefix+d"
+split_vertical = "prefix+v"
+split_horizontal = "prefix+s"
+
+[[keys.command]]
+key = "prefix+backslash"
+type = "plugin_action"
+command = "layouts.equalize"
+description = "equalize panes as vertical columns"
+
+[[keys.command]]
+key = "prefix+}"
+type = "plugin_action"
+command = "layouts.cycle"
+description = "cycle pane layouts"
+
+[[keys.command]]
+key = "ctrl+shift+alt+left"
+type = "plugin_action"
+command = "layouts.resize-left"
+description = "resize pane left"
+
+
+[[keys.command]]
+key = "ctrl+shift+alt+down"
+type = "plugin_action"
+command = "layouts.resize-down"
+description = "resize pane down"
+
+[[keys.command]]
+key = "ctrl+shift+alt+up"
+type = "plugin_action"
+command = "layouts.resize-up"
+description = "resize pane up"
+
+[[keys.command]]
+key = "ctrl+shift+alt+right"
+type = "plugin_action"
+command = "layouts.resize-right"
+description = "resize pane right"
+
+[ui.toast]
+delivery = "herdr"

@@ -35,14 +35,12 @@ if status is-interactive
         set -g ZELLIJ_ENABLED true
         set -g ZELLIJ_AUTO_ATTACH true
         set -g TMUX_ENABLED true
-        set -g TMUX_AUTO_ATTACH false
+        set -g HERDR_ENABLED true
     else
         set -g TMUX_ENABLED true
         set -g TMUX_AUTO_ATTACH true
-        set -g TMUX_EXIT_ON_DETACH false
         set -g ZELLIJ_ENABLED true
-        set -g ZELLIJ_AUTO_ATTACH false
-        set -g ZELLIJ_EXIT_ON_DETACH false
+        set -g HERDR_ENABLED true
     end
 
     set -x XDG_DATA_HOME $HOME/.local/share

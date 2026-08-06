@@ -33,8 +33,8 @@ end
 # --- Configuration ---
 set -q TMUX_DEFAULT_SESSION; or set -g TMUX_DEFAULT_SESSION main
 set -q TMUX_ON_SSH; or set -g TMUX_ON_SSH false
-set -q TMUX_AUTO_ATTACH; or set -g TMUX_AUTO_ATTACH true
-set -q TMUX_EXIT_ON_DETACH; or set -g TMUX_EXIT_ON_DETACH true
+set -q TMUX_AUTO_ATTACH; or set -g TMUX_AUTO_ATTACH false
+set -q TMUX_EXIT_ON_DETACH; or set -g TMUX_EXIT_ON_DETACH false
 
 # --- SSH nesting guard ---
 # Problem: SSH does not forward $TMUX (or $TMUX_PANE) to the remote shell,

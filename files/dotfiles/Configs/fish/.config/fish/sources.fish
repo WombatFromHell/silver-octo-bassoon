@@ -24,6 +24,11 @@ if test -r $TMUX_HELPER
     source $TMUX_HELPER
 end
 
+set HERDR_HELPER $HOME/.config/fish/herdr.fish
+if test -r $HERDR_HELPER
+    source $HERDR_HELPER
+end
+
 set ZELLIJ_HELPER $HOME/.config/fish/zellij.fish
 if test -r $ZELLIJ_HELPER
     source $ZELLIJ_HELPER

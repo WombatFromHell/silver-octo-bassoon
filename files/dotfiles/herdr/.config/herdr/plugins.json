@@ -1,0 +1,106 @@
+[
+  {
+    "plugin_id": "layouts",
+    "name": "Pane Layouts",
+    "version": "0.1.1",
+    "min_herdr_version": "0.7.0",
+    "description": "Seamless tmux-style pane resizing and layouts for Herdr.",
+    "manifest_path": "/var/home/josh/.config/herdr/plugins/github/layouts-7c31f497d1da/herdr-plugin.toml",
+    "plugin_root": "/var/home/josh/.config/herdr/plugins/github/layouts-7c31f497d1da",
+    "enabled": true,
+    "platforms": [
+      "linux",
+      "macos"
+    ],
+    "actions": [
+      {
+        "id": "cycle",
+        "title": "Pane Layouts: cycle",
+        "description": "Cycle the current tab through useful layout presets.",
+        "contexts": [
+          "tab",
+          "pane"
+        ],
+        "command": [
+          "python3",
+          "src/cli.py",
+          "cycle"
+        ]
+      },
+      {
+        "id": "equalize",
+        "title": "Pane Layouts: equalize",
+        "description": "Arrange the current tab as equal-width vertical columns.",
+        "contexts": [
+          "tab",
+          "pane"
+        ],
+        "command": [
+          "python3",
+          "src/cli.py",
+          "equalize"
+        ]
+      },
+      {
+        "id": "resize-down",
+        "title": "Pane Layouts: resize down",
+        "description": "Resize the current pane down by two percent.",
+        "contexts": [
+          "pane"
+        ],
+        "command": [
+          "python3",
+          "src/cli.py",
+          "resize-down"
+        ]
+      },
+      {
+        "id": "resize-left",
+        "title": "Pane Layouts: resize left",
+        "description": "Resize the current pane left by two percent.",
+        "contexts": [
+          "pane"
+        ],
+        "command": [
+          "python3",
+          "src/cli.py",
+          "resize-left"
+        ]
+      },
+      {
+        "id": "resize-right",
+        "title": "Pane Layouts: resize right",
+        "description": "Resize the current pane right by two percent.",
+        "contexts": [
+          "pane"
+        ],
+        "command": [
+          "python3",
+          "src/cli.py",
+          "resize-right"
+        ]
+      },
+      {
+        "id": "resize-up",
+        "title": "Pane Layouts: resize up",
+        "description": "Resize the current pane up by two percent.",
+        "contexts": [
+          "pane"
+        ],
+        "command": [
+          "python3",
+          "src/cli.py",
+          "resize-up"
+        ]
+      }
+    ],
+    "source": {
+      "kind": "github",
+      "owner": "iurysza",
+      "repo": "herdr-pane-layouts",
+      "resolved_commit": "0ef0a8d5d463757f06037551fc1f5ef6dfde478d",
+      "managed_path": "/home/josh/.config/herdr/plugins/github/layouts-7c31f497d1da",
+      "installed_unix_ms": 1786043807988
+    }
+  }
+]

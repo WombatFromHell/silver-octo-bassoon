@@ -34,9 +34,8 @@ end
 # --- Configuration ---
 set -q ZELLIJ_DEFAULT_SESSION; or set -g ZELLIJ_DEFAULT_SESSION main
 set -q ZELLIJ_ON_SSH; or set -g ZELLIJ_ON_SSH false
-set -q ZELLIJ_EXIT_ON_DETACH; or set -g ZELLIJ_EXIT_ON_DETACH true
-# Master switch for auto-attach on shell start. Set to false to require `za`.
-set -q ZELLIJ_AUTO_ATTACH; or set -g ZELLIJ_AUTO_ATTACH true
+set -q ZELLIJ_EXIT_ON_DETACH; or set -g ZELLIJ_EXIT_ON_DETACH false
+set -q ZELLIJ_AUTO_ATTACH; or set -g ZELLIJ_AUTO_ATTACH false
 
 # --- SSH nesting guard ---
 # Same problem as tmux: SSH doesn't forward $ZELLIJ (or $ZELLIJ_SOCKET_DIR)

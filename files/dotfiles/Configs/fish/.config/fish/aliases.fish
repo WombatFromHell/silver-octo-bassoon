@@ -45,11 +45,12 @@ if command -q bat
 end
 
 alias e='edit.sh'
+alias edit='$EDITOR'
 alias vi='$EDITOR'
 alias vim='$EDITOR'
+alias nv='$EDITOR'
 alias lg='lazygit'
 alias lpod='lazydocker'
-alias edit='$EDITOR'
 alias sedit='sudo -E $EDITOR'
 alias mkdir='mkdir -pv'
 
