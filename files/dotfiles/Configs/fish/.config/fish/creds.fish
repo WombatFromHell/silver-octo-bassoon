@@ -215,5 +215,24 @@ function lock_creds -d "Unset all previously unlocked credential env vars"
     rm -f "$marker"
 end
 
+# ══════════════════════════════════════════════════════════════════
+# run_with_creds – unlock creds for the duration of a single command
+#   run_with_creds KEY... -- CMD [ARGS...]
+#   Unlocks, runs CMD, always locks. Missing/undecryptable KEY → CMD never runs.
+# ══════════════════════════════════════════════════════════════════
+function run_with_creds -d "Unlock creds for the duration of a command"
+    set -l sep (contains -i -- -- $argv)
+    if test -z "$sep"; or test "$sep" -eq 1
+        echo "Usage: run_with_creds KEY... -- CMD [ARGS...]" >&2
+        return 1
+    end
+    unlock_creds $argv[1..(math $sep - 1)]; or return 1
+    set -l idx (math $sep + 1)
+    $argv[$idx..]
+    set -l st $status
+    lock_creds
+    return $st
+end
+
 alias store_cred=encrypt_cred
 alias ls_creds='systemd-creds --user list'

@@ -5,6 +5,7 @@ if command -q nix
         set -g NFB_COMMON_OPTS \
             --max-jobs $NIX_MAX_JOBS \
             --option show-trace true \
+            --option connect-timeout 5 \
             --option extra-deprecated-features or-as-identifier \
             --option extra-experimental-festures "nix-command flakes eval-cache"
 
@@ -50,6 +51,7 @@ if command -q nix
             # Expand relative paths or environment variables safely
             nix_build \
                 --flake "$flake_path#homeConfigurations.\"$target\".activationPackage" \
+                --option extra-substituters "https://xilo.nanogoblin.duckdns.org/c/default/xilopkgs" \
                 --out-link /tmp/hm-result $extra_args
             and /tmp/hm-result-/activate
         end
@@ -200,7 +202,7 @@ if command -q nix
         function nixos_deploy_nas
             set -l flake_root $HOME/Projects/nasty-config
             nixos_fdeploy $flake_root nasty homenas-deployer \
-                --option extra-substituters "https://nasty.cachix.org" \
+                --option extra-substituters "https://nasty.cachix.org https://xilo.nanogoblin.duckdns.org" \
                 --option extra-trusted-public-keys "nasty.cachix.org-1:s+X88yw6+asphCNphTId/RQZHfmDF4fQ0uyzEz5SxLc=" \
                 $argv
         end
@@ -337,6 +339,12 @@ if command -q nix
             else
                 unlock_creds XILO_URL XILO_TOKEN XILO_CACHE
                 printf '%s\n' $out_paths | $xilo_bin push default/xilopkgs -
+            end
+        end
+        function xilo-push-hm
+            if test -r /tmp/hm-result-
+                unlock_creds XILO_TOKEN XILO_CACHE XILO_URL
+                xilo push /tmp/hm-result-
             end
         end
     end
