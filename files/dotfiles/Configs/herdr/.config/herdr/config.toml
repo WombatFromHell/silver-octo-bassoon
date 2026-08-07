@@ -33,6 +33,11 @@ split_vertical = "prefix+v"
 split_horizontal = "prefix+s"
 
 [[keys.command]]
+key = "prefix+shift+q"
+type = "shell"
+command = "herdr server stop"
+
+[[keys.command]]
 key = "prefix+backslash"
 type = "plugin_action"
 command = "layouts.equalize"
