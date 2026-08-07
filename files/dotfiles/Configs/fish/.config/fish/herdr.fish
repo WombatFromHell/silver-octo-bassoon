@@ -70,7 +70,11 @@ function hrdr -d "Reload herdr server config"
 end
 
 function hrdk -d "Stop the herdr server"
-    herdr server stop
+    if test -n "$argv[1]"
+        herdr session stop $argv[1]
+    else
+        herdr server stop
+    end
 end
 
 function hrdl -d "List herdr sessions"
