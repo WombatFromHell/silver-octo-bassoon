@@ -36,7 +36,7 @@ fi
 SSHFS_CONNECTION_OPTS=(-o "delay_connect,reconnect,ServerAliveInterval=30,ConnectTimeout=3,ConnectionAttempts=1")
 SSHFS_OPTS=(-o "follow_symlinks")
 #
-LINUX_SSHFS_OPTS=(-o "idmap=user")
+LINUX_SSHFS_OPTS=(-o "idmap=user,noatime")
 MAC_SSHFS_OPTS=(-o "noappledouble,noapplexattr")
 if ! $IS_MACOS; then
   # idmap=user is Linux-FUSE-only; macFUSE/fuse-t's sshfs rejects it
@@ -162,6 +162,10 @@ do_unmount() {
     rm -f "$PID_FILE"
   fi
   os_unmount "$NAS_HOME" 2>/dev/null || true
+  # ponytail: busy mounts survive -u; lazy detach so remount actually applies new options
+  if ! $IS_MACOS && is_mounted "$NAS_HOME"; then
+    fusermount -u -z "$NAS_HOME" 2>/dev/null || true
+  fi
   remove_link
   return 0
 }
