@@ -38,9 +38,10 @@ if status is-interactive
         set -g HERDR_ENABLED true
     else
         set -g TMUX_ENABLED true
-        set -g TMUX_AUTO_ATTACH true
+        # set -g TMUX_AUTO_ATTACH true
         set -g ZELLIJ_ENABLED true
         set -g HERDR_ENABLED true
+        set -g HERDR_AUTO_ATTACH true
     end
 
     set -x XDG_DATA_HOME $HOME/.local/share
