@@ -379,7 +379,8 @@ main() {
       PROTON_ENABLE_WAYLAND=1
       IDLE_CMD="$HOME/.local/bin/scripts/on_idle.sh idle"
       ACTIVE_CMD="$HOME/.local/bin/scripts/on_idle.sh active"
-      IDLE_TIMEOUT=120 # DPMS off after 2 mins
+      IDLE_TIMEOUT=120       # DPMS off after 2 mins
+      ENABLE_SLEEP_INHIBIT=0 # don't block system-level 'sleep'
     )
     run_session "nested"
     ;;

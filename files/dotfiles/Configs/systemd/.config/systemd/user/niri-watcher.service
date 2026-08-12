@@ -14,6 +14,7 @@ RestartSec=5
 KillMode=control-group
 TimeoutStopSec=5
 ExecStop=/usr/bin/pkill -TERM -f "gamemode" || true
+Environment=WATCHER_EXCLUDED_APPS="steam,Steam Big Picture Mode"
 Environment=WATCHER_HOOK_ON="%h/.local/bin/gamemode on"
 Environment=WATCHER_HOOK_OFF="%h/.local/bin/gamemode off"
 
