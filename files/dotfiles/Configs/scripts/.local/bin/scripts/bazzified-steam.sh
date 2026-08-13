@@ -128,6 +128,7 @@ detect_gamescope_profile_niri() {
     return 1
   }
 
+  LG_C1_CONNECTED=0
   local active_output=""
   local attempt=0
 
@@ -155,6 +156,7 @@ detect_gamescope_profile_niri() {
 
   case "$active_output" in
   HDMI-A-1)
+    LG_C1_CONNECTED=1
     GAMESCOPE_ARGS=(-p "std,vsr4k,hdr" -e)
     log_info "Detected HDMI-A-* → 4K HDR profile"
     ;;
@@ -370,11 +372,12 @@ main() {
     detect_gamescope_profile_niri || true
     GAMESCOPE_ARGS+=("${extra_args[@]}" --)
     [[ ${#GAMESCOPE_ARGS[@]} -eq 0 ]] && GAMESCOPE_ARGS=(--)
-    WRAPPERS=(
+    WRAPPERS=()
+    ((LG_C1_CONNECTED)) && WRAPPERS+=(
       "$HOME/.local/bin/scripts/lgc1-wol.py --"
-      "gamemode --"
       "$HOME/.local/bin/scripts/pactl_gate_sentinel.sh"
     )
+    WRAPPERS+=("gamemode --")
     [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=(
       PROTON_ENABLE_WAYLAND=1
       IDLE_CMD="$HOME/.local/bin/scripts/on_idle.sh idle"
