@@ -232,6 +232,12 @@ if status is-interactive; and not set -q TMUX
     end
 
     if not $skip_autostart
+        # ponytail: only auto-attach while the session has no attached client, so
+        # extra terminals stay plain shells (Option B, env var re-arms on detach).
+        if tmux has-session -t $TMUX_DEFAULT_SESSION 2>/dev/null
+            and test (tmux display-message -p -t $TMUX_DEFAULT_SESSION '#{session_attached}') -gt 0
+            return 0
+        end
         # ponytail: single create-if-missing + attach like zellij's `attach -c`.
         if __tmux_is_truthy "$TMUX_EXIT_ON_DETACH"
             exec tmux new-session -A -s $TMUX_DEFAULT_SESSION

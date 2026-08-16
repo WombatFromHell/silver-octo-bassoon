@@ -1,5 +1,4 @@
 #!/usr/bin/env fish
-
 # ==============================================================================
 # ZELLIJ HELPER
 # ------------------------------------------------------------------------------
@@ -54,7 +53,6 @@ set -q ZELLIJ_AUTO_ATTACH; or set -g ZELLIJ_AUTO_ATTACH false
 # This is scoped correctly because the "am I nested" check below only
 # ever matters when $ZELLIJ is *absent* locally -- a sibling pane that
 # still has $ZELLIJ set is never affected by the shared counter file.
-
 set -g __zj_guard_file "$HOME/.cache/zellij-fish/nested_ssh_depth"
 
 function __zj_ssh_depth -d "Read the current nested-ssh depth from the guard file"
@@ -110,6 +108,35 @@ function __zj_session_arg -d "Resolve session name: arg, else fallback"
     test -n "$argv[1]"; and echo $argv[1]; or echo $argv[2]
 end
 
+function __zj_current_session -d "Name of the session we're currently in, or CWD basename as fallback"
+    if set -q ZELLIJ_SESSION_NAME
+        echo $ZELLIJ_SESSION_NAME
+    else
+        basename $PWD
+    end
+end
+
+# --- Attach marker (Option B: auto-attach only for the first client) ---
+# zellij exposes no "is this session attached" query, so track it locally: a
+# marker per session, claimed atomically when a client attaches and released
+# on detach. $XDG_RUNTIME_DIR resets each login, so any leaked marker
+# (exec/exit-on-detach) still re-arms next boot.
+set -g __zj_attached_dir /tmp/zellij-fish
+test -n "$XDG_RUNTIME_DIR"; and set -g __zj_attached_dir "$XDG_RUNTIME_DIR/zellij-fish"
+
+function __zj_marker -d "Attach-marker path for a session"
+    echo "$__zj_attached_dir/attached_$argv[1]"
+end
+
+function __zj_claim_attach -d "Atomically claim the attach marker; succeeds only for the first caller"
+    mkdir -p "$__zj_attached_dir" 2>/dev/null
+    mkdir (__zj_marker $argv[1]) 2>/dev/null
+end
+
+function __zj_release_attach -d "Release the attach marker"
+    rmdir (__zj_marker $argv[1]) 2>/dev/null
+end
+
 # --- Completions ---
 complete -c za -a "(__zj_sessions)"
 complete -c zd -a "(__zj_sessions)"
@@ -124,35 +151,22 @@ function za -d "Attach to session, creating it if missing (default: \$ZELLIJ_DEF
         echo "Error: Already inside a zellij session reached over SSH (\$ZELLIJ wasn't forwarded). Refusing to nest 'za' to avoid a broken attach." >&2
         return 1
     end
-
     set -l target (__zj_session_arg $argv[1] $ZELLIJ_DEFAULT_SESSION)
-
+    # ponytail: touch/rm on the marker dir, not a claim/release -- za must
+    # attach unconditionally even if auto-attach already holds the marker,
+    # so it can't go through __zj_claim_attach without breaking that case.
+    mkdir -p "$__zj_attached_dir" 2>/dev/null
+    touch (__zj_marker $target) 2>/dev/null
     zellij attach -c $target
+    rm -f (__zj_marker $target) 2>/dev/null
 end
 
 function zd -d "Delete a session (default: current)"
-    set -l target $argv[1]
-    # Resolve current session natively even if $ZELLIJ_SESSION_NAME isn't forwarded
-    if test -z "$target"
-        if set -q ZELLIJ_SESSION_NAME
-            set target $ZELLIJ_SESSION_NAME
-        else
-            set target (basename $PWD)
-        end
-    end
-    zellij delete-session $target
+    zellij delete-session (__zj_session_arg $argv[1] (__zj_current_session))
 end
 
 function zk -d "Kill a session (default: current)"
-    set -l target $argv[1]
-    if test -z "$target"
-        if set -q ZELLIJ_SESSION_NAME
-            set target $ZELLIJ_SESSION_NAME
-        else
-            set target (basename $PWD)
-        end
-    end
-    zellij kill-session $target
+    zellij kill-session (__zj_session_arg $argv[1] (__zj_current_session))
 end
 
 function zda -d "Delete all sessions"
@@ -174,7 +188,6 @@ if status is-interactive; and not set -q ZELLIJ
     if __zj_is_nested_ssh
         return 0
     end
-
     if not __zj_is_truthy "$ZELLIJ_AUTO_ATTACH"
         return 0
     else if string match -qir '^(vscode|cursor|windsurf|zed|hyper)$' "$TERM_PROGRAM"; or set -q INSIDE_EMACS; or set -q JETBRAINS_IDE
@@ -182,11 +195,19 @@ if status is-interactive; and not set -q ZELLIJ
     else if test -n "$SSH_TTY"; and not __zj_is_truthy "$ZELLIJ_ON_SSH"
         return 0
     end
-
+    # ponytail: atomic claim, so simultaneous terminals can't both pass a
+    # check-then-set race -- exactly one wins the mkdir and auto-attaches,
+    # the rest stay plain shells. Released when the attach returns.
+    if not __zj_claim_attach $ZELLIJ_DEFAULT_SESSION
+        return 0
+    end
     if __zj_is_truthy "$ZELLIJ_EXIT_ON_DETACH"
+        # ponytail: exec replaces this shell, so the marker clears only on
+        # next login ($XDG_RUNTIME_DIR reset), not on detach.
         exec zellij attach -c $ZELLIJ_DEFAULT_SESSION
     else
         zellij attach -c $ZELLIJ_DEFAULT_SESSION
+        __zj_release_attach $ZELLIJ_DEFAULT_SESSION
     end
 end
 
@@ -196,7 +217,6 @@ end
 # this automatically the way tmux's set-hook can.
 function __zellij_update_gpg_tty --on-event fish_prompt
     command -q gpg-connect-agent; or return 0
-
     set -l current_tty (tty 2>/dev/null); or return 0
     if test "$current_tty" != "$GPG_TTY"
         set -gx GPG_TTY "$current_tty"
