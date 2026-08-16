@@ -11,6 +11,7 @@ auto_switch = false
 version_check = false
 
 [ui]
+sidebar_collapsed_mode = "hidden"
 sidebar_start_collapsed = true
 confirm_close = false
 prompt_new_tab_name = false
