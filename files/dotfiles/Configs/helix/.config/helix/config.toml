@@ -9,12 +9,20 @@ auto-format = true
 render = true
 character = "│"
 skip-levels = 1
-
+[editor.file-picker]
+git-ignore = true
+git-global = false
+hidden = false
 [editor.cursor-shape]
 insert = "bar"
 normal = "block"
 select = "underline"
-
 [editor.lsp]
 display-inlay-hints = true
 auto-signature-help = true
+
+[keys.normal]
+# Toggle hidden files visibility
+C-h = ":toggle file-picker.hidden"
+# Toggle gitignore visibility
+C-t = ":toggle file-picker.git-ignore"
