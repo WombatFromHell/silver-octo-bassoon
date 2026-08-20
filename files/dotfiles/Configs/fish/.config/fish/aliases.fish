@@ -44,6 +44,10 @@ if command -q bat
     alias pcat='cat -P'
 end
 
+if command -q mise
+    alias mpi='PI_LOCAL_MODELS=1 mise run pi'
+end
+
 alias e='edit.sh'
 alias edit='$EDITOR'
 alias vi='$EDITOR'
