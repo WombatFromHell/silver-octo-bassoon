@@ -122,49 +122,65 @@ setup_signal_handlers() {
 # ── Monitor Detection ────────────────────────────────────────────────────────
 
 detect_gamescope_profile_niri() {
-  command -v niri &>/dev/null || return 1
-  command -v jq &>/dev/null || {
-    log_warn "jq not found; skipping monitor detection"
-    return 1
-  }
+  for cmd in niri jq; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      log_warn "$cmd not found; skipping monitor detection"
+      return 1
+    fi
+  done
 
-  LG_C1_CONNECTED=0
-  local active_output=""
-  local attempt=0
-
-  # ponytail: niri msg -j outputs returns an object (not array) with no
-  # .connected field — key presence = connected. Retry loop absorbs UTH handoff.
+  local prefix="" attempt=0
+  # Both DP and HDMI outputs may be simultaneously active with non-null
+  # current_mode. Identify the LG C1 TV by its EDID model string rather
+  # than relying on connection state or connector name priority alone.
   while ((attempt < 3)); do
-    active_output="$(niri msg -j outputs 2>/dev/null | jq -r '
-      keys |
-      if any(startswith("HDMI-A-")) then "HDMI-A-1"
-      elif any(startswith("DP-")) then "DP-1"
-      else empty
-      end
-    ' 2>/dev/null)" && [[ -n "$active_output" ]] && break
-
+    if prefix="$(niri msg -j outputs 2>/dev/null | jq -r '
+      to_entries
+      | map(select(.value.current_mode != null))
+      | if any(.value.model | test("SSCR2|C1|OLED"; "i")) then "HDMI-A"
+        elif any(.key | startswith("DP-")) then "DP"
+        else empty end
+    ' 2>/dev/null)" && [[ -n "$prefix" ]]; then
+      break
+    fi
     ((attempt++))
     sleep 0.5
   done
 
-  if [[ -z "$active_output" ]]; then
-    local connected_names
-    connected_names="$(niri msg -j outputs 2>/dev/null | jq -r 'keys | join(", ")' 2>/dev/null)"
-    log_warn "No known monitor after ${attempt} attempts (connected: ${connected_names:-none}); using default gamescope args"
-    return 1
-  fi
-
-  case "$active_output" in
-  HDMI-A-1)
+  LG_C1_CONNECTED=0
+  case "$prefix" in
+  HDMI-A)
     LG_C1_CONNECTED=1
-    GAMESCOPE_ARGS=(-p "std,vsr4k,hdr" -e)
-    log_info "Detected HDMI-A-* → 4K HDR profile"
+    GAMESCOPE_ARGS=(-p "std,hdr" -e)
+    log_info "Detected LG TV → HDR profile"
     ;;
-  DP-1)
+  DP)
     GAMESCOPE_ARGS=(-p std -e)
-    log_info "Detected DP-* → SDR profile"
+    log_info "Detected DP monitor (no TV) → SDR profile"
+    ;;
+  *)
+    local active_names
+    active_names="$(niri msg -j outputs 2>/dev/null | jq -r '
+      to_entries
+      | map(select(.value.current_mode != null))
+      | map("\(.key) [\(.value.model)]")
+      | join(", ")
+    ' 2>/dev/null)"
+    log_warn "No known monitor after ${attempt} attempts (active: ${active_names:-none}); using default gamescope args"
+    GAMESCOPE_ARGS=(-p fallback -e)
+    return 1
     ;;
   esac
+}
+
+# ponytail: yes/no check only — doesn't report which device IDs, just whether
+# both an integrated and a discrete Vulkan device are present. Use vulkaninfo
+# --summary manually (see earlier answer) if you need the actual device IDs.
+has_hybrid_graphics() {
+  command -v vulkaninfo &>/dev/null || return 1
+  local types
+  types="$(vulkaninfo --summary 2>/dev/null | grep -oP 'deviceType\s*=\s*PHYSICAL_DEVICE_TYPE_\K\w+')"
+  grep -q '^DISCRETE_GPU$' <<<"$types" && grep -q '^INTEGRATED_GPU$' <<<"$types"
 }
 
 # ── Session Cleanup ──────────────────────────────────────────────────────────
@@ -340,6 +356,7 @@ main() {
   WRAPPERS=()
   GAMESCOPE_PATH=""
   GAMESCOPE_ARGS=()
+  LG_C1_CONNECTED=""
 
   STEAM="$(command -v bazzite-steam || command -v steam)" || {
     log_error "Couldn't find 'steam'!"
@@ -370,6 +387,7 @@ main() {
     # ponytail: detect first (sets base profile), then append user args + terminator.
     # Detection failure leaves GAMESCOPE_ARGS empty → fallback below handles it.
     detect_gamescope_profile_niri || true
+    has_hybrid_graphics && extra_args+=(-p prime)
     GAMESCOPE_ARGS+=("${extra_args[@]}" --)
     [[ ${#GAMESCOPE_ARGS[@]} -eq 0 ]] && GAMESCOPE_ARGS=(--)
     WRAPPERS=()
