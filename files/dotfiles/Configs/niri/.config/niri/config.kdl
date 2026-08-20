@@ -76,11 +76,14 @@ animations {
 workspace "main" {
 
 }
+workspace "gaming" {
+
+}
+workspace "gamescope2" {
+    open-on-output "HDMI-A-2"
+}
 workspace "gamescope" {
     open-on-output "HDMI-A-1"
-}
-workspace "gaming" {
-    open-on-output "DP-1"
 }
 // https://yalter.github.io/niri/Configuration:-Window-Rules
 window-rule {
@@ -102,6 +105,7 @@ window-rule {
 window-rule {
     match app-id="steam_app_default"
     open-on-workspace "gaming"
+    open-focused true
 }
 // matches for gamescope on HDMI-A-1>DP-1
 window-rule {
@@ -115,6 +119,13 @@ window-rule {
     open-fullscreen true
     open-focused true
     open-on-workspace "gamescope"
+}
+window-rule {
+    // prefer HDMI-A-2 over HDMI-A-1 (if it exists)
+    match app-id="gamescope"
+    open-fullscreen true
+    open-focused true
+    open-on-workspace "gamescope2"
 }
 // Open the Firefox picture-in-picture player as floating by default.
 window-rule {
@@ -157,11 +168,11 @@ window-rule {
     open-floating true
 }
 window-rule {
-    match app-id="org.kde.dolphin" title="^Copying — Dolphin"
+    match app-id="org.kde.dolphin" title="^Copying (.*) — Dolphin"
     open-floating true
 }
 window-rule {
-    match app-id="org.kde.dolphin" title="^Moving — Dolphin"
+    match app-id="org.kde.dolphin" title="^Moving (.*) — Dolphin"
     open-floating true
 }
 window-rule {
@@ -188,6 +199,7 @@ binds {
     }
     Mod+Alt+T hotkey-overlay-title="Open a Terminal" {
         spawn "ghostty"
+ // spawn "kitty"
     }
     Mod+Alt+B hotkey-overlay-title="Open Browser" {
         spawn "spawn-browser.sh"
@@ -571,4 +583,3 @@ binds {
 include "dms/cursor.kdl"
 include "dms/binds.kdl"
 include "dms/outputs.kdl"
-
