@@ -125,6 +125,8 @@ detect_gamescope_profile_niri() {
   for cmd in niri jq; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       log_warn "$cmd not found; skipping monitor detection"
+      LG_C1_CONNECTED=0
+      GAMESCOPE_ARGS=(-p fallback -e)
       return 1
     fi
   done
@@ -143,7 +145,7 @@ detect_gamescope_profile_niri() {
     ' 2>/dev/null)" && [[ -n "$prefix" ]]; then
       break
     fi
-    ((attempt++))
+    attempt=$((attempt + 1))
     sleep 0.5
   done
 
@@ -223,10 +225,11 @@ build_steam_command() {
   # Pre-launch wrappers (extensible extension point)
   # ponytail: elements are word-split on $IFS; arguments containing
   # spaces are not supported — use simple flag-style args only
+  local wrapper wrapper_bin wrapper_args
   for wrapper_str in "${WRAPPERS[@]}"; do
     read -ra wrapper <<<"$wrapper_str"
-    local wrapper_bin="${wrapper[0]:-}"
-    local wrapper_args=("${wrapper[@]:1}")
+    wrapper_bin="${wrapper[0]:-}"
+    wrapper_args=("${wrapper[@]:1}")
 
     command -v "$wrapper_bin" &>/dev/null || continue
     STEAM_CMD+=("$wrapper_bin" "${wrapper_args[@]}")
@@ -266,7 +269,7 @@ run_session() {
   setup_signal_handlers
 
   shutdown_if_allowed "$mode"
-  acquire_lock true
+  acquire_lock
   launch_steam
   cleanup_lock_files
 }
@@ -287,11 +290,7 @@ cleanup_lock_files() {
     "${XDG_RUNTIME_DIR:-}/bazzite-steam-nested.lock"
 }
 
-# ponytail: `quiet` suppresses the final error notification — used when
-# contention is expected (e.g., we just killed Steam via the replacement
-# matrix in shutdown_if_allowed and the peer's lock hasn't released yet).
 acquire_lock() {
-  local quiet="${1:-false}"
   open_lock_fd
 
   # Fast path: lock acquired immediately
@@ -307,33 +306,25 @@ acquire_lock() {
     return 0
   fi
 
-  # ponytail: 5s favors the fast natural release after we kill Steam in main();
-  # bump to 15s if unrelated-process handoff becomes common.
+  # ponytail: 5s covers the peer's graceful teardown after a replacement-matrix
+  # kill; bump to 15s if unrelated-process handoff becomes common.
   log_info "Lock held by another session — waiting (5s timeout)..."
   wait_lock 5 && return 0
 
-  if ! $quiet; then
-    log_error "Could not acquire lock after 5s"
-  fi
+  log_error "Could not acquire lock after 5s"
   return 1
 }
 
 # ── Plain Mode ───────────────────────────────────────────────────────────────
 
 run_plain() {
-  local steam_script
-  steam_script="$(command -v bazzite-steam || command -v steam)" || {
-    log_error "Couldn't find 'steam'!"
-    exit 1
-  }
-
   if [[ "${SKIP_RESTART:-}" == "1" ]] && is_steam_running; then
     log_info "Steam already running and SKIP_RESTART=1 — leaving existing session alone"
     return 0
   fi
 
   shutdown_if_allowed "plain"
-  exec "$steam_script" "${STEAM_ARGS[@]}" "$@"
+  exec "$STEAM" "${STEAM_ARGS[@]}" "$@"
 }
 
 # ── Main Execution ───────────────────────────────────────────────────────────
@@ -384,12 +375,12 @@ main() {
       log_error "Missing gamescope dependency!"
       exit 1
     }
-    # ponytail: detect first (sets base profile), then append user args + terminator.
-    # Detection failure leaves GAMESCOPE_ARGS empty → fallback below handles it.
+    # ponytail: detect first (always sets a base profile; falls back to
+    # `-p fallback -e` on any detection failure), then user args + terminator.
     detect_gamescope_profile_niri || true
-    has_hybrid_graphics && extra_args+=(-p prime)
-    GAMESCOPE_ARGS+=("${extra_args[@]}" --)
-    [[ ${#GAMESCOPE_ARGS[@]} -eq 0 ]] && GAMESCOPE_ARGS=(--)
+    GAMESCOPE_ARGS+=("${extra_args[@]}")
+    has_hybrid_graphics && GAMESCOPE_ARGS+=(-p prime)
+    GAMESCOPE_ARGS+=(--)
     WRAPPERS=()
     ((LG_C1_CONNECTED)) && WRAPPERS+=(
       "$HOME/.local/bin/scripts/lgc1-wol.py --"
