@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+  #!/usr/bin/env bash
 
 set -euo pipefail
 
@@ -8,21 +8,17 @@ FALLBACK="${FALLBACK:-nvim}"
 
 main() {
   local editor=""
-  local preferred_list=("$PREFERRED")
-  local fallback_list=("$FALLBACK" "vi" "nano")
+  local editors=("$PREFERRED" "$FALLBACK" "vi" "nano")
 
-  # Check for preferred editors
-  for editor_cmd in "${preferred_list[@]}"; do
+  for editor_cmd in "${editors[@]}"; do
     if editor=$(command -v "$editor_cmd" 2>/dev/null); then
       export EDITOR="$editor"
-      exec "$editor" "$@"
-    fi
-  done
-
-  # Try fallbacks
-  for editor_cmd in "${fallback_list[@]}"; do
-    if editor=$(command -v "$editor_cmd" 2>/dev/null); then
-      export EDITOR="$editor"
+      if [ -n "${TMUX:-}" ]; then
+        # ponytail: tmux >=3.2 takes multiple args and handles quoting itself
+        exec tmux new-window "$editor" "$@"
+      elif [ -n "${ZELLIJ:-}" ]; then
+        exec zellij action new-tab --close-on-exit -- "$editor" "$@"
+      fi
       exec "$editor" "$@"
     fi
   done

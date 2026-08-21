@@ -2,25 +2,39 @@
 show_hidden = true
 
 [opener]
-smart_edit = [
-  { run = '~/.config/yazi/edit.sh "$@"', block = true, desc = "Smart edit (tmux/zellij/hx)" },
-]
+smart_edit = [{ run = 'edit.sh %s', desc = "Smart edit (tmux/zellij)" }]
 
 edit_tmux = [
-  { run = 'tmux new-window -t main -- "$EDITOR" "$@"', block = true, desc = "Edit via tmux" },
+  { run = 'tmux new-window -t main -- $EDITOR %s', desc = "Edit via tmux" },
 ]
 
 edit_zellij = [
-  { run = 'zellij action new-tab --close-on-exit -- "$EDITOR" "$@"', block = true, desc = "Edit via zellij" },
+  { run = 'zellij action new-tab --close-on-exit -- $EDITOR %s', desc = "Edit via zellij" },
 ]
 
-edit_helix = [
-  { run = 'hx "$@"', block = true, desc = "Edit via Helix" },
-]
+edit_editor = [{ run = '$EDITOR "%s"', desc = "Edit via Helix" }]
 
 [open]
 rules = [
-  { mime = "text/*", use = ["smart_edit", "edit"] },
-  { mime = "application/javascript", use = ["smart_edit", "edit"] },
-  { mime = "application/json", use = ["smart_edit", "edit"] },
+  { mime = "text/*", use = [
+    "smart_edit",
+    "edit_tmux",
+    "edit_zellij",
+    "edit_helix",
+    "edit_editor",
+  ] },
+  { mime = "application/javascript", use = [
+    "smart_edit",
+    "edit_tmux",
+    "edit_zellij",
+    "edit_helix",
+    "edit_editor",
+  ] },
+  { mime = "application/json", use = [
+    "smart_edit",
+    "edit_tmux",
+    "edit_zellij",
+    "edit_helix",
+    "edit_editor",
+  ] },
 ]

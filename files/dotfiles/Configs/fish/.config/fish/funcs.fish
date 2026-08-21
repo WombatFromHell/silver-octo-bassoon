@@ -93,7 +93,10 @@ function snap_clean_full
 end
 
 function set_editor
-    if command -s nvim >/dev/null
+    if command -s edit.sh >/dev/null
+        set -gx EDITOR edit.sh
+        set -gx VISUAL edit.sh
+    else if command -s nvim >/dev/null
         set -gx EDITOR nvim
         set -gx VISUAL nvim
     else if command -s hx >/dev/null
