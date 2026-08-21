@@ -24,22 +24,22 @@ input {
     mouse {
         accel-profile "flat"
     }
- // warp-mouse-to-focus
+    // warp-mouse-to-focus
     // Focus windows and outputs automatically when moving the mouse into them.
     // Setting max-scroll-amount="0%" makes it work only on windows already fully on screen.
-    // focus-follows-mouse max-scroll-amount="0%"
+    focus-follows-mouse max-scroll-amount="10%"
 }
 layout {
-    gaps 4
+    gaps 6
     // default-column-display "tabbed"
     // You can customize the widths that "switch-preset-column-width" (Mod+R) toggles between.
     preset-column-widths {
+        proportion 0.25
         proportion 0.33333
         proportion 0.5
-        proportion 0.66667
     }
     default-column-width {
-        proportion 0.5
+        proportion 0.33333
     }
     tab-indicator {
         position "top"
