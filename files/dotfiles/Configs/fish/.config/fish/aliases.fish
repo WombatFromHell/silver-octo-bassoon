@@ -55,7 +55,6 @@ alias vim='$EDITOR'
 alias nv='$EDITOR'
 alias lg='lazygit'
 alias lpod='lazydocker'
-alias sedit='sudo -E $EDITOR'
 alias mkdir='mkdir -pv'
 
 alias update-kitty='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=nightly'

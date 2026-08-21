@@ -13,11 +13,15 @@ main() {
   for editor_cmd in "${editors[@]}"; do
     if editor=$(command -v "$editor_cmd" 2>/dev/null); then
       export EDITOR="$editor"
-      if [ -n "${TMUX:-}" ]; then
-        # ponytail: tmux >=3.2 takes multiple args and handles quoting itself
-        exec tmux new-window "$editor" "$@"
-      elif [ -n "${ZELLIJ:-}" ]; then
-        exec zellij action new-tab --close-on-exit -- "$editor" "$@"
+      # ponytail: as root (e.g. via sudoe/sedit) TMUX is inherited but the
+      # new-window would run as the tmux owner, not root — so exec directly.
+      if [ "$(id -u)" -ne 0 ]; then
+        if [ -n "${TMUX:-}" ]; then
+          # ponytail: tmux >=3.2 takes multiple args and handles quoting itself
+          exec tmux new-window "$editor" "$@"
+        elif [ -n "${ZELLIJ:-}" ]; then
+          exec zellij action new-tab --close-on-exit -- "$editor" "$@"
+        fi
       fi
       exec "$editor" "$@"
     fi

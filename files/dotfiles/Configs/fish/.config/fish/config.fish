@@ -27,7 +27,6 @@ if status is-interactive
     set -g fish_greeting # disable initial fish greeting
     set -gx SHELL $(command -v fish) # ensure fish can run inside multiplexers
     bootstrap_fisher # make sure fisher is installed
-
     set_editor
     setup_podman_sock
 

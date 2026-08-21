@@ -313,7 +313,8 @@ if command -q gpg-connect-agent
 end
 
 function sudoe --description "sudo with preserved PATH and Fish function support"
-    # Build a PATH that ensures Nix binaries come first, then deduplicate
+    # Build a PATH that ensures Nix binaries come first, then deduplicate.
+    # Preserves the caller's user PATH so user scripts/binaries resolve as root.
     set -l nix_bin $HOME/.nix-profile/bin
     set -l merged_path $nix_bin
     for dir in (string split : $PATH)
@@ -329,41 +330,22 @@ function sudoe --description "sudo with preserved PATH and Fish function support
         return
     end
 
-    # Split argv into sudo options vs. command args on the "--" delimiter.
-    # If no "--" is present, treat everything as the command (no sudo options).
-    set -l sudo_opts
-    set -l cmd_args
-    set -l past_delimiter false
-    for arg in $argv
-        if test "$arg" = --
-            set past_delimiter true
-            continue
-        end
-        if $past_delimiter
-            set -a cmd_args $arg
-        else
-            set -a sudo_opts $arg
-        end
-    end
-    if not $past_delimiter
-        set cmd_args $sudo_opts
-        set sudo_opts
-    end
-
+    # ponytail: no sudo-opts parsing; call sudo directly for non-root targets.
     # -E preserves the caller's environment; we override PATH explicitly so
     # Nix and the current shell's PATH are visible to the privileged process.
-    set -l sudo_prefix sudo -E $sudo_opts env PATH=$env_path
+    set -l sudo_prefix sudo -E env PATH=$env_path
 
     # If the command is a Fish function/alias it won't exist as a binary, so
     # we must re-enter Fish to expand it. Otherwise exec it directly (safer,
     # no quoting edge-cases).
-    if functions -q -- $cmd_args[1]
-        # Escape each argument individually so spaces/special chars survive
-        # the transition from a list into a -c string.
-        set -l escaped (string escape -- $cmd_args)
-        set -l fish_cmd (string join ' ' $escaped)
+    if functions -q -- $argv[1]
+        set -l fish_cmd (string join ' ' (string escape -- $argv))
         command $sudo_prefix fish -c $fish_cmd
     else
-        command $sudo_prefix $cmd_args
+        command $sudo_prefix $argv
     end
+end
+
+function sedit
+    sudoe $EDITOR $argv
 end
