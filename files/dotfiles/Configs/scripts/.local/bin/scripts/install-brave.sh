@@ -6,7 +6,7 @@ set -euo pipefail
 # CONFIGURATION
 #==============================================================================
 CONTAINER_NAME="${CONTAINER_NAME:-bravebox}"
-CONTAINER_IMAGE="${CONTAINER_IMAGE:-fedora:44}"
+CONTAINER_IMAGE="${CONTAINER_IMAGE:-ghcr.io/ultramarine-linux/ultramarine:44}"
 DBX_USE_ROOT="false"
 DBX_EXPORT_APP="brave-browser"
 
