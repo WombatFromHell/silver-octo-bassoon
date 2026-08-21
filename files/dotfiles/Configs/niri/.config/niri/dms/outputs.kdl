@@ -9,9 +9,9 @@ output "Dell Inc. AW3426DW 4JSLXH4" {
     layout {
         default-column-width { proportion 0.333333; }
         preset-column-widths {
-            proportion 0.25
             proportion 0.333333
             proportion 0.5
+            proportion 0.666666
         }
     }
 }
