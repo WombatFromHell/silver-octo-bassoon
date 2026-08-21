@@ -48,6 +48,14 @@ find_browser() {
     fi
   done
 
+  # Priority 3: Inside the distrobox container
+  # ponytail: only checks brave-browser — the only pkg install-brave.sh installs
+  if command -v distrobox-enter &>/dev/null &&
+    distrobox-enter -n "$CONTAINER_NAME" -- bash -c 'command -v brave-browser' &>/dev/null; then
+    echo "brave-browser"
+    return 0
+  fi
+
   return 1
 }
 
@@ -157,6 +165,28 @@ _update_strategy_dnf() {
   return "$actual_rc"
 }
 
+# --- Update Strategy: DNF (Distrobox) ---
+_update_strategy_distrobox() {
+  local target="$1"
+  echo "Checking for ${target} updates in ${CONTAINER_NAME}..."
+
+  local out rc=0
+  # ponytail: single idempotent upgrade, skips dnf's check-update/exit-100 dance
+  out=$(distrobox-enter -n "$CONTAINER_NAME" -- sudo dnf upgrade -y "$target" </dev/null 2>&1) || rc=$?
+
+  if [[ $rc -eq 0 ]]; then
+    echo "$out"
+    # ponytail: dnf prints "Nothing to do." on success-with-no-changes; only notify on a real upgrade
+    if [[ "$out" != *"Nothing to do"* ]]; then
+      notify "Update Available" "${target} was upgraded. Restart the browser to apply updates."
+    fi
+    return 0
+  fi
+  echo "$out" >&2
+  notify "Upgrade Failed" "Failed to upgrade ${target}." "critical"
+  return "$rc"
+}
+
 # --- Unified Update Interface (The Context) ---
 perform_browser_update() {
   local strategy="${1}" # 'flatpak' or 'dnf'
@@ -165,6 +195,7 @@ perform_browser_update() {
   case "$strategy" in
   flatpak) _update_strategy_flatpak "$target" ;;
   dnf | direct) _update_strategy_dnf "$target" ;;
+  distrobox) _update_strategy_distrobox "$target" ;;
   *)
     echo "Unknown update strategy: $strategy" >&2
     return 1
@@ -234,6 +265,8 @@ main() {
 
   local launch_method
   launch_method=$(determine_launch_method "$flatpak_status" "$container_status")
+  # Container install: route background updates into the container, not host dnf
+  [[ "$launch_method" == "distrobox" ]] && pkg_method="distrobox"
 
   # 3. Execution (Background Update if not running 'direct')
   if [[ "$launch_method" != "direct" ]]; then
