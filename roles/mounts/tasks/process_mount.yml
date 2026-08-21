@@ -4,7 +4,7 @@
     src_dir: "{{ role_path }}/files"
     mount_file: "{{ mount_item.path | basename }}"
     dst: "/etc/systemd/system"
-    os_type: "{{ os_release_id }}"
+    base_path: "{{ mounts_base_path }}"
     mode: "single_mount"
     state: "present"
   become: true

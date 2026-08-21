@@ -1,0 +1,11 @@
+---
+- name: "Check for ostree-based system (Silverblue/Bazzite/Kinoite/etc.)"
+  ansible.builtin.stat:
+    path: /run/ostree-booted
+  register: mounts_ostree_check
+  tags: [extra, mounts, always]
+
+- name: "Set base mount prefix fact"
+  ansible.builtin.set_fact:
+    mounts_base_path: "{{ mounts_ostree_check.stat.exists | ternary('/var/mnt', '/mnt') }}"
+  tags: [extra, mounts, always]

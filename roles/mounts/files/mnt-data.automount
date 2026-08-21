@@ -1,8 +1,0 @@
-[Unit]
-Description=Automount Optional "data" Disk Mount
-
-[Automount]
-Where=/mnt/data
-
-[Install]
-WantedBy=multi-user.target

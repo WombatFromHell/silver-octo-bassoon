@@ -1,0 +1,12 @@
+[Unit]
+Description=Data1 XFS filesystem
+Before=local-fs.target
+
+[Mount]
+What=/dev/disk/by-uuid/b2776290-dd5b-4577-9021-6b2db4c8fcc2
+Where=/mnt/data1
+Type=xfs
+Options=noatime,logbsize=256k,noquota
+
+[Install]
+WantedBy=local-fs.target

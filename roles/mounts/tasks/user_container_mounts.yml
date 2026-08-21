@@ -1,0 +1,94 @@
+---
+- name: "Get passwd info for container-bind users"
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ item }}"
+  loop: "{{ mounts_user_container_binds }}"
+  loop_control:
+    label: "{{ item }}"
+
+# ponytail: derive the unit name from the real (symlink-free) home path;
+# systemd rejects a Where= that traverses a symlink (e.g. /home -> /var/home)
+- name: "Resolve canonical container mount unit names"
+  ansible.builtin.set_fact:
+    mounts_container_units: >-
+      {{ mounts_container_units | default({}) | combine({
+        item: ((ansible_facts.getent_passwd[item][4] | realpath) ~ '/.local/share/containers')
+               | regex_replace('^/', '') | regex_replace('/', '-') ~ '.mount'
+      }) }}
+  loop: "{{ mounts_user_container_binds }}"
+  loop_control:
+    label: "{{ item }}"
+
+# ponytail: this bind is a system unit because mounting requires root; clear out
+# the old user-scope units (incl. the symlink-rejected home-josh-*.mount) so they
+# stop being pulled in by default.target
+- name: "Find stale user-scope container mount units"
+  ansible.builtin.find:
+    paths: "{{ ansible_facts.getent_passwd[item][4] | realpath }}/.config/systemd/user"
+    patterns: ["*local-share-containers.mount"]
+    recurse: true
+  loop: "{{ mounts_user_container_binds }}"
+  loop_control:
+    label: "{{ item }}"
+  register: mounts_stale_user_units
+  become: true
+
+- name: "Remove stale user-scope container mount units"
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ mounts_stale_user_units.results | map(attribute='files') | flatten }}"
+  loop_control:
+    label: "{{ item.path }}"
+  become: true
+
+- name: "Ensure container bind source directory exists"
+  ansible.builtin.file:
+    path: "{{ mounts_base_path }}/data1/user-containers/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ mounts_user_container_binds }}"
+  loop_control:
+    label: "{{ item }}"
+  become: true
+
+- name: "Ensure container bind target directory exists"
+  ansible.builtin.file:
+    path: "{{ ansible_facts.getent_passwd[item][4] | realpath }}/.local/share/containers"
+    state: directory
+    owner: "{{ item }}"
+    group: "{{ item }}"
+    mode: "0755"
+  loop: "{{ mounts_user_container_binds }}"
+  loop_control:
+    label: "{{ item }}"
+  become: true
+
+- name: "Install container bind mount unit (system)"
+  ansible.builtin.template:
+    src: user-containers.mount.j2
+    dest: "/etc/systemd/system/{{ mounts_container_units[item] }}"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    user_info:
+      # ponytail: realpath so Where= is canonical (systemd rejects /home -> /var/home symlink)
+      home: "{{ ansible_facts.getent_passwd[item][4] | realpath }}"
+    mount_source: "{{ mounts_base_path }}/data1/user-containers/{{ item }}"
+  loop: "{{ mounts_user_container_binds }}"
+  loop_control:
+    label: "{{ item }}"
+  become: true
+
+- name: "Enable and start container bind mount"
+  ansible.builtin.systemd:
+    name: "{{ mounts_container_units[item] }}"
+    daemon_reload: true
+    enabled: true
+    state: started
+  loop: "{{ mounts_user_container_binds }}"
+  loop_control:
+    label: "{{ item }}"
+  become: true

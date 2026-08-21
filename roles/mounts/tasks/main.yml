@@ -8,42 +8,36 @@
 # WARNING: This role modifies /etc/fstab and can affect system boot
 # Always run with --check first to review planned changes
 - name: Setup external filesystem mounts
-  tags: [extra, mounts, mounts_automount, mounts_swap, mounts_remove, mounts_creds]
+  tags:
+    [extra, mounts, mounts_automount, mounts_remove, mounts_creds]
   block:
+    - name: "Detect environment and set mounts_base_path"
+      ansible.builtin.import_tasks: detect_env.yml
+
     - name: "Find .mount files in role files directory"
       ansible.builtin.find:
         paths: "{{ role_path }}/files"
         patterns: "*.mount"
       register: mounts_mount_files
 
-    - name: "Find .swap files in role files directory"
-      ansible.builtin.find:
-        paths: "{{ role_path }}/files"
-        patterns: "*.swap"
-      register: mounts_swap_files
+- name: "Include remove-existing task"
+  tags: [extra, mounts, mounts_remove]
+  ansible.builtin.import_tasks: remove_existing.yml
 
-    - name: "Include remove-existing task"
-      tags: [extra, mounts, mounts_remove]
-      ansible.builtin.import_tasks: remove_existing.yml
+- name: "Process each .mount file"
+  ansible.builtin.include_tasks: process_mount.yml
+  tags: [extra, mounts, mounts_automount]
+  when: mounts_mount_files.files | length > 0
+  loop: "{{ mounts_mount_files.files }}"
+  loop_control:
+    loop_var: mount_item
+    label: "Processing {{ mount_item.path | basename }}"
 
-    - name: "Process each .mount file"
-      ansible.builtin.include_tasks: process_mount.yml
-      tags: [extra, mounts, mounts_automount]
-      when: mounts_mount_files is defined and mounts_mount_files | length > 0
-      loop: "{{ mounts_mount_files.files }}"
-      loop_control:
-        loop_var: mount_item
-        label: "Processing {{ mount_item.path | basename }}"
+- name: "Process user-level container bind mounts"
+  ansible.builtin.import_tasks: user_container_mounts.yml
+  tags: [extra, mounts, mounts_user_containers]
+  when: mounts_user_container_binds is defined and mounts_user_container_binds | length > 0
 
-    - name: "Process each .swap file"
-      ansible.builtin.include_tasks: process_swap.yml
-      tags: [extra, mounts, mounts_swap]
-      when: mounts_swap_files is defined and mounts_swap_files | length > 0
-      loop: "{{ mounts_swap_files.files }}"
-      loop_control:
-        loop_var: swap_item
-        label: "Processing {{ swap_item.path | basename }}"
-
-    - name: "Install SMB creds file"
-      ansible.builtin.import_tasks: creds.yml
-      tags: [extra, mounts, mounts_creds]
+- name: "Install SMB creds file"
+  ansible.builtin.import_tasks: creds.yml
+  tags: [extra, mounts, mounts_creds]

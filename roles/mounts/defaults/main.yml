@@ -1,10 +1,8 @@
 ---
 # Default values for mounts role
 
-# Mount configuration files directory
-mounts_files_dir: "{{ role_path }}/files"
+mounts_data1_path: "{{ mounts_base_path }}/data1"
 
-# Feature toggles
-enable_automount: true
-enable_swap: true
-enable_creds: true
+# Users whose container storage gets a bind from data1/user-containers/<user>;
+# defaults to the connecting user. Override per-host via host_vars if needed.
+mounts_user_container_binds: ["{{ ansible_user_id }}"]

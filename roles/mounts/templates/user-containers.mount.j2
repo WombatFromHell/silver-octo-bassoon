@@ -1,0 +1,12 @@
+[Unit]
+Description=Bind mount for {{ item }}'s container storage
+RequiresMountsFor={{ mounts_data1_path }}
+
+[Mount]
+What={{ mount_source }}
+Where={{ user_info.home }}/.local/share/containers
+Type=none
+Options=bind
+
+[Install]
+WantedBy=default.target
