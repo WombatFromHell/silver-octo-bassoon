@@ -157,7 +157,7 @@ detect_gamescope_profile_niri() {
     log_info "Detected LG TV → HDR profile"
     ;;
   DP)
-    GAMESCOPE_ARGS=(-p std -e)
+    GAMESCOPE_ARGS=(-p wstd -e)
     log_info "Detected DP monitor (no TV) → SDR profile"
     ;;
   *)
