@@ -51,11 +51,10 @@
       "width": 50
     }
   ],
-  "showWorkspaceIndex": true,
-  "showWorkspaceName": true,
   "showWorkspaceApps": true,
   "workspaceDragReorder": false,
   "maxWorkspaceIcons": 5,
+  "workspaceAppIconSizeOffset": 4,
   "workspaceOccupiedColorMode": "sch",
   "workspaceFocusedBorderColor": "surfaceText",
   "appIdSubstitutions": [],

@@ -30,21 +30,21 @@ input {
     focus-follows-mouse max-scroll-amount="10%"
 }
 layout {
-    gaps 6
+    gaps 4
     // default-column-display "tabbed"
     // You can customize the widths that "switch-preset-column-width" (Mod+R) toggles between.
     preset-column-widths {
-        proportion 0.25
-        proportion 0.33333
+        proportion 0.333333
         proportion 0.5
+        proportion 0.666666
     }
     default-column-width {
-        proportion 0.33333
+        proportion 0.5
     }
     tab-indicator {
         position "top"
         width 4
-        gap 5
+        gap 4
         gaps-between-tabs 2
         corner-radius 6
         length total-proportion=0.25
@@ -80,9 +80,11 @@ workspace "gaming" {
 
 }
 workspace "gamescope2" {
+    // cover iGPU HDMI port
     open-on-output "HDMI-A-2"
 }
 workspace "gamescope" {
+    // cover dGPU HDMI port
     open-on-output "HDMI-A-1"
 }
 // https://yalter.github.io/niri/Configuration:-Window-Rules
@@ -198,8 +200,8 @@ binds {
         spawn "dms" "ipc" "call" "spotlight" "toggle"
     }
     Mod+Alt+T hotkey-overlay-title="Open a Terminal" {
-        spawn "ghostty"
- // spawn "kitty"
+        // spawn "ghostty"
+        spawn "kitty"
     }
     Mod+Alt+B hotkey-overlay-title="Open Browser" {
         spawn "spawn-browser.sh"
