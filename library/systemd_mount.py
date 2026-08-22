@@ -65,26 +65,38 @@ def manage_systemd_units(module, units, enable=True, start=True):
                 if result["changed"]:
                     changed = True
 
-        if start and not unit.endswith(".automount"):
+        if not start:
+            continue
+
+        if unit.endswith(".automount"):
+            # Starting the .automount activates idle-mounting; the paired .mount
+            # must not be force-started (it's pulled in on access).
+            rc, stdout, stderr = module.run_command(
+                ["systemctl", "is-active", unit], check_rc=False
+            )
+            if rc != 0 or "active" not in stdout:
+                result = run_systemctl(module, "start", unit, check_rc=False)
+                if result["changed"]:
+                    changed = True
+        elif unit.endswith(".mount"):
             # Check if already running (or will be at next boot)
             # For mount units, check if the mount point exists instead
-            if unit.endswith(".mount"):
-                # Extract mount path from unit name
-                mount_path = "/" + unit.replace(".mount", "").replace("-", "/")
-                rc, stdout, stderr = module.run_command(
-                    ["findmnt", "--raw", "--noheadings", mount_path], check_rc=False
-                )
-                # If mount point doesn't exist, don't try to start (it's an automount scenario)
-                if rc != 0:
-                    continue
-            else:
-                rc, stdout, stderr = module.run_command(
-                    ["systemctl", "is-active", unit], check_rc=False
-                )
-                if rc != 0 or "active" not in stdout:
-                    result = run_systemctl(module, "start", unit, check_rc=False)
-                    if result["changed"]:
-                        changed = True
+            # Extract mount path from unit name
+            mount_path = "/" + unit.replace(".mount", "").replace("-", "/")
+            rc, stdout, stderr = module.run_command(
+                ["findmnt", "--raw", "--noheadings", mount_path], check_rc=False
+            )
+            # If mount point doesn't exist, don't try to start (it's an automount scenario)
+            if rc != 0:
+                continue
+        else:
+            rc, stdout, stderr = module.run_command(
+                ["systemctl", "is-active", unit], check_rc=False
+            )
+            if rc != 0 or "active" not in stdout:
+                result = run_systemctl(module, "start", unit, check_rc=False)
+                if result["changed"]:
+                    changed = True
 
     return changed
 
@@ -135,7 +147,9 @@ def remove_existing_mounts(module, src_dir, base_path):
     for pattern in ["*.mount", "*.automount"]:
         for src in glob.glob(os.path.join(src_dir, pattern)):
             with open(src, "r") as f_src:
-                _, new_basename = render_unit(f_src.read(), base_path, os.path.basename(src))
+                _, new_basename = render_unit(
+                    f_src.read(), base_path, os.path.basename(src)
+                )
             unit_path = os.path.join(dst, new_basename)
             if not os.path.exists(unit_path):
                 continue
@@ -144,10 +158,17 @@ def remove_existing_mounts(module, src_dir, base_path):
                 if unit_exists(module, new_basename):
                     if not check_mode:
                         if new_basename.endswith(".automount"):
-                            run_systemctl(module, "disable", f"--now {new_basename}", check_rc=False)
+                            run_systemctl(
+                                module,
+                                "disable",
+                                f"--now {new_basename}",
+                                check_rc=False,
+                            )
                         else:
                             run_systemctl(module, "stop", new_basename, check_rc=False)
-                            run_systemctl(module, "disable", new_basename, check_rc=False)
+                            run_systemctl(
+                                module, "disable", new_basename, check_rc=False
+                            )
                 if not check_mode:
                     os.remove(unit_path)
                 changed = True
