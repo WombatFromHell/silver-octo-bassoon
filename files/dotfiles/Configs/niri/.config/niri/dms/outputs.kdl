@@ -7,6 +7,7 @@ output "Dell Inc. AW3426DW 4JSLXH4" {
     variable-refresh-rate on-demand=true
 
     layout {
+        gaps 8
         default-column-width { proportion 0.333333; }
         preset-column-widths {
             proportion 0.333333
