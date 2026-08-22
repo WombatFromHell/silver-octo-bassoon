@@ -1,208 +1,214 @@
 # ---------------------------------------------------------
-# 1. Helper: Check Compressor & Determine Flags
+# archiver.fish — tar compression/extraction helpers
+#
+# fish has no `set -euo pipefail`; the equivalents used here:
+#   - every fallible call is guarded with `... or return 1`
+#   - pipelines end with the command whose failure matters
+#     (fish only reports the last pipeline member's status)
+# ---------------------------------------------------------
+
+# ---------------------------------------------------------
+# _tarchk COMP — resolve compressor, set global list _tarchk_cmd
 # ---------------------------------------------------------
 function _tarchk
-    # Default to pigz if no argument provided, otherwise use argument
-    set -l input_comp (test -n "$argv[1]"; and echo $argv[1]; or echo pigz)
-
-    switch $input_comp
-        case pigz gzip
+    switch "$argv[1]"
+        case pigz gzip ''
             if command -q pigz
-                # Best case: pigz exists
-                echo "pigz -9 --processes 0"
+                set -g _tarchk_cmd pigz -9 --processes 0
             else if command -q gzip
-                # Fallback: standard gzip
-                echo "gzip -9"
+                set -g _tarchk_cmd gzip -9
             else
-                # Critical failure: neither exists
+                echo "Error: neither pigz nor gzip found." >&2
                 return 1
             end
         case zstd
-            if command -q zstd
-                echo "zstd -15 --long=28 --threads=0"
-            else
+            if not command -q zstd
+                echo "Error: zstd not found." >&2
                 return 1
             end
+            set -g _tarchk_cmd zstd -15 --long=28 --threads=0
         case '*'
-            # Unknown compressor requested
+            echo "Error: unknown compressor '$argv[1]'." >&2
             return 1
     end
 end
 
 # ---------------------------------------------------------
-# 2. Helper: PV Wrapper (Progress Bar)
+# _tarcopen COMP ARCHIVE — decompress ARCHIVE to stdout
+# ---------------------------------------------------------
+function _tarcopen
+    _tarchk "$argv[1]" or return 1
+    $_tarchk_cmd -dc -- "$argv[2]"
+end
+
+# ---------------------------------------------------------
+# _use_pv [FILES...] — progress bar over stdin, total = size of FILES
+# (no FILES → indeterminate bar; no pv → silent passthrough)
 # ---------------------------------------------------------
 function _use_pv
-    # Check if pv is installed
-    if command -q pv
-        # Calculate total size of all paths passed as arguments
-        # Use 'du' to sum up bytes
-        set -l size (du -sb $argv 2>/dev/null | awk '{s+=$1} END{print s+0}')
-
-        if test "$size" -gt 0
-            pv -s $size -w 80 -B 1M
-        else
-            # Size unknown/0, use pv without size estimate
-            pv -w 80 -B 1M
-        end
-    else
-        # Fallback: pv not installed
+    if not command -q pv
         echo ":: 'pv' not found. Processing silently..." >&2
         cat
+        return
+    end
+    set -l size 0
+    if test (count $argv) -gt 0
+        # ponytail: du errors on non-files (e.g. tar opts passed through) are
+        # suppressed and simply don't contribute to the total
+        set size (du -sb -- $argv 2>/dev/null | awk '{s+=$1} END{print s+0}')
+    end
+    if test "$size" -gt 0
+        pv -s $size -w 80 -B 1M
+    else
+        pv -w 80 -B 1M
     end
 end
 
 # ---------------------------------------------------------
-# 3. Compress: tarc
-# Usage: tarc [pigz|zstd] [TAR_OPTS] OUTPUT_FILE PATHS...
+# Compress: tarc
+# Usage: tarc [pigz|zstd] OUTPUT_FILE [--gitignore] [TAR_OPTIONS...] PATHS...
+# Compressor is optional (defaults to pigz). Everything after
+# OUTPUT_FILE is passed straight to tar, so --exclude, --exclude-from,
+# --transform etc. work anywhere tar's own parser accepts them.
+#
+# --gitignore: the file list comes from git instead of tar's path args.
+# Archives exactly the files git tracks or would add (i.e. .gitignore is
+# honored by git itself — no --exclude-from needed). Requires a git
+# working tree in cwd and exactly one PATH, which names that cwd from
+# tar's point of view (e.g. -C ../ with PATH ./vllm).
 # ---------------------------------------------------------
 function tarc
-    if test (count $argv) -lt 3
-        echo "Usage: tarc COMPRESSOR [TAR_OPTIONS...] OUTPUT_FILE PATHS..." >&2
-        return 1
-    end
-
-    # Resolve compressor command string (e.g., "pigz -9...")
-    set -l comp_cmd_str (_tarchk $argv[1])
-
-    if test $status -ne 0
-        echo "Error: Compressor '$argv[1]' (or fallback) not found." >&2
-        return 1
-    end
-
-    # Shift args to remove compressor name
-    set argv $argv[2..-1]
-
-    # Logic to separate Output File from Input Paths
-    set -l outfile_idx 0
-    set -l outfile ""
-
+    set -l use_gitignore 0
     for i in (seq (count $argv))
-        # The first argument that doesn't start with '-' is our output file
-        if not string match -q -- '-*' $argv[$i]
-            set outfile_idx $i
-            set outfile $argv[$i]
+        if test "$argv[$i]" = --gitignore
+            set use_gitignore 1
+            set --erase argv[$i]
             break
         end
     end
-
-    if test $outfile_idx -eq 0
-        echo "Error: No output file specified" >&2
+    # ponytail: an output file literally named pigz/gzip/zstd would be
+    # misread as the compressor; don't name files like that
+    set -l comp pigz
+    switch "$argv[1]"
+        case pigz gzip zstd
+            set comp $argv[1]
+            set argv $argv[2..-1]
+    end
+    if test (count $argv) -lt 2
+        echo "Usage: tarc [COMPRESSOR] OUTPUT_FILE [TAR_OPTIONS...] PATHS..." >&2
         return 1
     end
-
-    # Extract tar options (everything before the output file)
-    set -l opts
-    if test $outfile_idx -gt 1
-        set opts $argv[1..(math $outfile_idx - 1)]
+    _tarchk $comp or return 1
+    set -l outfile $argv[1]
+    set -l rest $argv[2..-1]
+    mkdir -p -- (dirname -- $outfile)
+    # ponytail: fish reports only the last pipeline member's status, so a tar
+    # failure (e.g. zero members) still leaves a truncated $outfile; tar's
+    # stderr is visible on the terminal — delete and re-run if it errors
+    if test $use_gitignore = 1
+        # ponytail: -C/--directory is the only value-taking tar option we
+        # skip over when splitting $rest; filenames with newlines are not
+        # supported (newline-based list, not --nullfiles)
+        command -q git or { echo "Error: git not found." >&2; return 1 }
+        git rev-parse --is-inside-work-tree >/dev/null 2>&1 or {
+            echo "Error: --gitignore must be run inside a git working tree." >&2
+            return 1
+        }
+        set -l gopts
+        set -l paths
+        set -l skip_next 0
+        for a in $rest
+            if test $skip_next = 1
+                set skip_next 0
+                set gopts $gopts $a
+            else if test "$a" = -C -o "$a" = --directory
+                set skip_next 1
+                set gopts $gopts $a
+            else if string match -q -- '-*' $a
+                set gopts $gopts $a
+            else
+                set paths $paths $a
+            end
+        end
+        test (count $paths) = 1; or {
+            echo "Error: --gitignore takes exactly one path (the directory to archive)." >&2
+            return 1
+        }
+        # ponytail: no file list for _use_pv to du here (paths are relative
+        # to tar's -C, not cwd) — indeterminate bar
+        git ls-files --cached --others --exclude-standard |
+            sed "s|^|$paths[1]/|" |
+            tar -cf - $gopts --no-recursion -T - |
+            _use_pv |
+            $_tarchk_cmd >$outfile
+    else
+        tar -cf - $rest | _use_pv $rest | $_tarchk_cmd >$outfile
     end
-
-    # Paths to archive (everything after the output file)
-    set -l paths $argv[(math $outfile_idx + 1)..-1]
-    if test (count $paths) -eq 0
-        echo "Error: No paths to archive" >&2
-        return 1
-    end
-
-    # Create directory for output file if it doesn't exist
-    mkdir -p (dirname -- $outfile)
-
-    # 1. Split the command string into a list variable FIRST
-    set -l cmd_parts (string split " " -- $comp_cmd_str)
-
-    # 2. Run: tar -> pv -> compressor (using the list variable) -> file
-    tar $opts -cf - $paths | _use_pv $paths | $cmd_parts >$outfile
 end
 
 # ---------------------------------------------------------
-# 4. Extract: tarx
-# Usage: tarx [pigz|zstd] ARCHIVE [TAR_ARGS...]
+# Extract: tarx
+# Usage: tarx [pigz|zstd] ARCHIVE [TAR_OPTIONS...]
+# (e.g. tarx foo.tgz --exclude='*.log' -C /tmp)
 # ---------------------------------------------------------
 function tarx
-    if test (count $argv) -lt 2
-        echo "Usage: tarx COMPRESSOR ARCHIVE [TAR_ARGS...]" >&2
-        return 1
-    end
-
-    set -l comp_input $argv[1]
-    set -l archive $argv[2]
-    set -l tar_args $argv[3..-1]
-
-    # Resolve compressor string (e.g. "zstd -15 ...")
-    set -l comp_cmd_str (_tarchk $comp_input)
-
-    if test $status -ne 0; or test -z "$comp_cmd_str"
-        echo "Error: Compressor '$comp_input' not found." >&2
-        return 1
-    end
-
-    # Split the string into a list: (zstd) (-15) (--long=28) ...
-    set -l cmd_parts (string split " " -- $comp_cmd_str)
-
-    # The first item in the list is the binary name (e.g., "zstd")
-    switch $cmd_parts[1]
+    set -l comp pigz
+    switch "$argv[1]"
         case pigz gzip zstd
-            # Execute the list directly. Fish expands list items as arguments.
-            # We append -dc to ensure decompression happens.
-            $cmd_parts -dc $archive | _use_pv | tar -xvf - $tar_args
-        case '*'
-            echo "Internal error: unknown compressor binary '$cmd_parts[1]'" >&2
-            return 1
+            set comp $argv[1]
+            set argv $argv[2..-1]
     end
+    if test (count $argv) -lt 1
+        echo "Usage: tarx [COMPRESSOR] ARCHIVE [TAR_OPTIONS...]" >&2
+        return 1
+    end
+    _tarcopen $comp "$argv[1]" | _use_pv "$argv[1]" | tar -xvf - $argv[2..-1]
 end
 
 # ---------------------------------------------------------
-# 5. List: tarv
-# Usage: tarv [pigz|zstd] ARCHIVE
+# List: tarvit
+# Usage: tarvit [pigz|zstd] ARCHIVE [TAR_OPTIONS...]
+# (e.g. tarvit zstd foo.tar.zst --exclude='*.log')
 # ---------------------------------------------------------
-function tarv
-    if test (count $argv) -ne 2
-        echo "Usage: tarv COMPRESSOR ARCHIVE" >&2
+function tarvit
+    set -l comp pigz
+    switch "$argv[1]"
+        case pigz gzip zstd
+            set comp $argv[1]
+            set argv $argv[2..-1]
+    end
+    if test (count $argv) -lt 1
+        echo "Usage: tarvit [COMPRESSOR] ARCHIVE [TAR_OPTIONS...]" >&2
         return 1
     end
-
-    set -l comp_input $argv[1]
-    set -l archive $argv[2]
-
-    set -l comp_cmd_str (_tarchk $comp_input)
-    if test $status -ne 0
-        echo "Error: Compressor '$comp_input' not found." >&2
-        return 1
-    end
-
-    # Split string into list
-    set -l cmd_parts (string split " " -- $comp_cmd_str)
-
-    # Execute decompression piped to tar list
-    $cmd_parts -dc $archive | tar -tvf -
+    _tarcopen $comp "$argv[1]" | tar -tvf - $argv[2..-1]
 end
 
 alias tarzc='tarc pigz'
 alias tarzx='tarx pigz'
 alias tarzv='tarv pigz'
-#
 alias tarzsc='tarc zstd'
 alias tarzsx='tarx zstd'
 alias tarzsv='tarv zstd'
 
-# 1. Base Command Completions
-# When typing 'tarx', suggest compressors for the first argument
-complete -c tarc -n "test (count (commandline -opc)) -eq 1" -a "pigz zstd" -d "Compressor Type"
-complete -c tarx -n "test (count (commandline -opc)) -eq 1" -a "pigz zstd" -d "Compressor Type"
-complete -c tarv -n "test (count (commandline -opc)) -eq 1" -a "pigz zstd" -d "Compressor Type"
+# ---------------------------------------------------------
+# Completions
+# ---------------------------------------------------------
+# Compressor prompt for the base commands' first argument
+for cmd in tarc tarx tarv
+    complete -c $cmd -n "test (count (commandline -opc)) -eq 1" -a "pigz zstd" -d "Compressor Type"
+end
 
-# Zstd: Only show .tar.zst or .tzst files
+# Suffix-filtered archive completion for the x/v aliases
 complete -c tarzsx -k -a "(__fish_complete_suffix .tar.zst .tzst)"
 complete -c tarzsv -k -a "(__fish_complete_suffix .tar.zst .tzst)"
-
-# Gzip: Only show .tar.gz or .tgz files
 complete -c tarzx -k -a "(__fish_complete_suffix .tar.gz .tgz)"
 complete -c tarzv -k -a "(__fish_complete_suffix .tar.gz .tgz)"
 
-# 3. Alias Completions (Compression)
-# Force standard file completion (for input paths)
+# Force plain file completion (output file / input paths)
 complete -c tarzc -F
 complete -c tarzsc -F
+complete -c tarc -l gitignore -d "Archive only files git tracks or would add"
 
 # Simple 7z support
 alias 7zac='7z a -m0=lzma2 -mx3'

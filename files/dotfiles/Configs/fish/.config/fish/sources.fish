@@ -86,6 +86,10 @@ if command -q direnv
     direnv hook fish | source
 end
 
+if command -q mise
+    mise activate fish | source
+end
+
 # keep this at the bottom
 if command -q starship
     starship init fish | source
