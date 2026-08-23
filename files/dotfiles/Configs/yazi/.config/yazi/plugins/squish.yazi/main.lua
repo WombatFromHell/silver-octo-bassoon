@@ -27,6 +27,7 @@ local MESSAGES = {
 	MOUNT_ERROR = "Mount failed",
 	UNMOUNT_SUCCESS = "Unmounted successfully",
 	UNMOUNT_ERROR = "Unmount failed",
+	START_UNMOUNT = "Attempting to unmount...",
 	NO_SELECTION = "No item selected",
 	NEED_SQSH = "Select a .sqsh file",
 	FILE_NOT_FOUND = function(url)
@@ -137,7 +138,7 @@ local function validate_build(items)
 	return true
 end
 
-local function validate_hovered(action, h)
+local function validate_hovered(h)
 	if not h then
 		return false, MESSAGES.NO_SELECTION
 	end
@@ -152,6 +153,18 @@ local function validate_hovered(action, h)
 	end
 
 	return true
+end
+
+-- ponytail: fetch + validate the hovered file in one step so every
+-- file-action handler stays a single line and can't forget validation.
+local function get_validated_hovered()
+	local h = get_hovered()
+	local ok, err = validate_hovered(h)
+	if not ok then
+		notify(err, "error")
+		return nil
+	end
+	return h
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -222,7 +235,12 @@ local function run_with_pipe_progress(cmd_str, notify_id, title_start)
 			if pct and pct >= 0 and pct <= 100 then
 				local display_pct = math.floor(pct / 20) * 20
 				if (display_pct > last_pct and display_pct > 0) or pct == 100 then
-					notify(string.format("%s %d%%", title_start, pct == 100 and 100 or display_pct), "info", notify_id, 2)
+					notify(
+						string.format("%s %d%%", title_start, pct == 100 and 100 or display_pct),
+						"info",
+						notify_id,
+						2
+					)
 					last_pct = display_pct
 				end
 			end
@@ -238,7 +256,10 @@ local function run_with_pipe_progress(cmd_str, notify_id, title_start)
 	return success, detail
 end
 
-local function run_simple_command(cmd_str, notify_id, start_msg, success_msg, error_msg)
+-- ponytail: do_refresh emits a yazi refresh on success — used uniformly by
+-- mount/unmount so a freshly created mountpoint/dir is shown without a manual
+-- reload. build/extract use run_progress_op which always refreshes.
+local function run_simple_command(cmd_str, notify_id, start_msg, success_msg, error_msg, do_refresh)
 	notify(start_msg, "info", notify_id)
 	local child, err = Command("sh"):arg({ "-c", cmd_str }):stdout(Command.PIPED):stderr(Command.PIPED):spawn()
 	if not child then
@@ -255,11 +276,28 @@ local function run_simple_command(cmd_str, notify_id, start_msg, success_msg, er
 	local success = out.status and out.status.success
 	if success then
 		notify(success_msg, "info", notify_id)
+		if do_refresh then
+			ya.emit("refresh", {})
+		end
 	else
 		local detail = out.stderr and out.stderr:match("[^\n]*%S[^\n]*%s*$") or ""
 		notify(error_msg .. (detail ~= "" and (": " .. detail) or ""), "error", notify_id)
 	end
 
+	return success
+end
+
+-- ponytail: build and extract share the same notify/run/refresh/error shape;
+-- this collapses the tail so the two operations only differ by their messages.
+local function run_progress_op(cmd, id, title, start_msg, success_msg, error_msg)
+	notify(start_msg, "info", id)
+	local success, detail = run_with_pipe_progress(cmd, id, title)
+	if success then
+		notify(success_msg, "info", id)
+		ya.emit("refresh", {})
+	else
+		notify(error_msg .. ": " .. (detail or "unknown"), "error", id)
+	end
 	return success
 end
 
@@ -277,28 +315,26 @@ local function run_build(items)
 		target = parent .. "/archive-" .. os.date("%Y%m%d") .. ".sqsh"
 	end
 	local cmd = build_squish_cmd(items, target)
-	notify(MESSAGES.START_BUILD, "info", NOTIFY_IDS.BUILD)
-
-	local success, detail = run_with_pipe_progress(cmd, NOTIFY_IDS.BUILD, "Building:")
-	if success then
-		notify(MESSAGES.BUILD_SUCCESS(target), "info", NOTIFY_IDS.BUILD)
-		ya.emit("refresh", {})
-	else
-		notify(MESSAGES.BUILD_ERROR .. ": " .. (detail or "unknown"), "error", NOTIFY_IDS.BUILD)
-	end
+	run_progress_op(
+		cmd,
+		NOTIFY_IDS.BUILD,
+		"Building:",
+		MESSAGES.START_BUILD,
+		MESSAGES.BUILD_SUCCESS(target),
+		MESSAGES.BUILD_ERROR
+	)
 end
 
 local function run_extract(file_url, extract_path)
 	local cmd = build_unsquish_cmd(file_url, extract_path)
-	notify(MESSAGES.START_EXTRACT, "info", NOTIFY_IDS.EXTRACT)
-
-	local success, detail = run_with_pipe_progress(cmd, NOTIFY_IDS.EXTRACT, "Extracting:")
-	if success then
-		notify(MESSAGES.EXTRACT_SUCCESS, "info", NOTIFY_IDS.EXTRACT)
-		ya.emit("refresh", {})
-	else
-		notify(MESSAGES.EXTRACT_ERROR .. ": " .. (detail or "unknown"), "error", NOTIFY_IDS.EXTRACT)
-	end
+	run_progress_op(
+		cmd,
+		NOTIFY_IDS.EXTRACT,
+		"Extracting:",
+		MESSAGES.START_EXTRACT,
+		MESSAGES.EXTRACT_SUCCESS,
+		MESSAGES.EXTRACT_ERROR
+	)
 end
 
 local function run_extract_pick(file_url)
@@ -318,66 +354,28 @@ end
 
 local function run_mount(file_url)
 	local cmd = build_mount_cmd(file_url)
-	run_simple_command(cmd, NOTIFY_IDS.MOUNT, MESSAGES.START_MOUNT, MESSAGES.MOUNT_SUCCESS, MESSAGES.MOUNT_ERROR)
+	run_simple_command(cmd, NOTIFY_IDS.MOUNT, MESSAGES.START_MOUNT, MESSAGES.MOUNT_SUCCESS, MESSAGES.MOUNT_ERROR, true)
 end
 
 local function run_unmount(file_url)
 	local cmd = build_unmount_cmd(file_url)
-	if
-		run_simple_command(
-			cmd,
-			NOTIFY_IDS.UNMOUNT,
-			"Attempting to unmount...",
-			MESSAGES.UNMOUNT_SUCCESS,
-			MESSAGES.UNMOUNT_ERROR
-		)
-	then
-		ya.emit("refresh", {})
-	end
+	run_simple_command(
+		cmd,
+		NOTIFY_IDS.UNMOUNT,
+		MESSAGES.START_UNMOUNT,
+		MESSAGES.UNMOUNT_SUCCESS,
+		MESSAGES.UNMOUNT_ERROR,
+		true
+	)
 end
 
-local function run_unmount_tracked()
-	local mounts = get_tracked_mounts()
-	if #mounts == 0 then
-		notify("No tracked mounts found", "warn", NOTIFY_IDS.UNMOUNT)
-		return
-	end
-
-	local cands = {}
-	for i, m in ipairs(mounts) do
-		local archive_name = m.archive:match("([^/]+)$") or m.archive
-		table.insert(cands, { on = tostring(i), desc = string.format("%s -> %s/", archive_name, m.display) })
-	end
-
-	local idx = ya.which({
-		title = "Unmount tracked mount",
-		cands = cands,
-	})
-
-	if not idx then
-		return
-	end
-
-	local selected = mounts[idx]
-	local cmd = build_unmount_cmd(selected.archive)
-	if
-		run_simple_command(
-			cmd,
-			NOTIFY_IDS.UNMOUNT,
-			"Attempting to unmount...",
-			MESSAGES.UNMOUNT_SUCCESS,
-			MESSAGES.UNMOUNT_ERROR
-		)
-	then
-		ya.emit("refresh", {})
-	end
-end
-
-local function run_jump()
+-- ponytail: unmount-tracked and jump share the same selection UI; pick once
+-- and let each caller decide what to do with the chosen mount.
+local function pick_tracked_mount(title)
 	local mounts = get_tracked_mounts()
 	if #mounts == 0 then
 		notify("No tracked mounts found", "warn")
-		return
+		return nil
 	end
 
 	local cands = {}
@@ -386,33 +384,72 @@ local function run_jump()
 		table.insert(cands, { on = tostring(i), desc = string.format("%s -> %s/", archive_name, m.display) })
 	end
 
-	local idx = ya.which({
-		title = "Jump to mount",
-		cands = cands,
-	})
+	local idx = ya.which({ title = title, cands = cands })
+	return idx and mounts[idx] or nil
+end
 
-	if not idx then
+local function run_unmount_tracked()
+	local m = pick_tracked_mount("Unmount tracked mount")
+	if not m then
 		return
 	end
+	run_simple_command(
+		build_unmount_cmd(m.archive),
+		NOTIFY_IDS.UNMOUNT,
+		MESSAGES.START_UNMOUNT,
+		MESSAGES.UNMOUNT_SUCCESS,
+		MESSAGES.UNMOUNT_ERROR,
+		true
+	)
+end
 
-	local selected = mounts[idx]
-	ya.emit("tab_create", { tostring(Url(selected.mountpoint)) })
+local function run_jump()
+	local m = pick_tracked_mount("Jump to mount")
+	if not m then
+		return
+	end
+	ya.emit("tab_create", { tostring(Url(m.mountpoint)) })
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Action dispatcher (composition pattern)
 -- ─────────────────────────────────────────────────────────────────────────────
 local ACTIONS = {
-	extract = function(h, args)
-		run_extract(h.url, args[2])
+	build = function(job)
+		local items = get_selected()
+		local ok, err = validate_build(items)
+		if not ok then
+			notify(err, "error")
+			return
+		end
+		run_build(items)
 	end,
-	["extract-pick"] = function(h)
+	extract = function(job)
+		local h = get_validated_hovered()
+		if not h then
+			return
+		end
+		run_extract(h.url, job.args[2])
+	end,
+	["extract-pick"] = function()
+		local h = get_validated_hovered()
+		if not h then
+			return
+		end
 		run_extract_pick(h.url)
 	end,
-	mount = function(h)
+	mount = function()
+		local h = get_validated_hovered()
+		if not h then
+			return
+		end
 		run_mount(h.url)
 	end,
-	unmount = function(h)
+	unmount = function()
+		local h = get_validated_hovered()
+		if not h then
+			return
+		end
 		run_unmount(h.url)
 	end,
 	["unmount-tracked"] = function()
@@ -460,36 +497,13 @@ function M.entry(_, job)
 		return
 	end
 
-	if action == "build" then
-		local items = get_selected()
-		local ok, err = validate_build(items)
-		if not ok then
-			notify(err, "error")
-			return
-		end
-		run_build(items)
-		return
-	end
-
 	local handler = ACTIONS[action]
 	if not handler then
 		notify(MESSAGES.UNKNOWN_ACTION(action), "error")
 		return
 	end
 
-	if action == "unmount-tracked" or action == "jump" then
-		handler()
-		return
-	end
-
-	local h = get_hovered()
-	local ok, err = validate_hovered(action, h)
-	if not ok then
-		notify(err, "error")
-		return
-	end
-
-	handler(h, job)
+	handler(job)
 end
 
 return M
