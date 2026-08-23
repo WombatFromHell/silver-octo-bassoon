@@ -28,6 +28,7 @@ declare -ra BASE_MKSQUASHFS_ARGS=(
 declare -i SKIP_VERIFY=0
 declare -i PIPE_MODE=0
 declare -i FORCE=0
+declare -i KIO_MODE=0
 declare SOURCES=()
 declare OUTPUT_FILE=""
 
@@ -435,8 +436,15 @@ determine_output_filename() {
     first_source_basename=$(basename "${SOURCES[0]}")
     OUTPUT_FILE="${first_source_basename}.sqsh"
 
-    if [[ -e $OUTPUT_FILE ]]; then
+    # ponytail: KIO mode always uses the archive-* convention; a per-source
+    # default is meaningless when several sources are bundled into one archive
+    [[ $KIO_MODE -eq 1 ]] && OUTPUT_FILE=""
+
+    if [[ -n $OUTPUT_FILE && -e $OUTPUT_FILE ]]; then
       log info "Conflict detected: '$OUTPUT_FILE' already exists."
+    fi
+
+    if [[ -z $OUTPUT_FILE || -e $OUTPUT_FILE ]]; then
       local date_stamp counter new_file
       date_stamp=$(date +%Y%m%d)
       counter=1
@@ -497,6 +505,10 @@ parse_arguments() {
     --pipe)
       shift
       ;;
+    -k | --kio)
+      KIO_MODE=1
+      shift
+      ;;
     -m | --mount)
       action="mount"
       if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
@@ -533,12 +545,25 @@ parse_arguments() {
       echo " -o, --output <file> Specify output filename (default: <first_source>.sqsh)"
       echo " -y, --skip-verify Skip SHA-256 verification before mounting"
       echo " -f, --force     Remove stale trackers / tolerate missing ones on mount & unmount"
+      echo " -k, --kio       KIO service-menu mode: args are file:// URIs, output uses 'archive-*' naming"
       echo " --pipe Machine-readable mode: percentages to stdout, logs to stderr"
       echo " -h, --help Show this help message"
       exit 0
       ;;
     *)
-      SOURCES+=("$(realpath "$1")")
+      local source_arg="$1"
+      if [[ $KIO_MODE -eq 1 && $source_arg == file://* && $source_arg == *" "* ]]; then
+        # ponytail: KIO's %U can hand the whole URI list as one argument;
+        # URI-encoded tokens never contain literal spaces, so a plain
+        # word-split is safe here
+        local uri_token
+        for uri_token in $source_arg; do
+          SOURCES+=("$(realpath "$(uri_to_path "$uri_token")")")
+        done
+      else
+        [[ $KIO_MODE -eq 1 ]] && source_arg="$(uri_to_path "$source_arg")"
+        SOURCES+=("$(realpath "$source_arg")")
+      fi
       shift
       ;;
     esac

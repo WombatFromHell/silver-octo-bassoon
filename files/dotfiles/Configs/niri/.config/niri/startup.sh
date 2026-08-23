@@ -7,12 +7,14 @@ sleep 1
 dbus-update-activation-environment --systemd \
   WAYLAND_DISPLAY \
   XDG_CURRENT_DESKTOP \
+  XDG_MENU_PREFIX \
   DISPLAY \
   QT_QPA_PLATFORMTHEME \
   QT_QPA_PLATFORM \
   QT_WAYLAND_DISABLE_WINDOWDECORATION
 systemctl --user import-environment \
   XDG_CURRENT_DESKTOP \
+  XDG_MENU_PREFIX \         
   XDG_SESSION_TYPE \
   DISPLAY \
   WAYLAND_DISPLAY
