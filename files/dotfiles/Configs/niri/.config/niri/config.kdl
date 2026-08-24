@@ -64,6 +64,18 @@ layout {
         active-gradient from="#CBA6F7" to="#87CEC3" angle=45
     }
 }
+output "Dell Inc. AW3426DW 4JSLXH4" {
+    mode "3440x1440@279.962"
+    scale 1
+    position x=0 y=0
+    variable-refresh-rate on-demand=true
+    layout {
+        gaps 8
+        default-column-width {
+            proportion 0.333333
+        }
+    }
+}
 hotkey-overlay {
     skip-at-startup
 }
@@ -585,3 +597,4 @@ binds {
 include "dms/cursor.kdl"
 include "dms/binds.kdl"
 include "dms/outputs.kdl"
+

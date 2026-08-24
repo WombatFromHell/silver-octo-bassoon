@@ -5,16 +5,6 @@ output "Dell Inc. AW3426DW 4JSLXH4" {
     scale 1
     position x=0 y=0
     variable-refresh-rate on-demand=true
-
-    layout {
-        gaps 8
-        default-column-width { proportion 0.333333; }
-        preset-column-widths {
-            proportion 0.333333
-            proportion 0.5
-            proportion 0.666666
-        }
-    }
 }
 
 output "LG Electronics 27GL850 910NTGY7B319" {
@@ -33,6 +23,7 @@ output "LG Electronics LG TV SSCR2 0x01010101" {
 }
 
 output "Ugreen Group Ltd. UGREEN 0x20200210" {
+    off
     mode "1920x1080@60.000"
     scale 1
     position x=5120 y=0
