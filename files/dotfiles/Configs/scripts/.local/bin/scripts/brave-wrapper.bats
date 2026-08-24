@@ -15,6 +15,8 @@ setup() {
   export HOME="$TEST_ROOT/home"
   # We add our mock bin and the script's expected config dir to PATH
   export PATH="$TEST_ROOT/bin:$HOME/.local/bin/scripts:$PATH"
+  # Collapse the deferred-update sleep so tests run at normal speed.
+  export UPDATE_DEFER_SECONDS=0
 
   # shellcheck disable=SC1090
   source "$SOURCE_FILE"
@@ -131,6 +133,15 @@ MOCK
   [[ "$output" == *"Title"* ]]
 }
 
+# ── Action Zone: run_command_or_fail ─────────────────────────────────────────
+
+@test "run_command_or_fail: error message names the actual missing command" {
+  run bash -c "source '$SOURCE_FILE'; run_command_or_fail totally-missing-cmd echo hi"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == *"Error: totally-missing-cmd command not found"* ]]
+  [[ "$output" != *"exec command not found"* ]]
+}
+
 # ── Action Zone: execute_launch ──────────────────────────────────────────────
 
 @test "execute_launch: direct mode calls chromium-flags with browser and args" {
@@ -155,7 +166,7 @@ MOCK
   [[ "$output" == *"chromium-flags: flatpak run com.brave.Browser --incognito"* ]]
 }
 
-# ── Action Zone: perform_browser_update (The Strategy Tests) ─────────────────
+# ── Action Zone: perform_browser_update — flatpak strategy ───────────────────
 
 @test "perform_browser_update [flatpak]: reports no updates when nothing to do" {
   cat >"$TEST_ROOT/bin/flatpak" <<'MOCK'
@@ -171,7 +182,7 @@ MOCK
 
   run bash -c "source '$SOURCE_FILE'; perform_browser_update 'flatpak' 'com.brave.Browser'"
   [[ "$status" -eq 0 ]]
-  [[ "$output" == *"No flatpak updates found."* ]]
+  [[ "$output" == *"No updates found."* ]]
 }
 
 @test "perform_browser_update [flatpak]: notifies on successful upgrade" {
@@ -189,18 +200,20 @@ MOCK
 
   run bash -c "source '$SOURCE_FILE'; perform_browser_update 'flatpak' 'com.brave.Browser'"
   [[ "$status" -eq 0 ]]
-  # This now works because we added 'echo "$out"' to the script!
   [[ "$output" == *"Updates complete"* ]]
 }
 
-@test "perform_browser_update [dnf]: reports no updates when dnf finds none" {
+# ── Action Zone: perform_browser_update — dnf strategy (check has no sudo) ───
+
+@test "perform_browser_update [dnf]: check phase does not invoke sudo" {
   make_stub brave
-  cat >"$TEST_ROOT/bin/sudo" <<'MOCK'
+  cat >"$TEST_ROOT/bin/dnf" <<'MOCK'
 #!/bin/bash
-if [[ "$1" == "dnf" ]]; then exit 0; fi # check-update returns 0 for 'no updates'
-exit 0
+if [[ "$1" == "check-update" ]]; then exit 0; fi
+exit 1
 MOCK
-  chmod +x "$TEST_ROOT/bin/sudo"
+  chmod +x "$TEST_ROOT/bin/dnf"
+  # No sudo stub at all — if the check phase tries to call it, PATH lookup fails.
 
   run bash -c "source '$SOURCE_FILE'; perform_browser_update 'dnf' 'brave'"
   [[ "$status" -eq 0 ]]
@@ -210,16 +223,80 @@ MOCK
 @test "perform_browser_update [dnf]: notifies on successful upgrade" {
   make_stub brave
   make_stub notify-send
+  cat >"$TEST_ROOT/bin/dnf" <<'MOCK'
+#!/bin/bash
+if [[ "$1" == "check-update" ]]; then exit 100; fi # 100 = updates available
+exit 1
+MOCK
+  chmod +x "$TEST_ROOT/bin/dnf"
+
   cat >"$TEST_ROOT/bin/sudo" <<'MOCK'
 #!/bin/bash
-if [[ "$1" == "dnf" && "$2" == "check-update" ]]; then exit 100; fi # 100 = updates available
-printf 'Upgrading...'
-exit 0
+if [[ "$1" == "-n" && "$2" == "true" ]]; then exit 0; fi
+if [[ "$1" == "dnf" && "$2" == "upgrade" ]]; then printf 'Upgrading...\n'; exit 0; fi
+exit 1
 MOCK
   chmod +x "$TEST_ROOT/bin/sudo"
 
   run bash -c "source '$SOURCE_FILE'; perform_browser_update 'dnf' 'brave'"
   [[ "$status" -eq 0 ]]
+  [[ "$output" == *"Update available — deferring install"* ]]
+  [[ "$output" == *"Upgrading..."* ]]
+}
+
+@test "perform_browser_update [dnf]: skips apply when passwordless sudo unavailable" {
+  make_stub brave
+  cat >"$TEST_ROOT/bin/dnf" <<'MOCK'
+#!/bin/bash
+if [[ "$1" == "check-update" ]]; then exit 100; fi
+exit 1
+MOCK
+  chmod +x "$TEST_ROOT/bin/dnf"
+
+  cat >"$TEST_ROOT/bin/sudo" <<'MOCK'
+#!/bin/bash
+exit 1   # sudo -n true fails: no cached/passwordless sudo
+MOCK
+  chmod +x "$TEST_ROOT/bin/sudo"
+
+  run bash -c "source '$SOURCE_FILE'; perform_browser_update 'dnf' 'brave'"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"Skipping update: passwordless sudo not configured."* ]]
+}
+
+# ── Action Zone: perform_browser_update — distrobox strategy ─────────────────
+
+@test "perform_browser_update [distrobox]: notifies on successful upgrade" {
+  make_stub notify-send
+  cat >"$TEST_ROOT/bin/distrobox-enter" <<'MOCK'
+#!/bin/bash
+# usage: distrobox-enter -n <container> -- <command...>
+shift 3  # drop -n <container> --
+if [[ "$1" == "dnf" && "$2" == "check-update" ]]; then exit 100; fi
+if [[ "$1" == "sudo" && "$2" == "-n" && "$3" == "true" ]]; then exit 0; fi
+if [[ "$1" == "sudo" && "$2" == "dnf" && "$3" == "upgrade" ]]; then printf 'Upgrading in container...\n'; exit 0; fi
+exit 1
+MOCK
+  chmod +x "$TEST_ROOT/bin/distrobox-enter"
+
+  run bash -c "source '$SOURCE_FILE'; perform_browser_update 'distrobox' 'brave-browser'"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"Upgrading in container..."* ]]
+}
+
+@test "perform_browser_update [distrobox]: skips apply when passwordless sudo unavailable" {
+  cat >"$TEST_ROOT/bin/distrobox-enter" <<'MOCK'
+#!/bin/bash
+shift 3
+if [[ "$1" == "dnf" && "$2" == "check-update" ]]; then exit 100; fi
+if [[ "$1" == "sudo" && "$2" == "-n" && "$3" == "true" ]]; then exit 1; fi
+exit 1
+MOCK
+  chmod +x "$TEST_ROOT/bin/distrobox-enter"
+
+  run bash -c "source '$SOURCE_FILE'; perform_browser_update 'distrobox' 'brave-browser'"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"Skipping update: passwordless sudo not configured in"* ]]
 }
 
 # ── Dispatch Zone: _dispatch ─────────────────────────────────────────────────
@@ -247,7 +324,7 @@ MOCK
 
   run bash -c "source '$SOURCE_FILE'; _dispatch bg-update flatpak brave"
   [[ "$status" -eq 0 ]]
-  [[ "$output" == *"No flatpak updates found."* ]]
+  [[ "$output" == *"No updates found."* ]]
 }
 
 @test "dispatch: unknown command returns error" {
