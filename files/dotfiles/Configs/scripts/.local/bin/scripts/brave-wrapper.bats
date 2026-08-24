@@ -50,10 +50,9 @@ STUB
 }
 
 @test "is_in_container: returns true when containerenv exists" {
-  local CONTAINER_ENV_FILE="$TEST_ROOT/fake_containerenv"
-  touch "$CONTAINER_ENV_FILE"
-  # Inject the variable via environment for testing
-  CONTAINER_ENV_FILE="$CONTAINER_ENV_FILE" run is_in_container
+  touch "$TEST_ROOT/fake_containerenv"
+  stub_chromium_flags
+  run bash -c "export CONTAINER_ENV_FILE='$TEST_ROOT/fake_containerenv'; source '$SOURCE_FILE'; is_in_container"
   [[ "$status" -eq 0 ]]
 }
 
@@ -91,31 +90,82 @@ MOCK
   [[ "$status" -ne 0 ]]
 }
 
-# ── Logic Zone: detect_package_manager ───────────────────────────────────────
+# ── Logic Zone: detect_hybrid_graphics ───────────────────────────────────────
 
-@test "detect_package_manager: prioritizes flatpak if installed" {
-  make_stub dnf
-  cat >"$TEST_ROOT/bin/flatpak" <<'MOCK'
-#!/bin/bash
-if [[ "$1" == "info" ]]; then exit 0; fi
-exit 1
-MOCK
-  chmod +x "$TEST_ROOT/bin/flatpak"
-
-  run detect_package_manager
-  [[ "$output" == "flatpak" ]]
+# Build a fake /sys/class/drm tree: one dir per card, each card's `device` is a
+# symlink to a distinct PCI-id dir; connectors carry a status file.
+make_fake_drm() {
+  local drm="$1"
+  mkdir -p "$drm"
 }
 
-# ── Logic Zone: determine_launch_method ───────────────────────────────────────
-
-@test "determine_launch_method: returns 'flatpak' when flatpak_installed is true" {
-  run determine_launch_method "true" "false"
-  [[ "$output" == "flatpak" ]]
+add_fake_card() {
+  local drm="$1" card="$2" pci="$3" conn="$4" conn_status="${5:-connected}"
+  mkdir -p "$drm/$card/$pci" "$drm/$card/$conn"
+  ln -s "$pci" "$drm/$card/device"
+  printf '%s\n' "$conn_status" >"$drm/$card/$conn/status"
 }
 
-@test "determine_launch_method: returns 'distrobox' when not in container and no flatpak" {
-  run determine_launch_method "false" "false"
-  [[ "$output" == "distrobox" ]]
+@test "detect_hybrid_graphics: true (rc 0) when two GPUs each drive an output" {
+  local drm="$TEST_ROOT/sys/drm"
+  make_fake_drm "$drm"
+  add_fake_card "$drm" card0 0000:13:00.0 DP-1
+  add_fake_card "$drm" card1 0000:03:00.0 HDMI-A-1
+  stub_chromium_flags
+  run bash -c "export DRM_SYS_PATH='$drm'; source '$SOURCE_FILE'; detect_hybrid_graphics"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == "2" ]]
+}
+
+@test "detect_hybrid_graphics: false (rc != 0) with a single active GPU" {
+  local drm="$TEST_ROOT/sys/drm"
+  make_fake_drm "$drm"
+  add_fake_card "$drm" card0 0000:13:00.0 DP-1
+  stub_chromium_flags
+  run bash -c "export DRM_SYS_PATH='$drm'; source '$SOURCE_FILE'; detect_hybrid_graphics"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == "1" ]]
+}
+
+@test "detect_hybrid_graphics: false (rc != 0) with no connected outputs" {
+  local drm="$TEST_ROOT/sys/drm"
+  make_fake_drm "$drm"
+  add_fake_card "$drm" card0 0000:13:00.0 DP-1 disconnected
+  stub_chromium_flags
+  run bash -c "export DRM_SYS_PATH='$drm'; source '$SOURCE_FILE'; detect_hybrid_graphics"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == "0" ]]
+}
+
+# ── Logic Zone: resolve_gpu_flags ───────────────────────────────────────────
+
+@test "resolve_gpu_flags: defaults to igpu when hybrid and BRAVE_GPU unset" {
+  local drm="$TEST_ROOT/sys/drm"
+  make_fake_drm "$drm"
+  add_fake_card "$drm" card0 0000:13:00.0 DP-1
+  add_fake_card "$drm" card1 0000:03:00.0 HDMI-A-1
+  stub_chromium_flags
+  run bash -c "export DRM_SYS_PATH='$drm'; source '$SOURCE_FILE'; resolve_gpu_flags; echo \"GPU=\${BRAVE_GPU:-}\""
+  [[ "$output" == "GPU=igpu" ]]
+}
+
+@test "resolve_gpu_flags: honors explicit BRAVE_GPU=dgpu under hybrid" {
+  local drm="$TEST_ROOT/sys/drm"
+  make_fake_drm "$drm"
+  add_fake_card "$drm" card0 0000:13:00.0 DP-1
+  add_fake_card "$drm" card1 0000:03:00.0 HDMI-A-1
+  stub_chromium_flags
+  run bash -c "export BRAVE_GPU=dgpu; export DRM_SYS_PATH='$drm'; source '$SOURCE_FILE'; resolve_gpu_flags; echo \"GPU=\${BRAVE_GPU:-}\""
+  [[ "$output" == "GPU=dgpu" ]]
+}
+
+@test "resolve_gpu_flags: leaves BRAVE_GPU unset on single GPU (not hybrid)" {
+  local drm="$TEST_ROOT/sys/drm"
+  make_fake_drm "$drm"
+  add_fake_card "$drm" card0 0000:13:00.0 DP-1
+  stub_chromium_flags
+  run bash -c "export DRM_SYS_PATH='$drm'; source '$SOURCE_FILE'; resolve_gpu_flags; echo \"GPU=\${BRAVE_GPU:-}\""
+  [[ "$output" == "GPU=" ]]
 }
 
 # ── Action Zone: notify ──────────────────────────────────────────────────────
