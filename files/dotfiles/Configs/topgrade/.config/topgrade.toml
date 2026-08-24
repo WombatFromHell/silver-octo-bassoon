@@ -19,4 +19,4 @@ skip_notify = true
 "tmux" = "~/.config/tmux/plugins/tpm/bin/update_plugins all"
 
 [pre_commands]
-"Upgrade libvirtbox" = "/usr/bin/distrobox-upgrade --root libvirtbox"
+"Upgrade libvirtbox" = "sudo podman container exists libvirtbox && /usr/bin/distrobox-upgrade --root libvirtbox || true"
