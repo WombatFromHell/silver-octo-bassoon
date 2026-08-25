@@ -228,8 +228,8 @@ DESKTOP_PATH="$(find_desktop_path "$DESKTOP_FILE")"
 
 RAW_EXEC_LINE="$(extract_exec_line "$DESKTOP_PATH")"
 
-# Wrapper scripts (chromium-flags.sh, brave-wrapper.sh) are exec'd directly
-if [[ "$RAW_EXEC_LINE" =~ chromium-flags\.sh|brave-wrapper\.sh ]]; then
+# Wrapper scripts (chromium-flags.sh, chromium-wrapper.sh) are exec'd directly
+if [[ "$RAW_EXEC_LINE" =~ chromium-flags\.sh|chromium-wrapper\.sh ]]; then
   exec bash -c "$(apply_url "$RAW_EXEC_LINE" "$URL")"
 fi
 

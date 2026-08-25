@@ -13,7 +13,7 @@ DBX_EXPORT_APP="brave-browser"
 # Browser-specific config
 DBX_PKG_NAME="brave-browser"
 DBX_FLATPAK_ID="com.brave.Browser"
-DBX_WRAPPER="brave-wrapper.sh"
+DBX_WRAPPER="chromium-wrapper.sh"
 DBX_ICON_NAME="brave-browser"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -69,7 +69,7 @@ Examples:
   ${0##*/} --freshen                     # Re-run post-hooks
 
 The script auto-detects and uses:
-  1. brave-wrapper.sh (if in PATH) - full-featured wrapper with background updates
+   1. chromium-wrapper.sh (if in PATH) - full-featured wrapper with background updates
   2. chromium-flags.sh (if in PATH) - lightweight flags injection wrapper
   3. Native browser binary (fallback) - no flag injection
 EOF

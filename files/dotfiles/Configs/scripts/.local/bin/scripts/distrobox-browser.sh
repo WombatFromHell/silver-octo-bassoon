@@ -11,7 +11,7 @@
 #   readonly DBX_PKG_NAME="..."        # Package name in container
 #   readonly DBX_REPO_URL="..."        # DNF repo URL (if installing via DNF)
 #   readonly DBX_FLATPAK_ID="..."     # Flatpak ID (if using Flatpak)
-#   readonly DBX_WRAPPER="..."     # Wrapper script name (e.g., brave-wrapper.sh)
+#   readonly DBX_WRAPPER="..."     # Wrapper script name (e.g., chromium-wrapper.sh)
 #   readonly DBX_ICON_NAME="..."    # Icon name
 #   readonly DBX_FLATPAK_ONLY="true"  # Only allow Flatpak install
 #
