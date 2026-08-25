@@ -88,9 +88,6 @@ animations {
 workspace "main" {
 
 }
-workspace "gaming" {
-
-}
 workspace "gamescope2" {
     // cover iGPU HDMI port
     open-on-output "HDMI-A-2"
@@ -109,25 +106,15 @@ window-rule {
     match app-id="steam" title="Steam Big Picture Mode"
     open-fullscreen true
     open-focused true
-    open-on-workspace "gaming"
+    open-on-workspace "gamescope"
 }
 window-rule {
-    match app-id="steam" title="Steam"
-    open-on-workspace "gaming"
-    open-focused true
-}
-window-rule {
-    match app-id="steam_app_default"
-    open-on-workspace "gaming"
-    open-focused true
-}
-// matches for gamescope on HDMI-A-1>DP-1
-window-rule {
-    match app-id="gamescope"
+    match app-id="steam" title="Steam Big Picture Mode"
     open-fullscreen true
     open-focused true
-    open-on-workspace "gaming"
+    open-on-workspace "gamescope2"
 }
+// matches for gamescope on HDMI-A-1>DP-1
 window-rule {
     match app-id="gamescope"
     open-fullscreen true
