@@ -126,15 +126,15 @@ if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
 fi
 
 # Normalise mode aliases
-[[ "$MODE" == "screen" ]] && MODE="output"
+[[ $MODE == "screen" ]] && MODE="output"
 # NOTE: 'active' is intentionally NOT collapsed into 'window' here —
 # 'window' = interactive pick, 'active' = focused window (no prompt).
 
 # ── Dependency checks ────────────────────────────────────────────────────────
 need niri
-[[ "$MODE" != "window" && "$MODE" != "active" ]] && need grim
+[[ $MODE != "window" && $MODE != "active" ]] && need grim
 need jq
-[[ "$MODE" == "region" ]] && need slurp
+[[ $MODE == "region" ]] && need slurp
 if ! $CLIPBOARD_ONLY && ! $NO_CLIPBOARD; then
   command -v wl-copy &>/dev/null || true # soft dep; warned later if missing
 fi
@@ -142,17 +142,17 @@ fi
 # ── Build output path ────────────────────────────────────────────────────────
 if ! $CLIPBOARD_ONLY; then
   mkdir -p "$OUTPUT_FOLDER"
-  if [[ -z "$SAVE_FILE" ]]; then
+  if [[ -z $SAVE_FILE ]]; then
     TS=$(date +"%Y-%m-%d_%H-%M-%S")
     FNAME="${FILENAME:-screenshot_${TS}.png}"
     # Ensure .png extension
-    [[ "$FNAME" == *.* ]] || FNAME="${FNAME}.png"
+    [[ $FNAME == *.* ]] || FNAME="${FNAME}.png"
     SAVE_FILE="${OUTPUT_FOLDER}/${FNAME}"
   fi
 fi
 
 # ── Optional delay ───────────────────────────────────────────────────────────
-if [[ "$DELAY" -gt 0 ]]; then
+if [[ $DELAY -gt 0 ]]; then
   notify "Screenshot in ${DELAY}s…" ""
   sleep "$DELAY"
 fi
@@ -199,7 +199,7 @@ _screenshot_window_by_id() {
   # Try to parse the path from niri's output ("Screenshot saved to /…")
   niri_path=$(echo "$niri_out" | grep -oP '(?<=Screenshot saved to ).*' | head -1)
 
-  if [[ -z "$niri_path" || ! -f "$niri_path" ]]; then
+  if [[ -z $niri_path || ! -f $niri_path ]]; then
     # Fallback: find the newest PNG in the default screenshot dir that
     # appeared after we started (PRE_SHOT epoch seconds).
     local ss_search_dir="${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots"
@@ -209,7 +209,7 @@ _screenshot_window_by_id() {
       sort -rn | head -1 | cut -d' ' -f2-)
   fi
 
-  [[ -z "$niri_path" || ! -f "$niri_path" ]] &&
+  [[ -z $niri_path || ! -f $niri_path ]] &&
     die "Could not locate screenshot produced by niri." \
       "Ensure niri v0.1.9+ and screenshot-path is set in your config."
 
@@ -222,7 +222,7 @@ active)
   # Capture the focused window immediately — no user interaction required.
   WIN_ID=$(niri_focused_window_id) ||
     die "Could not query focused window from niri."
-  [[ -z "$WIN_ID" ]] && die "No focused window found."
+  [[ -z $WIN_ID ]] && die "No focused window found."
   _screenshot_window_by_id "$WIN_ID"
   ;;
 
@@ -230,7 +230,7 @@ window)
   # Use niri's pick-window to interactively select a window with the mouse.
   WIN_ID=$(niri_pick_window_id) ||
     die "Could not pick window from niri."
-  [[ -z "$WIN_ID" ]] && die "No window selected."
+  [[ -z $WIN_ID ]] && die "No window selected."
   _screenshot_window_by_id "$WIN_ID"
   ;;
 
@@ -238,14 +238,14 @@ region)
   # slurp exits non-zero on cancel; the || must be on the same line as the
   # assignment so set -e doesn't fire before we can handle the failure.
   GEOM=$(slurp -d 2>/dev/null || true)
-  [[ -z "$GEOM" ]] && die "Region selection cancelled."
+  [[ -z $GEOM ]] && die "Region selection cancelled."
   GRIM_ARGS+=(-g "$GEOM")
   ;;
 
 output)
   OUTPUT=$(niri_focused_output_name) ||
     die "Could not get focused output from niri."
-  [[ -z "$OUTPUT" ]] && die "No focused output found."
+  [[ -z $OUTPUT ]] && die "No focused output found."
   GRIM_ARGS+=(-o "$OUTPUT")
   ;;
 
@@ -254,7 +254,7 @@ output)
   ;;
 esac
 
-if [[ "${SKIP_GRIM:-false}" != true ]]; then
+if [[ ${SKIP_GRIM:-false} != true ]]; then
   grim "${GRIM_ARGS[@]}" "$TMP_FILE" ||
     die "grim failed to capture screenshot."
 fi

@@ -53,9 +53,9 @@ run_with_spinner() {
     for ((i = 0; i < ${#spin}; i++)); do
       if ! kill -0 "$pid" 2>/dev/null; then break; fi
       if [ -n "${last_step:-}" ]; then
-        printf "\r  %s %s  " "${spin:$i:1}" "$last_step"
+        printf "\r  %s %s  " "${spin:i:1}" "$last_step"
       else
-        printf "\r  %s %s  " "${spin:$i:1}" "$label"
+        printf "\r  %s %s  " "${spin:i:1}" "$label"
       fi
       sleep 0.1
     done
@@ -343,34 +343,34 @@ else
 
   USER_NIX_PROFILE=""
   for candidate in "$HOME/.nix-profile" "$HOME/.local/state/nix/profiles/profile" "/home/$USER/.nix-profile" "/var/home/$USER/.nix-profile" "/nix/profile"; do
-    if [[ -d "$candidate" ]]; then
+    if [[ -d $candidate ]]; then
       USER_NIX_PROFILE=$(realpath "$candidate")
       break
     fi
   done
 
-  if [[ -n "$USER_NIX_PROFILE" ]]; then
+  if [[ -n $USER_NIX_PROFILE ]]; then
     OPTIONAL_MOUNTS+=(-v "$USER_NIX_PROFILE:$USER_NIX_PROFILE:ro")
 
-    if [[ "$USER_NIX_PROFILE" == /oldroot/* ]]; then
+    if [[ $USER_NIX_PROFILE == /oldroot/* ]]; then
       HOST_USER_NIX_PROFILE="${USER_NIX_PROFILE#/oldroot}"
       OPTIONAL_MOUNTS+=(-v "$HOST_USER_NIX_PROFILE:$USER_NIX_PROFILE:ro")
     fi
 
     PATH_ENTRIES+=("$USER_NIX_PROFILE/bin")
 
-    if [[ "$USER_NIX_PROFILE" == /var/home/* ]]; then
+    if [[ $USER_NIX_PROFILE == /var/home/* ]]; then
       alt_path="/home${USER_NIX_PROFILE#/var/home}"
       OPTIONAL_MOUNTS+=(-v "$USER_NIX_PROFILE:$alt_path:ro")
-    elif [[ "$USER_NIX_PROFILE" == /home/* ]]; then
+    elif [[ $USER_NIX_PROFILE == /home/* ]]; then
       alt_path="/var/home${USER_NIX_PROFILE#/home}"
       OPTIONAL_MOUNTS+=(-v "$USER_NIX_PROFILE:$alt_path:ro")
     fi
 
-    if [[ "$USER_NIX_PROFILE" == /var/nix/* ]]; then
+    if [[ $USER_NIX_PROFILE == /var/nix/* ]]; then
       alt_nix="/nix${USER_NIX_PROFILE#/var/nix}"
       OPTIONAL_MOUNTS+=(-v "$USER_NIX_PROFILE:$alt_nix:ro")
-    elif [[ "$USER_NIX_PROFILE" == /nix/* ]]; then
+    elif [[ $USER_NIX_PROFILE == /nix/* ]]; then
       alt_nix="/var/nix${USER_NIX_PROFILE#/nix}"
       OPTIONAL_MOUNTS+=(-v "$USER_NIX_PROFILE:$alt_nix:ro")
     fi
@@ -384,11 +384,11 @@ else
   # mise (rtx) version manager support
   # Mount the installs directory directly since shims point to host paths
   MISE_INSTALLS_DIR="$HOME/.local/share/mise/installs"
-  if [[ -d "$MISE_INSTALLS_DIR" ]]; then
+  if [[ -d $MISE_INSTALLS_DIR ]]; then
     OPTIONAL_MOUNTS+=(-v "$MISE_INSTALLS_DIR:$MISE_INSTALLS_DIR:ro")
     # Add all tool bin directories to PATH
     for tool_bin in "$MISE_INSTALLS_DIR"/*//*/bin; do
-      if [[ -d "$tool_bin" ]]; then
+      if [[ -d $tool_bin ]]; then
         PATH_ENTRIES+=("$tool_bin")
       fi
     done

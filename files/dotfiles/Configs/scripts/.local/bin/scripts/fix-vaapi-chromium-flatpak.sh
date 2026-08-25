@@ -38,7 +38,7 @@ do_overrides() {
 
   # Set LIBVA_DRIVER_NAME based on GPU type
   local libva_driver=()
-  if [[ "$local_dri" == *nvidia* ]]; then
+  if [[ $local_dri == *nvidia* ]]; then
     libva_driver=("--env=LIBVA_DRIVER_NAME=nvidia --env=NVD_BACKEND=direct")
   fi
 

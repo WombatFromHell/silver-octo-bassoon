@@ -128,7 +128,7 @@ parse_args() {
 #       includes both persistent and transient timer units.
 _list_our_timers() {
   local -a extra=()
-  [[ "${1:-}" == "--all" ]] && extra=(--all)
+  [[ ${1:-} == "--all" ]] && extra=(--all)
 
   systemctl --user list-timers "${extra[@]}" --no-legend 2>/dev/null |
     grep -Eo "\b${UNIT_PREFIX}-[0-9a-f]+\.timer\b" || true
@@ -167,7 +167,7 @@ _unit_description() {
 cleanup_expired_timers() {
   local timer
   while IFS= read -r timer; do
-    [[ -z "$timer" ]] && continue
+    [[ -z $timer ]] && continue
     if ! systemctl --user is-active --quiet "$timer" 2>/dev/null; then
       _stop_timer "$timer"
     fi
@@ -191,12 +191,12 @@ schedule_notification() {
   local event_line="$1"
   local start_date start_time event_name is_allday=0
 
-  if [[ "$event_line" =~ $ALLDAY_PATTERN ]]; then
+  if [[ $event_line =~ $ALLDAY_PATTERN ]]; then
     start_date="${BASH_REMATCH[1]}"
     start_time="$ALLDAY_START"
     event_name="${BASH_REMATCH[3]}"
     is_allday=1
-  elif [[ "$event_line" =~ $TIMED_PATTERN ]]; then
+  elif [[ $event_line =~ $TIMED_PATTERN ]]; then
     start_time="${BASH_REMATCH[1]}"
     start_date="${BASH_REMATCH[3]}"
     event_name="${BASH_REMATCH[5]}"
@@ -204,7 +204,7 @@ schedule_notification() {
     return 0
   fi
 
-  [[ -z "$event_name" ]] && return 0
+  [[ -z $event_name ]] && return 0
 
   # date(1) understands "MM/DD/YYYY HH:MM AM" directly
   local event_epoch
@@ -273,7 +273,7 @@ list_timers() {
     # NEXT = "Day YYYY-MM-DD HH:MM:SS TZ"  →  $2 $3 $4
     local timer_line next_human
     timer_line=$(systemctl --user list-timers --no-legend "$unit" 2>/dev/null || true)
-    if [[ -z "$timer_line" ]]; then
+    if [[ -z $timer_line ]]; then
       next_human="(elapsed)"
     else
       next_human=$(awk '{print $2, $3, $4}' <<<"$timer_line")
@@ -301,9 +301,9 @@ cancel_timer() {
   local arg="$1"
   local unit
 
-  if [[ "$arg" =~ ^[0-9a-f]{12}$ ]]; then
+  if [[ $arg =~ ^[0-9a-f]{12}$ ]]; then
     unit="${UNIT_PREFIX}-${arg}.timer"
-  elif [[ "$arg" == ${UNIT_PREFIX}-* ]]; then
+  elif [[ $arg == ${UNIT_PREFIX}-* ]]; then
     unit="${arg%.service}"
     unit="${unit%.timer}.timer"
   else
@@ -349,9 +349,9 @@ main() {
 
   local found=0
   while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    [[ "$line" =~ $HEADER_PATTERN ]] && continue
-    [[ "$line" =~ $ALLDAY_PATTERN ]] || [[ "$line" =~ $TIMED_PATTERN ]] || continue
+    [[ -z $line ]] && continue
+    [[ $line =~ $HEADER_PATTERN ]] && continue
+    [[ $line =~ $ALLDAY_PATTERN ]] || [[ $line =~ $TIMED_PATTERN ]] || continue
     schedule_notification "$line"
     found=1
   done <<<"$events"

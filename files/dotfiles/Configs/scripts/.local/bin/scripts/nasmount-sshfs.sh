@@ -52,11 +52,11 @@ is_mounted() { if $IS_MACOS; then mount | grep -q " on $1 "; else mountpoint -q 
 os_unmount() { if $IS_MACOS; then umount "$1"; else fusermount -u "$1"; fi; }
 
 link_matches_target() {
-  [[ -L "$LINK" ]] && [[ "$(readlink -f "$LINK")" == "$(readlink -f "$TARGET")" ]]
+  [[ -L $LINK ]] && [[ "$(readlink -f "$LINK")" == "$(readlink -f "$TARGET")" ]]
 }
 
 sync_link() {
-  if [[ "$LINK_ENABLED" != "true" ]]; then
+  if [[ $LINK_ENABLED != "true" ]]; then
     remove_link
     return 0
   fi
@@ -93,10 +93,10 @@ done
 
 do_mount() {
   # Idempotency gate: lock file with live process OR active mountpoint
-  if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+  if [[ -f $PID_FILE ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
     return 0
   fi
-  if [[ -f "$PID_FILE" ]]; then
+  if [[ -f $PID_FILE ]]; then
     rm -f "$PID_FILE"
   fi
   if is_mounted "$NAS_HOME"; then
@@ -106,7 +106,7 @@ do_mount() {
 
   mkdir -p "$NAS_HOME"
   HAS_KEY=false
-  if [[ -r "$SSH_KEY" ]]; then
+  if [[ -r $SSH_KEY ]]; then
     SSHFS_OPTS+=(-o "IdentityFile=$SSH_KEY")
     HAS_KEY=true
   fi
@@ -154,10 +154,10 @@ do_mount() {
 }
 
 do_unmount() {
-  if [[ ! -f "$PID_FILE" ]] && ! is_mounted "$NAS_HOME"; then
+  if [[ ! -f $PID_FILE ]] && ! is_mounted "$NAS_HOME"; then
     return 0
   fi
-  if [[ -f "$PID_FILE" ]]; then
+  if [[ -f $PID_FILE ]]; then
     kill "$(cat "$PID_FILE")" 2>/dev/null
     rm -f "$PID_FILE"
   fi

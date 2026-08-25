@@ -50,7 +50,7 @@ check_config() {
   local config_file
   config_file="${1}"
 
-  if [[ ! -f "${config_file}" ]]; then
+  if [[ ! -f ${config_file} ]]; then
     warn "Config file not found: ${config_file}"
     warn "topgrade will use default configuration"
     return 1
@@ -74,7 +74,7 @@ move_existing_log() {
   local log_file="${1}"
   local last_log="${log_file%.*}.last.log"
 
-  if [[ -f "${log_file}" ]]; then
+  if [[ -f ${log_file} ]]; then
     if ! mv "${log_file}" "${last_log}"; then
       warn "Failed to move existing log ${log_file} to ${last_log}"
       return 1
@@ -152,7 +152,7 @@ run_topgrade() {
 
   # Run topgrade and capture exit code using modern bash practices
   set +e
-  if [[ -f "${config_file}" ]]; then
+  if [[ -f ${config_file} ]]; then
     "${topgrade_binary}" --config "${config_file}"
   else
     "${topgrade_binary}"

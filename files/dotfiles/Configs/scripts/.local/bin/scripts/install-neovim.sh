@@ -64,7 +64,7 @@ get_version() {
   local action="$1"
   local version="${2:-}"
 
-  if [[ -z "$version" || "$version" == -* ]]; then
+  if [[ -z $version || $version == -* ]]; then
     echo "stable"
     return 1
   fi
@@ -94,7 +94,7 @@ get_stable_version() {
 
 get_download_url() {
   local version="$1"
-  if [[ "$version" == "nightly" ]]; then
+  if [[ $version == "nightly" ]]; then
     echo "$NIGHTLY_URL"
   else
     echo "${BASE_URL}/${version}/nvim-linux-x86_64.appimage"
@@ -117,7 +117,7 @@ extract_header() {
   local name="$1"
   local src="${2:-/dev/stdin}"
 
-  if [[ -f "$src" ]]; then
+  if [[ -f $src ]]; then
     grep -i "^${name}:" "$src"
   else
     grep -i "^${name}:"
@@ -146,10 +146,10 @@ check_nightly_update() {
   stored_etag=$(grep '^etag=' "$meta_path" | cut -d= -f2- || true)
   stored_last_modified=$(grep '^last-modified=' "$meta_path" | cut -d= -f2- || true)
 
-  if [[ -n "$remote_etag" && -n "$stored_etag" ]]; then
-    [[ "$remote_etag" == "$stored_etag" ]] && return 1
-  elif [[ -n "$remote_last_modified" && -n "$stored_last_modified" ]]; then
-    [[ "$remote_last_modified" == "$stored_last_modified" ]] && return 1
+  if [[ -n $remote_etag && -n $stored_etag ]]; then
+    [[ $remote_etag == "$stored_etag" ]] && return 1
+  elif [[ -n $remote_last_modified && -n $stored_last_modified ]]; then
+    [[ $remote_last_modified == "$stored_last_modified" ]] && return 1
   fi
 
   return 0
@@ -165,14 +165,14 @@ download_appimage() {
   local curl_args=("-fLR" "--connect-timeout" "10" "--max-time" "300")
   local resp_headers_file=""
 
-  if [[ -n "$meta_path" ]]; then
+  if [[ -n $meta_path ]]; then
     resp_headers_file=$($MKTEMP_CMD)
     curl_args+=("--remote-time" "--dump-header" "$resp_headers_file")
   fi
 
   if $CURL_CMD "${curl_args[@]}" "$url" -o "$dest"; then
     $CHMOD_CMD 0755 "$dest"
-    if [[ -n "$meta_path" && -n "$resp_headers_file" ]]; then
+    if [[ -n $meta_path && -n $resp_headers_file ]]; then
       local new_etag new_last_modified
       new_etag=$(extract_header "etag" <"$resp_headers_file")
       new_last_modified=$(extract_header "last-modified" <"$resp_headers_file")
@@ -184,8 +184,8 @@ download_appimage() {
     fi
     return 0
   else
-    [[ -n "$resp_headers_file" ]] && $RM_CMD -f "$resp_headers_file"
-    [[ -f "$dest" ]] && $RM_CMD -f "$dest"
+    [[ -n $resp_headers_file ]] && $RM_CMD -f "$resp_headers_file"
+    [[ -f $dest ]] && $RM_CMD -f "$dest"
     return 1
   fi
 }
@@ -199,13 +199,13 @@ download_version() {
   local file_path="$3"
   local url="$4"
 
-  if [[ "$version" == "nightly" ]]; then
+  if [[ $version == "nightly" ]]; then
     local meta_path
     meta_path=$(get_path "$install_dir" "$version" "meta")
 
-    [[ -f "$file_path" && -f "$meta_path" ]] && ! check_nightly_update "$url" "$meta_path" && return 1
+    [[ -f $file_path && -f $meta_path ]] && ! check_nightly_update "$url" "$meta_path" && return 1
 
-    [[ -f "$file_path" ]] && is_file_busy "$file_path" && {
+    [[ -f $file_path ]] && is_file_busy "$file_path" && {
       log_error "Cannot update: Neovim is running."
       return 1
     }
@@ -215,7 +215,7 @@ download_version() {
     return 0
   fi
 
-  [[ -f "$file_path" ]] && {
+  [[ -f $file_path ]] && {
     log_info "Version '$version' is already installed."
     return 1
   }
@@ -232,19 +232,19 @@ update_symlink() {
   dir=$(dirname "$symlink_path")
 
   local run_cmd="$SUDO_CMD"
-  if [[ "$symlink_path" == "$HOME"* ]]; then
+  if [[ $symlink_path == "$HOME"* ]]; then
     run_cmd=""
   fi
 
-  [[ ! -d "$dir" ]] && $run_cmd mkdir -p "$dir"
+  [[ ! -d $dir ]] && $run_cmd mkdir -p "$dir"
 
   local current_target
-  if [[ -L "$symlink_path" ]]; then
+  if [[ -L $symlink_path ]]; then
     current_target=$(readlink "$symlink_path")
-    [[ "$current_target" == "$file_path" ]] && return 1
+    [[ $current_target == "$file_path" ]] && return 1
   fi
 
-  [[ -e "$symlink_path" || -L "$symlink_path" ]] && $run_cmd rm -f "$symlink_path"
+  [[ -e $symlink_path || -L $symlink_path ]] && $run_cmd rm -f "$symlink_path"
 
   $run_cmd ln -s "$file_path" "$symlink_path" || die "Failed to create symlink at $symlink_path."
   return 0
@@ -264,7 +264,7 @@ get_installed_version() {
 
 has_symlink() {
   local symlink_path="$1"
-  [[ -L "$symlink_path" ]]
+  [[ -L $symlink_path ]]
 }
 
 remove_version() {
@@ -275,11 +275,11 @@ remove_version() {
   local file_path
   local resolved_version="$version"
 
-  if [[ "$version" == "stable" ]]; then
+  if [[ $version == "stable" ]]; then
     resolved_version=$(get_installed_version "$install_dir") || resolved_version=""
   fi
 
-  if [[ -n "$resolved_version" ]]; then
+  if [[ -n $resolved_version ]]; then
     file_path=$(get_path "$install_dir" "$resolved_version" "appimage")
   else
     file_path=""
@@ -287,18 +287,18 @@ remove_version() {
 
   local removed_anything=false
 
-  if [[ -L "$symlink_path" ]]; then
+  if [[ -L $symlink_path ]]; then
     local symlink_target
     symlink_target=$(readlink "$symlink_path")
-    if [[ -z "$resolved_version" ]]; then
-      if [[ "$symlink_target" == *nvim-*.appimage ]]; then
+    if [[ -z $resolved_version ]]; then
+      if [[ $symlink_target == *nvim-*.appimage ]]; then
         rm -f "$symlink_path"
         log_info "Removing orphan symlink at $symlink_path..."
         removed_anything=true
       fi
-    elif [[ "$symlink_target" == "$file_path" ]]; then
+    elif [[ $symlink_target == "$file_path" ]]; then
       local run_cmd="$SUDO_CMD"
-      if [[ "$symlink_path" == "$HOME"* ]]; then
+      if [[ $symlink_path == "$HOME"* ]]; then
         run_cmd=""
       fi
       log_info "Removing symlink at $symlink_path..."
@@ -307,13 +307,13 @@ remove_version() {
     fi
   fi
 
-  if [[ "$force_delete" == true ]] && [[ -f "$file_path" ]]; then
+  if [[ $force_delete == true ]] && [[ -f $file_path ]]; then
     log_info "Removing version '$version'..."
     $RM_CMD -f "$file_path" "$(get_path "$install_dir" "$resolved_version" "meta")"
     removed_anything=true
   fi
 
-  if [[ "$removed_anything" == false ]]; then
+  if [[ $removed_anything == false ]]; then
     log_info "Nothing to remove for version '$version'."
   fi
 
@@ -329,7 +329,7 @@ cleanup_old_versions() {
   shopt -u nullglob
 
   for f in "${old_files[@]}"; do
-    if [[ "$f" != *"${current_version}"* ]]; then
+    if [[ $f != *"${current_version}"* ]]; then
       log_info "Removing old version: $(basename "$f")"
       $RM_CMD -f "$f" "${f%.appimage}.meta"
     fi
@@ -345,7 +345,7 @@ prompt_sudo() {
   local reply
 
   read -r -p "$prompt [y/N] " reply || return 1
-  [[ "${reply,,}" == "y" ]]
+  [[ ${reply,,} == "y" ]]
 }
 
 main() {
@@ -395,7 +395,7 @@ main() {
     esac
   done
 
-  if [[ -z "$action" ]]; then
+  if [[ -z $action ]]; then
     usage
     exit 1
   fi
@@ -404,9 +404,9 @@ main() {
 
   local resolved_version="$version"
 
-  if [[ "$action" == "install" ]]; then
+  if [[ $action == "install" ]]; then
     # Resolve 'stable' alias to actual version tag for file naming
-    if [[ "$version" == "stable" ]]; then
+    if [[ $version == "stable" ]]; then
       resolved_version=$(get_stable_version)
     fi
   fi
@@ -414,7 +414,7 @@ main() {
   local file_path
   file_path=$(get_path "$INSTALL_DIR" "$resolved_version" "appimage")
 
-  if [[ "$action" == "install" ]]; then
+  if [[ $action == "install" ]]; then
     local url
     url=$(get_download_url "$resolved_version")
 
@@ -424,7 +424,7 @@ main() {
       log_info "Update downloaded successfully."
       downloaded=true
     else
-      if [[ -f "$file_path" ]]; then
+      if [[ -f $file_path ]]; then
         log_info "Using existing version: $(basename "$file_path")"
       else
         log_info "No new update found."
@@ -433,7 +433,7 @@ main() {
 
     # Ensure symlink is set (default: ~/.local/bin/nvim)
     local symlink_path="$SYMLINK_PATH"
-    if [[ "$global_install" == true ]]; then
+    if [[ $global_install == true ]]; then
       symlink_path="/usr/local/bin/nvim"
       if prompt_sudo "Install symlink to /usr/local/bin (requires sudo)?"; then
         log_info "Installing global symlink..."
@@ -445,30 +445,30 @@ main() {
     update_symlink "$symlink_path" "$file_path"
 
     # Cleanup old versions AFTER symlink is in place
-    if [[ "$downloaded" == true ]]; then
+    if [[ $downloaded == true ]]; then
       cleanup_old_versions "$INSTALL_DIR" "$resolved_version"
     fi
 
     # Offer to add to PATH if needed
-    if [[ "$symlink_path" == "$SYMLINK_PATH" ]] && [[ ":$PATH:" != *"$LOCAL_BIN"* ]]; then
+    if [[ $symlink_path == "$SYMLINK_PATH" ]] && [[ ":$PATH:" != *"$LOCAL_BIN"* ]]; then
       log_info "Add to PATH: export PATH=\"$LOCAL_BIN:\$PATH\""
     fi
-  elif [[ "$action" == "uninstall" ]]; then
-    if [[ "$version" == "stable" ]]; then
+  elif [[ $action == "uninstall" ]]; then
+    if [[ $version == "stable" ]]; then
       resolved_version=$(get_installed_version "$INSTALL_DIR") || resolved_version=""
     fi
 
     local has_user_symlink=false
     local has_global_symlink=false
 
-    [[ "$global_install" == true ]] && has_symlink "/usr/local/bin/nvim" && has_global_symlink=true
+    [[ $global_install == true ]] && has_symlink "/usr/local/bin/nvim" && has_global_symlink=true
     has_symlink "$SYMLINK_PATH" && has_user_symlink=true
 
-    if [[ -n "$resolved_version" || "$has_user_symlink" == true || "$has_global_symlink" == true ]]; then
-      if [[ "$global_install" == true && "$has_global_symlink" == true ]]; then
+    if [[ -n $resolved_version || $has_user_symlink == true || $has_global_symlink == true ]]; then
+      if [[ $global_install == true && $has_global_symlink == true ]]; then
         remove_version "$INSTALL_DIR" "/usr/local/bin/nvim" "$resolved_version" "$force_remove"
       fi
-      if [[ "$has_user_symlink" == true ]]; then
+      if [[ $has_user_symlink == true ]]; then
         remove_version "$INSTALL_DIR" "$SYMLINK_PATH" "$resolved_version" "$force_remove"
       fi
     else
@@ -477,6 +477,6 @@ main() {
   fi
 }
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ ${BASH_SOURCE[0]} == "${0}" ]]; then
   main "$@"
 fi

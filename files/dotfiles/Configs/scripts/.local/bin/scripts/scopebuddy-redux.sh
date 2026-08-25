@@ -464,7 +464,7 @@ while [[ $# -gt 0 ]]; do
     while [[ $# -gt 0 ]]; do
       # Wrap each entry in %command% in quotes to make it easier for scripting
       # Escape the last \ in $1 if the last character is \ otherwise the %command% will not launch
-      if [[ "$1" =~ \\$ ]]; then
+      if [[ $1 =~ \\$ ]]; then
         # shellcheck disable=SC2089
         command+=" \"$(echo "$1" | sed -E 's/\\$/\\\\/')\""
       else
@@ -609,7 +609,7 @@ https://github.com/HikariKnight/ScopeBuddy#auto-detection-features-scb_auto_"
     fi
     if [ "$SCB_DETECT" = "kde" ]; then
       KDE_HDR_STATE=$(kde_get_primary_display "$PREFER_OUTPUT" | jq -r '.hdr')
-      if [[ "$KDE_HDR_STATE" == "true" ]]; then
+      if [[ $KDE_HDR_STATE == "true" ]]; then
         gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--hdr-enabled")
       fi
       if [ "$AUTO_WAYLAND_HDR_ENABLE" -eq 1 ]; then
@@ -619,7 +619,7 @@ https://github.com/HikariKnight/ScopeBuddy#auto-detection-features-scb_auto_"
     elif [ "$SCB_DETECT" = "gnome_gdctl" ]; then
       # Check if HDR is enabled on GNOME via gdctl (bt2100 color mode indicates HDR)
       GNOME_GDCTL_HDR_STATE=$(gnome_gdctl_get_primary_display "$PREFER_OUTPUT" | jq -r '."color-mode"')
-      if [[ "$GNOME_GDCTL_HDR_STATE" == "bt2100" ]]; then
+      if [[ $GNOME_GDCTL_HDR_STATE == "bt2100" ]]; then
         gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--hdr-enabled")
       fi
       if [ "$AUTO_WAYLAND_HDR_ENABLE" -eq 1 ]; then
@@ -630,7 +630,7 @@ https://github.com/HikariKnight/ScopeBuddy#auto-detection-features-scb_auto_"
       # Check if HDR is enabled on GNOME via gnome-randr (color-mode: 1 indicates HDR/bt2100)
       CONNECTOR=$(gnome_randr_get_primary_display "$PREFER_OUTPUT" 2>/dev/null)
       GNOME_RANDR_HDR_STATE=$("$GNOME_RANDR_COMMAND" query "$CONNECTOR" | awk '/^color-mode:/ {print $2}')
-      if [[ "$GNOME_RANDR_HDR_STATE" == "1" ]]; then
+      if [[ $GNOME_RANDR_HDR_STATE == "1" ]]; then
         gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--hdr-enabled")
       fi
       if [ "$AUTO_WAYLAND_HDR_ENABLE" -eq 1 ]; then
@@ -650,25 +650,25 @@ https://github.com/HikariKnight/ScopeBuddy#auto-detection-features-scb_auto_"
   if [ "$SCB_AUTO_VRR" -eq 1 ]; then
     if [ "$SCB_DETECT" = "kde" ]; then
       KDE_VRR_STATE=$(kde_get_primary_display "$PREFER_OUTPUT" | jq -r '.vrrPolicy')
-      if [[ "$KDE_VRR_STATE" == 1 || "$KDE_VRR_STATE" == 2 ]]; then
+      if [[ $KDE_VRR_STATE == 1 || $KDE_VRR_STATE == 2 ]]; then
         gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--adaptive-sync")
       fi
     elif [ "$SCB_DETECT" = "gnome_gdctl" ]; then
       # Check if VRR is enabled on GNOME via gdctl (refresh-rate-mode == "variable")
       GNOME_GDCTL_VRR_STATE=$(gnome_gdctl_get_primary_display "$PREFER_OUTPUT" | jq -r '.current_mode.properties."refresh-rate-mode"')
-      if [[ "$GNOME_GDCTL_VRR_STATE" == "variable" ]]; then
+      if [[ $GNOME_GDCTL_VRR_STATE == "variable" ]]; then
         gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--adaptive-sync")
       fi
     elif [ "$SCB_DETECT" = "gnome_randr" ]; then
       # Check if VRR is enabled on GNOME via gnome-randr (active mode has +vrr)
       GNOME_RANDR_VRR_STATE=$(gnome_randr_check_vrr "$PREFER_OUTPUT")
-      if [[ "$GNOME_RANDR_VRR_STATE" == "true" ]]; then
+      if [[ $GNOME_RANDR_VRR_STATE == "true" ]]; then
         gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--adaptive-sync")
       fi
     elif [ "$SCB_DETECT" = "wlroots" ]; then
       # Check if VRR is enabled on Wlroots via wlr-randr
       WLR_VRR_STATE=$(wlr_get_primary_display "$PREFER_OUTPUT" | jq -r '.adaptive_sync')
-      if [[ "$WLR_VRR_STATE" == "true" ]]; then
+      if [[ $WLR_VRR_STATE == "true" ]]; then
         gamescope_opts=$(verify_or_append_arg "$gamescope_opts" "--adaptive-sync")
       fi
     fi
@@ -762,14 +762,14 @@ EOF
 fi
 
 pre_command() {
-  if [[ -n "$SCB_PRE_COMMAND" ]]; then
+  if [[ -n $SCB_PRE_COMMAND ]]; then
     echo "Executing pre-command: $SCB_PRE_COMMAND"
     eval "$SCB_PRE_COMMAND" || echo "Warning: SCB_PRE_COMMAND failed!"
   fi
 }
 
 post_command() {
-  if [[ -n "$SCB_POST_COMMAND" ]]; then
+  if [[ -n $SCB_POST_COMMAND ]]; then
     echo "Executing post-command: $SCB_POST_COMMAND"
     eval "$SCB_POST_COMMAND"
   fi

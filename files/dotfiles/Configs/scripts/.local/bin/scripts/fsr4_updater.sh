@@ -36,7 +36,7 @@ log_error() { echo -e "\e[31m[ERROR]\e[0m $*" >&2; }
 # Find all available FSR 4 DLL versions in cache
 # Returns: sorted list of DLL filenames (newest first by version)
 discover_available_versions() {
-  if [[ ! -d "$CACHE_DIR" ]]; then
+  if [[ ! -d $CACHE_DIR ]]; then
     log_error "Cache directory not found: $CACHE_DIR"
     return 1
   fi
@@ -51,7 +51,7 @@ discover_available_versions() {
 select_version() {
   local requested="${1:-}"
 
-  if [[ -n "$requested" ]]; then
+  if [[ -n $requested ]]; then
     if [[ -f "${CACHE_DIR}/${requested}" ]]; then
       echo "$requested"
       return 0
@@ -74,13 +74,13 @@ select_version() {
 # Returns: list of system32 directory paths
 find_prefix_system32_dirs() {
   local search_root
-  if [[ -n "${1:-}" ]]; then
+  if [[ -n ${1:-} ]]; then
     search_root="$1"
   else
     search_root="$DEFAULT_STEAM_LIBRARY"
   fi
 
-  if [[ ! -d "$search_root" ]]; then
+  if [[ ! -d $search_root ]]; then
     log_error "Steam library not found: $search_root"
     return 1
   fi
@@ -89,10 +89,10 @@ find_prefix_system32_dirs() {
   local existing_dlls
   existing_dlls=$(find "$search_root" \( -type f -o -type l \) -name "$TARGET_NAME" 2>/dev/null || true)
 
-  if [[ -n "$existing_dlls" ]]; then
+  if [[ -n $existing_dlls ]]; then
     # Return parent directories of existing DLLs
     while IFS= read -r dll_path; do
-      [[ -n "$dll_path" ]] && dirname "$dll_path"
+      [[ -n $dll_path ]] && dirname "$dll_path"
     done <<<"$existing_dlls"
   else
     # Fallback: scan all system32 directories
@@ -108,7 +108,7 @@ create_symlink() {
   local target_path="${target_dir}/${TARGET_NAME}"
 
   # Remove existing file/link
-  if [[ -e "$target_path" || -L "$target_path" ]]; then
+  if [[ -e $target_path || -L $target_path ]]; then
     rm -f "$target_path"
   fi
 
@@ -139,7 +139,7 @@ find_appid_system32() {
 
   # Check in the specified search root
   dll_path="${search_root}/${appid}/pfx/drive_c/windows/system32/${TARGET_NAME}"
-  if [[ -e "$dll_path" || -L "$dll_path" ]]; then
+  if [[ -e $dll_path || -L $dll_path ]]; then
     dirname "$dll_path"
     return 0
   fi
@@ -154,10 +154,10 @@ is_managed() {
   local dll_path="$1"
   local current_version="$2"
 
-  if [[ -L "$dll_path" ]]; then
+  if [[ -L $dll_path ]]; then
     local target
     target=$(readlink "$dll_path")
-    if [[ "$target" == *"$current_version"* ]]; then
+    if [[ $target == *"$current_version"* ]]; then
       return 0 # Managed (current)
     else
       return 2 # Managed but outdated
@@ -180,7 +180,7 @@ cmd_list() {
 # Args: $1 = optional specific compatdata root
 cmd_status() {
   local search_root
-  if [[ -n "${1:-}" ]]; then
+  if [[ -n ${1:-} ]]; then
     search_root="$1"
   else
     search_root="$DEFAULT_STEAM_LIBRARY"
@@ -204,17 +204,17 @@ cmd_status() {
   printf "%s\n" "─────────────────────────────────────────────────────────────────────"
 
   while IFS= read -r prefix_dir; do
-    [[ -z "$prefix_dir" ]] && continue
+    [[ -z $prefix_dir ]] && continue
     dll_path="${prefix_dir}/${TARGET_NAME}"
     appid=$(extract_appid "$prefix_dir")
 
     local status_icon=""
     local status_text=""
 
-    if [[ -L "$dll_path" ]]; then
+    if [[ -L $dll_path ]]; then
       local target
       target=$(readlink "$dll_path")
-      if [[ "$target" == *"$current_version"* ]]; then
+      if [[ $target == *"$current_version"* ]]; then
         status_icon="🟢"
         status_text="managed"
         ((++managed_count))
@@ -223,7 +223,7 @@ cmd_status() {
         status_text="outdated ($(basename "$target"))"
         ((++outdated_count))
       fi
-    elif [[ -f "$dll_path" ]]; then
+    elif [[ -f $dll_path ]]; then
       status_icon="🔴"
       status_text="unmanaged (file)"
       ((++unmanaged_count))
@@ -254,11 +254,11 @@ cmd_update() {
   local search_root="$DEFAULT_STEAM_LIBRARY"
 
   # Detect argument types
-  if [[ "$arg1" == /* || "$arg1" == ~* ]]; then
+  if [[ $arg1 == /* || $arg1 == ~* ]]; then
     # arg1 is a path
     search_root="$arg1"
     version="${arg2:-}"
-  elif [[ "$arg2" == /* || "$arg2" == ~* ]]; then
+  elif [[ $arg2 == /* || $arg2 == ~* ]]; then
     # arg2 is a path
     search_root="$arg2"
     version="$arg1"
@@ -278,7 +278,7 @@ cmd_update() {
 
   local prefix_dirs=()
   while IFS= read -r dir; do
-    [[ -n "$dir" ]] && prefix_dirs+=("$dir")
+    [[ -n $dir ]] && prefix_dirs+=("$dir")
   done < <(find_prefix_system32_dirs "$search_root")
 
   total=${#prefix_dirs[@]}
@@ -309,17 +309,17 @@ cmd_relink() {
   local version=""
   local search_root="$DEFAULT_STEAM_LIBRARY"
 
-  if [[ -z "$appid" ]]; then
+  if [[ -z $appid ]]; then
     log_error "AppID required. Usage: $(basename "$0") relink <appid> [version] [path]"
     return 1
   fi
 
   # Detect argument types for arg2 and arg3
-  if [[ "$arg2" == /* || "$arg2" == ~* ]]; then
+  if [[ $arg2 == /* || $arg2 == ~* ]]; then
     # arg2 is a path
     search_root="$arg2"
     version="${arg3:-}"
-  elif [[ "$arg3" == /* || "$arg3" == ~* ]]; then
+  elif [[ $arg3 == /* || $arg3 == ~* ]]; then
     # arg3 is a path
     search_root="$arg3"
     version="$arg2"
@@ -334,7 +334,7 @@ cmd_relink() {
   local system32_dir
   system32_dir=$(find_appid_system32 "$appid" "$search_root")
 
-  if [[ -z "$system32_dir" ]]; then
+  if [[ -z $system32_dir ]]; then
     log_error "No amdxcffx64.dll found for AppID $appid in $search_root"
     return 1
   fi

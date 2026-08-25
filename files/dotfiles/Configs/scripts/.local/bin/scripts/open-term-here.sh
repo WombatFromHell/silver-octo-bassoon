@@ -15,11 +15,11 @@ SESSION_NAME="main"
 # -----------------------------------------------------------------------------
 
 validate_input() {
-  if [[ -z "$TARGET_DIR" ]] || [[ ! -d "$TARGET_DIR" ]]; then
+  if [[ -z $TARGET_DIR ]] || [[ ! -d $TARGET_DIR ]]; then
     notify-send "Error" "Invalid directory: $TARGET_DIR"
     exit 1
   fi
-  if [[ -z "$TERMINAL" ]]; then
+  if [[ -z $TERMINAL ]]; then
     notify-send "Error" "Terminal not specified"
     exit 1
   fi

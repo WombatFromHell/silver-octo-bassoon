@@ -16,7 +16,7 @@ POLL=2
 JIGGLE_PX=3
 LOCKFILE="${XDG_RUNTIME_DIR:-/tmp}/gamescope-jiggle.lock"
 
-if [[ "${1:-}" != "--" ]]; then
+if [[ ${1:-} != "--" ]]; then
   echo "usage: gamescope-jiggle.sh -- <command...>" >&2
   exit 1
 fi
@@ -82,7 +82,7 @@ gamescope_focused() {
     # kdotool getactivewindow prints the window id; getwindowclassname resolves it
     local id
     id=$(kdotool getactivewindow 2>/dev/null) || return 1
-    [[ -n "$id" ]] && kdotool getwindowclassname "$id" 2>/dev/null | grep -qi gamescope
+    [[ -n $id ]] && kdotool getwindowclassname "$id" 2>/dev/null | grep -qi gamescope
     ;;
   esac
 }
@@ -91,7 +91,7 @@ watch_loop() {
   local was_focused=0
   while pgrep -x steam >/dev/null; do
     if gamescope_focused; then
-      if [[ "$was_focused" -eq 0 ]]; then
+      if [[ $was_focused -eq 0 ]]; then
         jiggle
         was_focused=1
       fi

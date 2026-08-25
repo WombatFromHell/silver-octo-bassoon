@@ -23,7 +23,7 @@ get_primary_output() {
 }
 
 output_num="$(get_primary_output)"
-[[ -z "$output_num" ]] && {
+[[ -z $output_num ]] && {
   echo "Error: No output found at 0,0" >&2
   exit 1
 }

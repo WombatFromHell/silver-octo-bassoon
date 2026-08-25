@@ -18,7 +18,7 @@ profile_is_active() {
 active_profile() {
   local p
   p="$(awk '/\[active\]/ { print $1; exit }' <<<"$1")"
-  [[ -n "$p" ]] || return 1
+  [[ -n $p ]] || return 1
   echo "$p"
 }
 
@@ -74,8 +74,8 @@ EOF
   [[ $? -eq 1 ]]
   set -e
   [[ $rc -eq 1 ]]
-  grep -q "^ipc outputs setProfile desktop\$" "$calls"
-  grep -q "^ipc outputs setProfile main\$" "$calls"
+  grep -q '^ipc outputs setProfile desktop$' "$calls"
+  grep -q '^ipc outputs setProfile main$' "$calls"
   echo "self-test ok"
 }
 
@@ -98,7 +98,7 @@ EOF
     ;;
   --list | "") dms_list_profiles ;;
   *)
-    if [[ "${2:-}" == "--" ]]; then
+    if [[ ${2:-} == "--" ]]; then
       local profiles target="$1" restore
       profiles="$(dms_list_profiles)"
       profile_exists "$target" "$profiles" || {
@@ -111,7 +111,7 @@ EOF
       }
       shift 2
       switch_and_run "$target" "$restore" "$@"
-    elif [[ "${3:-}" == "--" ]]; then
+    elif [[ ${3:-} == "--" ]]; then
       local profiles target="$1" restore="$2"
       profiles="$(dms_list_profiles)"
       profile_exists "$target" "$profiles" || {

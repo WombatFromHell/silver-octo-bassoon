@@ -37,13 +37,13 @@ DBX_FLATPAK="${DBX_FLATPAK:-false}"
 # Parse --flatpak from CLI args if present (must be called by browser installer scripts)
 dbx_parse_flatpak_flag() {
   for arg in "$@"; do
-    [[ "$arg" == "--flatpak" ]] && DBX_FLATPAK="true" && break
+    [[ $arg == "--flatpak" ]] && DBX_FLATPAK="true" && break
   done
 }
 
 # Detect browser mode
 _dbx_is_browser_mode() {
-  [[ -n "$DBX_PKG_NAME" || -n "$DBX_REPO_URL" || -n "$DBX_FLATPAK_ID" ]]
+  [[ -n $DBX_PKG_NAME || -n $DBX_REPO_URL || -n $DBX_FLATPAK_ID ]]
 }
 
 #------------------------------------------------------------------------------
@@ -60,7 +60,7 @@ dbx_browser_find_desktop_files() {
 
   local results=()
   for dir in "${search_dirs[@]}"; do
-    [[ -d "$dir" ]] || continue
+    [[ -d $dir ]] || continue
     while IFS= read -r -d '' file; do
       if grep -q "MimeType=.*x-scheme-handler/http" "$file" 2>/dev/null; then
         results+=("$file")
@@ -74,7 +74,7 @@ dbx_browser_find_desktop_files() {
 dbx_browser_get_last_default() {
   local category="$1"
   local default_file="$HOME/.local/share/distrobox-defaults-${category}.txt"
-  [[ -f "$default_file" ]] && cat "$default_file" || echo ""
+  [[ -f $default_file ]] && cat "$default_file" || echo ""
 }
 
 dbx_browser_save_default() {
@@ -94,17 +94,17 @@ dbx_browser_set_default() {
   local current_default
   current_default="$(xdg-settings get "$category" 2>/dev/null || echo "")"
 
-  if [[ -n "$current_default" && "$current_default" != "$desktop_filename" ]]; then
+  if [[ -n $current_default && $current_default != "$desktop_filename" ]]; then
     dbx_browser_save_default "$category" "$current_default"
     dbx_log "Stored previous default: $current_default"
   fi
 
-  if [[ "$current_default" == "$desktop_filename" ]]; then
+  if [[ $current_default == "$desktop_filename" ]]; then
     dbx_log "Default $category already set to: $desktop_filename"
     return 0
   fi
 
-  if ! grep -q "MimeType=.*x-scheme-handler" "$desktop_file" 2>/dev/null && [[ "$category" == *"web-browser"* ]]; then
+  if ! grep -q "MimeType=.*x-scheme-handler" "$desktop_file" 2>/dev/null && [[ $category == *"web-browser"* ]]; then
     dbx_err "Desktop file does not declare MIME handlers: $desktop_file"
     return 1
   fi
@@ -118,16 +118,16 @@ dbx_browser_restore_default() {
   local previous_default
   previous_default="$(dbx_browser_get_last_default "$category")"
 
-  [[ -z "$previous_default" ]] && dbx_log "No previous default stored for $category" && return 0
+  [[ -z $previous_default ]] && dbx_log "No previous default stored for $category" && return 0
 
   local desktop_found="false"
-  if [[ "$category" == *"web-browser"* ]]; then
+  if [[ $category == *"web-browser"* ]]; then
     while IFS= read -r file; do
       [[ "$(basename "$file")" == "$previous_default" ]] && desktop_found="true" && break
     done < <(dbx_browser_find_desktop_files)
   fi
 
-  if [[ "$desktop_found" == "false" && "$category" == *"web-browser"* ]]; then
+  if [[ $desktop_found == "false" && $category == *"web-browser"* ]]; then
     dbx_log "Previously stored default no longer available: $previous_default"
     rm -f "$HOME/.local/share/distrobox-defaults-${category}.txt"
     return 0
@@ -136,7 +136,7 @@ dbx_browser_restore_default() {
   local current_default
   current_default="$(xdg-settings get "$category" 2>/dev/null || echo "")"
 
-  [[ "$current_default" == "$previous_default" ]] && rm -f "$HOME/.local/share/distrobox-defaults-${category}.txt" && return 0
+  [[ $current_default == "$previous_default" ]] && rm -f "$HOME/.local/share/distrobox-defaults-${category}.txt" && return 0
 
   dbx_log "Restoring default $category to: $previous_default"
   xdg-settings set "$category" "$previous_default" 2>/dev/null && rm -f "$HOME/.local/share/distrobox-defaults-${category}.txt"
@@ -151,7 +151,7 @@ dbx_browser_detect_wrapper() {
 
   local wrapper_path
   wrapper_path="$(command -v "$wrapper_name" 2>/dev/null || echo "")"
-  if [[ -n "$wrapper_path" && -x "$wrapper_path" ]]; then
+  if [[ -n $wrapper_path && -x $wrapper_path ]]; then
     dbx_err "Using ${wrapper_name}: $wrapper_path"
     echo "$wrapper_path"
     return 0
@@ -159,7 +159,7 @@ dbx_browser_detect_wrapper() {
 
   local flags_script
   flags_script="$(command -v chromium-flags.sh 2>/dev/null || echo "")"
-  if [[ -n "$flags_script" && -x "$flags_script" ]]; then
+  if [[ -n $flags_script && -x $flags_script ]]; then
     dbx_err "Using chromium-flags.sh: $flags_script"
     echo "$flags_script"
     return 0
@@ -177,13 +177,13 @@ dbx_browser_build_exec_target() {
   local container_name="${4:-${CONTAINER_NAME:-}}"
   local flatpak_id="${5:-${DBX_FLATPAK_ID:-}}"
 
-  if [[ -n "$wrapper_path" && -x "$wrapper_path" ]]; then
+  if [[ -n $wrapper_path && -x $wrapper_path ]]; then
     echo "$wrapper_path"
     return 0
   fi
 
   if command -v chromium-flags.sh &>/dev/null && [[ -x "$(command -v chromium-flags.sh)" ]]; then
-    if [[ "$use_flatpak" == "true" && -n "$flatpak_id" ]]; then
+    if [[ $use_flatpak == "true" && -n $flatpak_id ]]; then
       echo "$(command -v chromium-flags.sh) flatpak run ${flatpak_id}"
       return 0
     else
@@ -192,7 +192,7 @@ dbx_browser_build_exec_target() {
     fi
   fi
 
-  if [[ "$use_flatpak" == "true" && -n "$flatpak_id" ]]; then
+  if [[ $use_flatpak == "true" && -n $flatpak_id ]]; then
     echo "flatpak run ${flatpak_id}"
   else
     echo "$pkg_name"
@@ -208,14 +208,14 @@ dbx_browser_install_dnf() {
   local pkg_name="${2:-${DBX_PKG_NAME:-}}"
   local repo_url="${3:-${DBX_REPO_URL:-}}"
 
-  [[ -z "$pkg_name" ]] && dbx_err "dbx_browser_install_dnf: DBX_PKG_NAME not set" && return 1
+  [[ -z $pkg_name ]] && dbx_err "dbx_browser_install_dnf: DBX_PKG_NAME not set" && return 1
 
   if dbxe -- rpm -q "$pkg_name" &>/dev/null; then
     dbx_log "${pkg_name} already installed in container"
   else
     dbx_log "Installing ${pkg_name} via DNF (inside container)"
     dbxe -- sudo dnf install -y dnf-plugins-core
-    [[ -n "$repo_url" ]] && dbxe -- sudo dnf config-manager addrepo --overwrite --from-repofile="${repo_url}"
+    [[ -n $repo_url ]] && dbxe -- sudo dnf config-manager addrepo --overwrite --from-repofile="${repo_url}"
     dbxe -- sudo dnf install -y "${pkg_name}"
   fi
 }
@@ -231,7 +231,7 @@ dbx_browser_cleanup_desktop() {
   local container_prefix
   container_prefix="$(dbx_get_container_prefix "$container_name")"
 
-  [[ -n "$container_prefix" ]] && rm -f "${apps_dir}/${container_prefix}-${app_id}.desktop" "${apps_dir}/${container_prefix}-${app_id}.desktop.bak" 2>/dev/null || true
+  [[ -n $container_prefix ]] && rm -f "${apps_dir}/${container_prefix}-${app_id}.desktop" "${apps_dir}/${container_prefix}-${app_id}.desktop.bak" 2>/dev/null || true
   rm -f "${apps_dir}/${app_id}.desktop" "${apps_dir}/${app_id}.desktop.bak" 2>/dev/null || true
 
   update-desktop-database "${apps_dir}" 2>/dev/null || true
@@ -244,7 +244,7 @@ dbx_browser_cleanup_exported() {
   local container_prefix
   container_prefix="$(dbx_get_container_prefix "$container_name")"
 
-  if [[ -n "$container_prefix" && -n "$app_name" ]]; then
+  if [[ -n $container_prefix && -n $app_name ]]; then
     rm -f "${apps_dir}/${container_prefix}-${app_name}.desktop" "${apps_dir}/${container_prefix}-${app_name}.desktop.bak" 2>/dev/null || true
     rm -f "${apps_dir}/${container_prefix}-${container_prefix}.desktop" "${apps_dir}/${container_prefix}-${container_prefix}.desktop.bak" 2>/dev/null || true
   fi
@@ -267,7 +267,7 @@ dbx_browser_configure_desktop() {
   exec_target=$(dbx_browser_build_exec_target "$wrapper_path" "$pkg_name" "$use_flatpak" "$container_name" "$flatpak_id")
 
   local launcher_desc
-  if [[ -n "$wrapper_path" && -x "$wrapper_path" ]]; then
+  if [[ -n $wrapper_path && -x $wrapper_path ]]; then
     launcher_desc="$(basename "$wrapper_path")"
   elif command -v chromium-flags.sh &>/dev/null && [[ -x "$(command -v chromium-flags.sh)" ]]; then
     launcher_desc="chromium-flags.sh"
@@ -275,36 +275,36 @@ dbx_browser_configure_desktop() {
     launcher_desc="native browser"
   fi
 
-  if [[ "$use_flatpak" == "true" ]]; then
+  if [[ $use_flatpak == "true" ]]; then
     local src="$HOME/.local/share/flatpak/exports/share/applications/${flatpak_id}.desktop"
     desktop_file="$apps_dir/${flatpak_id}.desktop"
 
-    [[ ! -f "$src" ]] && dbx_err "Flatpak desktop file not found: $src" && return 1
+    [[ ! -f $src ]] && dbx_err "Flatpak desktop file not found: $src" && return 1
 
-    [[ ! -f "$desktop_file" ]] || ! diff -q "$src" "$desktop_file" &>/dev/null && install -Z -m 644 "$src" "$desktop_file" && dbx_log "Installed Flatpak desktop file"
+    [[ ! -f $desktop_file ]] || ! diff -q "$src" "$desktop_file" &>/dev/null && install -Z -m 644 "$src" "$desktop_file" && dbx_log "Installed Flatpak desktop file"
   else
     local container_prefix
     container_prefix="$(dbx_get_container_prefix "$container_name")"
-    if [[ -n "$container_prefix" ]]; then
+    if [[ -n $container_prefix ]]; then
       desktop_file="$apps_dir/${container_prefix}-${pkg_name}.desktop"
     else
       desktop_file=$(find "$apps_dir" -maxdepth 1 -name "*${pkg_name}*.desktop" -type f 2>/dev/null | head -n1)
     fi
   fi
 
-  [[ ! -f "$desktop_file" ]] && dbx_err "Desktop file not found: $desktop_file" && return 1
+  [[ ! -f $desktop_file ]] && dbx_err "Desktop file not found: $desktop_file" && return 1
 
   local current_exec
   current_exec=$(grep "^Exec=" "$desktop_file" | head -n1 | cut -d= -f2-)
 
-  if [[ "$current_exec" == "$exec_target"* ]] && grep -q "^StartupWMClass=" "$desktop_file"; then
+  if [[ $current_exec == "$exec_target"* ]] && grep -q "^StartupWMClass=" "$desktop_file"; then
     dbx_log "Desktop file already configured for $launcher_desc"
     return 0
   fi
 
   cp "$desktop_file" "$desktop_file.bak"
 
-  if [[ "$use_flatpak" == "true" ]]; then
+  if [[ $use_flatpak == "true" ]]; then
     awk -v target="$exec_target" '
     /^@@/ { next }
     /^Exec=/ { next }
@@ -354,7 +354,7 @@ dbx_browser_configure_desktop() {
   fi
 
   local wm_class="$flatpak_id"
-  [[ "$use_flatpak" == "false" ]] && wm_class="$pkg_name"
+  [[ $use_flatpak == "false" ]] && wm_class="$pkg_name"
 
   grep -v "^StartupWMClass=" "$desktop_file" >"$desktop_file.tmp" && mv "$desktop_file.tmp" "$desktop_file"
 
@@ -366,7 +366,7 @@ dbx_browser_configure_desktop() {
     { print }
   ' "$desktop_file" >"$desktop_file.tmp" && mv "$desktop_file.tmp" "$desktop_file"
 
-  [[ -n "$icon_name" ]] && sed -i "s|^Icon=.*|Icon=${icon_name}|" "$desktop_file"
+  [[ -n $icon_name ]] && sed -i "s|^Icon=.*|Icon=${icon_name}|" "$desktop_file"
 
   update-desktop-database "$apps_dir" 2>/dev/null || true
   dbx_log "Configured desktop file for $launcher_desc"
@@ -418,7 +418,7 @@ EOF
 dbx_browser_install_flatpak() {
   local flatpak_id="${1:-${DBX_FLATPAK_ID:-}}"
 
-  [[ -z "$flatpak_id" ]] && dbx_err "dbx_browser_install_flatpak: DBX_FLATPAK_ID not set" && return 1
+  [[ -z $flatpak_id ]] && dbx_err "dbx_browser_install_flatpak: DBX_FLATPAK_ID not set" && return 1
 
   if flatpak list --app --columns=application 2>/dev/null | grep -q "^${flatpak_id}$"; then
     dbx_log "Flatpak already installed: ${flatpak_id}"
@@ -433,12 +433,12 @@ dbx_browser_install_flatpak() {
 #------------------------------------------------------------------------------
 
 _dbx_browser_pre_export_hook() {
-  [[ "$1" != "export" ]] && return 0
+  [[ $1 != "export" ]] && return 0
 
   local use_flatpak="false"
-  [[ -n "$DBX_FLATPAK_ID" && "$DBX_FLATPAK_ONLY" != "true" ]] || use_flatpak="true"
+  [[ -n $DBX_FLATPAK_ID && $DBX_FLATPAK_ONLY != "true" ]] || use_flatpak="true"
 
-  if [[ "$use_flatpak" == "true" || -z "$DBX_REPO_URL" ]]; then
+  if [[ $use_flatpak == "true" || -z $DBX_REPO_URL ]]; then
     dbx_browser_install_flatpak
   else
     dbx_browser_install_dnf
@@ -449,9 +449,9 @@ _dbx_browser_pre_export_hook() {
 
 _dbx_browser_post_export_hook() {
   local use_flatpak="false"
-  [[ -n "$DBX_FLATPAK_ID" && "$DBX_FLATPAK_ONLY" != "true" ]] || use_flatpak="true"
+  [[ -n $DBX_FLATPAK_ID && $DBX_FLATPAK_ONLY != "true" ]] || use_flatpak="true"
 
-  if [[ "$use_flatpak" == "true" || -z "$DBX_REPO_URL" ]]; then
+  if [[ $use_flatpak == "true" || -z $DBX_REPO_URL ]]; then
     dbx_browser_configure_desktop "" "" "true"
   else
     dbx_browser_cleanup_exported
@@ -467,12 +467,12 @@ dbx_browser_detect_installed() {
   local flatpak_id="${1:-${DBX_FLATPAK_ID:-}}"
   local container_name="${2:-${CONTAINER_NAME:-}}"
 
-  if [[ -n "$flatpak_id" ]] && flatpak list --app --columns=application 2>/dev/null | grep -q "^${flatpak_id}$"; then
+  if [[ -n $flatpak_id ]] && flatpak list --app --columns=application 2>/dev/null | grep -q "^${flatpak_id}$"; then
     echo "flatpak"
     return 0
   fi
 
-  if [[ -n "$container_name" ]] && dbx_container_exists "$container_name" 2>/dev/null; then
+  if [[ -n $container_name ]] && dbx_container_exists "$container_name" 2>/dev/null; then
     echo "dnf"
     return 0
   fi
@@ -484,7 +484,7 @@ dbx_browser_uninstall_flatpak() {
   local flatpak_id="${1:-${DBX_FLATPAK_ID:-}}"
   local apps_dir="$HOME/.local/share/applications"
 
-  [[ -z "$flatpak_id" ]] && dbx_err "dbx_browser_uninstall_flatpak: DBX_FLATPAK_ID not set" && return 1
+  [[ -z $flatpak_id ]] && dbx_err "dbx_browser_uninstall_flatpak: DBX_FLATPAK_ID not set" && return 1
 
   local was_installed="false"
   if flatpak list --app --columns=application 2>/dev/null | grep -q "^${flatpak_id}$"; then
@@ -499,7 +499,7 @@ dbx_browser_uninstall_flatpak() {
     rm -f "${apps_dir}/${flatpak_id}.desktop" "${apps_dir}/${flatpak_id}.desktop.bak"
     update-desktop-database "$apps_dir" 2>/dev/null || true
     dbx_log "Removed desktop file: ${apps_dir}/${flatpak_id}.desktop"
-  elif [[ "$was_installed" == "true" ]]; then
+  elif [[ $was_installed == "true" ]]; then
     dbx_log "Desktop file already removed."
   fi
 }
@@ -509,14 +509,14 @@ dbx_browser_flatpak_desktop_file() {
   local flatpak_id="${DBX_FLATPAK_ID:-}"
   local apps_dir="$HOME/.local/share/applications"
 
-  [[ -z "$wrapper_path" || ! -x "$wrapper_path" ]] && dbx_err "Wrapper not found: $wrapper_path" && return 1
-  [[ -z "$flatpak_id" ]] && dbx_err "DBX_FLATPAK_ID not set" && return 1
+  [[ -z $wrapper_path || ! -x $wrapper_path ]] && dbx_err "Wrapper not found: $wrapper_path" && return 1
+  [[ -z $flatpak_id ]] && dbx_err "DBX_FLATPAK_ID not set" && return 1
 
   local flatpak_apps_dir="$HOME/.local/share/flatpak/exports/share/applications"
-  [[ -d "$flatpak_apps_dir" ]] || flatpak_apps_dir="/var/lib/flatpak/exports/share/applications"
+  [[ -d $flatpak_apps_dir ]] || flatpak_apps_dir="/var/lib/flatpak/exports/share/applications"
   local src_desktop_file="${flatpak_apps_dir}/${flatpak_id}.desktop"
 
-  [[ ! -f "$src_desktop_file" ]] && dbx_err "Flatpak desktop not found: $src_desktop_file" && return 1
+  [[ ! -f $src_desktop_file ]] && dbx_err "Flatpak desktop not found: $src_desktop_file" && return 1
 
   local desktop_file="${apps_dir}/${flatpak_id}.desktop"
   mkdir -p "$apps_dir"
@@ -525,35 +525,35 @@ dbx_browser_flatpak_desktop_file() {
   cp "$src_desktop_file" "${desktop_file}.bak"
 
   local wm_class="${DBX_PKG_NAME:-}"
-  if [[ -z "$wm_class" ]]; then
+  if [[ -z $wm_class ]]; then
     wm_class=$(basename "$wrapper_path" .sh)
-    [[ "$wm_class" == "$wrapper_path" ]] && wm_class="$flatpak_id"
+    [[ $wm_class == "$wrapper_path" ]] && wm_class="$flatpak_id"
   fi
   sed -i "s|^StartupWMClass=.*|StartupWMClass=${wm_class}|" "$desktop_file"
 
   local action=""
   local tmp_file="${desktop_file}.tmp"
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    if [[ "$line" == "[Desktop Entry]" ]]; then
+  while IFS= read -r line || [[ -n $line ]]; do
+    if [[ $line == "[Desktop Entry]" ]]; then
       action=""
       echo "$line"
-    elif [[ "$line" == "[Desktop Action new-window]" ]]; then
+    elif [[ $line == "[Desktop Action new-window]" ]]; then
       action="new-window"
       echo "$line"
-    elif [[ "$line" == "[Desktop Action new-private-window]" ]]; then
+    elif [[ $line == "[Desktop Action new-private-window]" ]]; then
       action="new-private-window"
       echo "$line"
-    elif [[ "$line" == "[Desktop Action new-tor-window]" ]]; then
+    elif [[ $line == "[Desktop Action new-tor-window]" ]]; then
       action="new-tor-window"
       echo "$line"
-    elif [[ "$line" == Exec=* ]]; then
-      if [[ -z "$action" ]]; then
+    elif [[ $line == Exec=* ]]; then
+      if [[ -z $action ]]; then
         echo "Exec=${wrapper_path} %U"
-      elif [[ "$action" == "new-window" ]]; then
+      elif [[ $action == "new-window" ]]; then
         echo "Exec=${wrapper_path}"
-      elif [[ "$action" == "new-private-window" ]]; then
+      elif [[ $action == "new-private-window" ]]; then
         echo "Exec=${wrapper_path} --incognito"
-      elif [[ "$action" == "new-tor-window" ]]; then
+      elif [[ $action == "new-tor-window" ]]; then
         echo "Exec=${wrapper_path} --tor"
       fi
       continue
@@ -572,9 +572,9 @@ dbx_browser_flatpak_is_configured() {
   local flatpak_id="${DBX_FLATPAK_ID:-}"
   local desktop_file="$HOME/.local/share/applications/${flatpak_id}.desktop"
 
-  [[ -f "$desktop_file" ]] || return 1
+  [[ -f $desktop_file ]] || return 1
 
-  if [[ -z "$wrapper_path" ]]; then
+  if [[ -z $wrapper_path ]]; then
     return 0
   fi
 

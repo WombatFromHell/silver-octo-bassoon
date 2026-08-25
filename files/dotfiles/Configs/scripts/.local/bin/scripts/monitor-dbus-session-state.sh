@@ -28,7 +28,7 @@ log() {
 handle_signal() {
   log "Screen lock state changed to: $1"
   log "Running: $SCRIPT_PATH $1"
-  if [[ -x "$SCRIPT_PATH" ]]; then
+  if [[ -x $SCRIPT_PATH ]]; then
     "$SCRIPT_PATH" "$1"
   else
     log "Error: $SCRIPT_PATH is not executable or does not exist."
@@ -36,9 +36,9 @@ handle_signal() {
 }
 
 detect_desktop_environment() {
-  if [[ -n "$XDG_CURRENT_DESKTOP" ]]; then
+  if [[ -n $XDG_CURRENT_DESKTOP ]]; then
     echo "$XDG_CURRENT_DESKTOP"
-  elif [[ -n "$DESKTOP_SESSION" ]]; then
+  elif [[ -n $DESKTOP_SESSION ]]; then
     echo "$DESKTOP_SESSION"
   elif pgrep gnome-shell >/dev/null; then
     echo "GNOME"
@@ -50,7 +50,7 @@ detect_desktop_environment() {
 }
 
 main() {
-  if [[ ! -x "$SCRIPT_PATH" ]]; then
+  if [[ ! -x $SCRIPT_PATH ]]; then
     echo "Error: $SCRIPT_PATH is not executable or does not exist."
     exit 1
   fi
@@ -78,11 +78,11 @@ main() {
   prev_state=""
   "$DBUSMON" --session "type='signal',interface='$DBUS_INTERFACE'" |
     while read -r line; do
-      if [[ "$line" == *"member=ActiveChanged"* ]]; then
+      if [[ $line == *"member=ActiveChanged"* ]]; then
         active=$("$DBUSSEND" --session --print-reply --dest="$DBUS_INTERFACE" \
           "$OBJECT_PATH" "$DBUS_INTERFACE.GetActive")
         state=$(echo "$active" | "$GAWK" '/boolean/ {print $2}')
-        if [[ "$state" != "$prev_state" ]]; then
+        if [[ $state != "$prev_state" ]]; then
           handle_signal "$state"
           prev_state="$state"
         fi

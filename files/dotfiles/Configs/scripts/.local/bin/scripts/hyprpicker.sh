@@ -2,7 +2,7 @@
 set -euo pipefail
 
 COLOR=$(hyprpicker) || exit 0
-[[ -z "$COLOR" ]] && exit 0
+[[ -z $COLOR ]] && exit 0
 
 printf '%s' "$COLOR" | wl-copy
 

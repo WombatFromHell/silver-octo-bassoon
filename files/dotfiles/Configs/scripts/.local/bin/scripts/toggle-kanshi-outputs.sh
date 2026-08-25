@@ -40,7 +40,7 @@ acquire_lock() {
 is_debounced() {
   local ts_file
   ts_file="$(timestamp_file)"
-  [[ -f "$ts_file" ]] || return 1
+  [[ -f $ts_file ]] || return 1
 
   local last_run now elapsed
   last_run=$(cat "$ts_file")
@@ -64,7 +64,7 @@ record_toggle_time() {
 read_state() {
   local sf
   sf="$(state_file)"
-  [[ -f "$sf" ]] && cat "$sf" && return 0
+  [[ -f $sf ]] && cat "$sf" && return 0
   return 1
 }
 
@@ -79,7 +79,7 @@ wait_for_stable_profile() {
   local i current
   for i in {1..15}; do
     current=$(kanshictl status 2>/dev/null | grep "Current profile:" | awk '{print $3}')
-    if [[ -n "$current" && "$current" == "$prev" ]]; then
+    if [[ -n $current && $current == "$prev" ]]; then
       ((stable_count++))
       if [[ $stable_count -ge $target_stable ]]; then
         echo "$current"
@@ -120,7 +120,7 @@ switch_profile() {
 find_profile_index() {
   local profile="$1" i
   for i in "${!PROFILES[@]}"; do
-    if [[ "${PROFILES[$i]}" == "$profile" ]]; then
+    if [[ ${PROFILES[$i]} == "$profile" ]]; then
       echo "$i"
       return 0
     fi

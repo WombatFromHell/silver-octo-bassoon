@@ -70,7 +70,7 @@ DBX_POST_HOOKS=("${DBX_POST_HOOKS[@]:-}")
 DBX_POST_CREATE_HOOK="${DBX_POST_CREATE_HOOK:-}"
 
 # Auto-register check hook if DBX_CHECK_APP is set
-if [[ -n "$DBX_CHECK_APP" && -z "$DBX_POST_CREATE_HOOK" ]]; then
+if [[ -n $DBX_CHECK_APP && -z $DBX_POST_CREATE_HOOK ]]; then
   DBX_POST_CREATE_HOOK="dbx_check_app_installed"
 fi
 
@@ -87,10 +87,10 @@ dbx_needs_sudo() {
   local use_root="${1:-${DBX_USE_ROOT:-false}}"
 
   [[ $EUID -eq 0 ]] && return 1
-  [[ "$use_root" == "true" ]] && return 0
+  [[ $use_root == "true" ]] && return 0
 
-  if [[ -n "${DBX_SUDO:-}" ]]; then
-    [[ "$DBX_SUDO" == "true" ]] && return 0
+  if [[ -n ${DBX_SUDO:-} ]]; then
+    [[ $DBX_SUDO == "true" ]] && return 0
     return 1
   fi
 
@@ -112,7 +112,7 @@ dbx_container_exists() {
   local use_root="${2:-${DBX_USE_ROOT:-false}}"
   local list_flags=""
   local podman_cmd
-  [[ "$use_root" == "true" ]] && list_flags="--root"
+  [[ $use_root == "true" ]] && list_flags="--root"
   podman_cmd=$(dbx_get_podman_cmd "$use_root")
 
   distrobox list $list_flags 2>/dev/null | tail -n +2 | grep -qE "\|\s+${name}\s+\|" ||
@@ -123,7 +123,7 @@ dbx_is_exported() {
   local container_name="${1:-${CONTAINER_NAME:-}}"
   local app_id="$2"
   local desktop_file="$HOME/.local/share/applications/${container_name}-${app_id}.desktop"
-  [[ -f "$desktop_file" ]]
+  [[ -f $desktop_file ]]
 }
 
 dbxe() {
@@ -147,7 +147,7 @@ dbxe() {
       ;;
     *)
       # If we haven't seen -- or --name yet, this might be the container name (positional)
-      if [[ -z "$container_name" && -z "${cmd[*]:-}" ]]; then
+      if [[ -z $container_name && -z ${cmd[*]:-} ]]; then
         container_name="$1"
         shift
       else
@@ -167,13 +167,13 @@ dbxe() {
 
   container_name="${container_name:-${CONTAINER_NAME:-}}"
 
-  if [[ -z "$container_name" ]]; then
+  if [[ -z $container_name ]]; then
     dbx_err "dbxe: CONTAINER_NAME not set"
     return 1
   fi
 
   local root_flag=()
-  [[ "$use_root" == "true" ]] && root_flag=("--root")
+  [[ $use_root == "true" ]] && root_flag=("--root")
   distrobox-enter "${root_flag[@]}" "${container_name}" -- "${cmd[@]}"
 }
 
@@ -198,7 +198,7 @@ dbx_remove_container() {
   local -a root_flag=()
   local podman_cmd
 
-  [[ "$use_root" == "true" ]] && root_flag=("--root")
+  [[ $use_root == "true" ]] && root_flag=("--root")
   podman_cmd=$(dbx_get_podman_cmd "$use_root")
 
   # No-op if already gone
@@ -255,15 +255,15 @@ dbx_assemble_container() {
       ;;
     --hooks-array)
       shift
-      while [[ $# -gt 0 && "$1" != --* ]]; do
-        [[ -n "$1" ]] && init_hooks+=("$1")
+      while [[ $# -gt 0 && $1 != --* ]]; do
+        [[ -n $1 ]] && init_hooks+=("$1")
         shift
       done
       ;;
     --post-hooks-array)
       shift
-      while [[ $# -gt 0 && "$1" != --* ]]; do
-        [[ -n "$1" ]] && post_hooks+=("$1")
+      while [[ $# -gt 0 && $1 != --* ]]; do
+        [[ -n $1 ]] && post_hooks+=("$1")
         shift
       done
       ;;
@@ -287,11 +287,11 @@ dbx_assemble_container() {
     esac
   done
 
-  if [[ -z "$name" ]]; then
+  if [[ -z $name ]]; then
     dbx_err "dbx_assemble_container: CONTAINER_NAME not set"
     return 1
   fi
-  if [[ -z "$image" ]]; then
+  if [[ -z $image ]]; then
     dbx_err "dbx_assemble_container: CONTAINER_IMAGE not set"
     return 1
   fi
@@ -300,8 +300,8 @@ dbx_assemble_container() {
   dbx_log "Creating container '${name}' with ${image}..."
 
   local ini_root_flag=""
-  [[ "$use_root" == "true" ]] && ini_root_flag="root=true"
-  [[ "$DBX_UNSHARE_ALL" == "true" ]] && unshare_flags+=("all=true")
+  [[ $use_root == "true" ]] && ini_root_flag="root=true"
+  [[ $DBX_UNSHARE_ALL == "true" ]] && unshare_flags+=("all=true")
 
   local flags_str="${additional_flags[*]:-${DBX_FLAGS:-}}"
 
@@ -315,22 +315,22 @@ dbx_assemble_container() {
     printf '%s\n' "[${name}]"
     printf '%s=%s\n' "image" "${image}"
     printf '%s=%s\n' "pull" "true"
-    [[ -n "$init_pkg" ]] && printf '%s=%s\n' "init" "true"
+    [[ -n $init_pkg ]] && printf '%s=%s\n' "init" "true"
     printf '%s=%s\n' "start_now" "true"
-    [[ -n "$ini_root_flag" ]] && printf '%s\n' "$ini_root_flag"
+    [[ -n $ini_root_flag ]] && printf '%s\n' "$ini_root_flag"
     for unshare in "${unshare_flags[@]}"; do
-      [[ -n "$unshare" ]] || continue
+      [[ -n $unshare ]] || continue
       printf '%s=%s\n' "unshare_${unshare%=*}" "${unshare#*=}"
     done
     local combined_packages="$packages"
-    [[ -n "$init_pkg" && -n "$packages" ]] && combined_packages="${init_pkg} ${packages}"
-    [[ -n "$init_pkg" && -z "$packages" ]] && combined_packages="$init_pkg"
-    [[ -n "$combined_packages" ]] && printf '%s="%s"\n' "additional_packages" "${combined_packages}"
-    [[ -n "$flags_str" ]] && printf '%s="%s"\n' "additional_flags" "${flags_str}"
+    [[ -n $init_pkg && -n $packages ]] && combined_packages="${init_pkg} ${packages}"
+    [[ -n $init_pkg && -z $packages ]] && combined_packages="$init_pkg"
+    [[ -n $combined_packages ]] && printf '%s="%s"\n' "additional_packages" "${combined_packages}"
+    [[ -n $flags_str ]] && printf '%s="%s"\n' "additional_flags" "${flags_str}"
     for hook in "${init_hooks[@]}"; do
-      [[ -n "$hook" ]] && printf '%s="%s"\n' "init_hooks" "${hook}"
+      [[ -n $hook ]] && printf '%s="%s"\n' "init_hooks" "${hook}"
     done
-    [[ -n "$exported_apps" ]] && printf '%s="%s"\n' "exported_apps" "${exported_apps}"
+    [[ -n $exported_apps ]] && printf '%s="%s"\n' "exported_apps" "${exported_apps}"
   } >"${assemble_file}"
 
   if [ -n "${DEBUG:-}" ]; then
@@ -385,7 +385,7 @@ dbx_do_export() {
   local export_app="${2:-${DBX_EXPORT_APP:-}}"
   local use_root="${3:-${DBX_USE_ROOT:-false}}"
 
-  [[ -z "$export_app" ]] && dbx_err "dbx_do_export: DBX_EXPORT_APP not set" && return 1
+  [[ -z $export_app ]] && dbx_err "dbx_do_export: DBX_EXPORT_APP not set" && return 1
 
   dbx_log "Exporting ${export_app}..."
 
@@ -406,7 +406,7 @@ dbx_do_uninstall() {
   local export_app="${2:-${DBX_EXPORT_APP:-}}"
   local use_root="${3:-${DBX_USE_ROOT:-false}}"
 
-  [[ -z "$export_app" ]] && dbx_err "dbx_do_uninstall: DBX_EXPORT_APP not set" && return 1
+  [[ -z $export_app ]] && dbx_err "dbx_do_uninstall: DBX_EXPORT_APP not set" && return 1
 
   dbx_log "Removing ${export_app} export..."
 
@@ -425,7 +425,7 @@ dbx_do_remove() {
   local export_app="${2:-${DBX_EXPORT_APP:-}}"
   local use_root="${3:-${DBX_USE_ROOT:-false}}"
 
-  [[ -z "$export_app" ]] && dbx_err "dbx_do_remove: DBX_EXPORT_APP not set" && return 1
+  [[ -z $export_app ]] && dbx_err "dbx_do_remove: DBX_EXPORT_APP not set" && return 1
 
   if ! dbx_confirm "This will remove the '${container_name}' container and all its data. This action cannot be undone."; then
     dbx_log "Removal cancelled."
@@ -451,18 +451,18 @@ dbx_cleanup_desktop_files() {
 
   for f in "${apps_dir}/${container_name}"-*.desktop \
     "${apps_dir}/${container_name}"-*.desktop.bak; do
-    [[ -f "$f" ]] || continue
+    [[ -f $f ]] || continue
     [[ "$(basename "$f")" == "${container_name}.desktop" ]] && continue
     found=true
     break
   done
 
-  [[ "$found" == "false" ]] && return 0
+  [[ $found == "false" ]] && return 0
 
   dbx_log "Cleaning up old desktop files..."
   for f in "${apps_dir}/${container_name}"-*.desktop \
     "${apps_dir}/${container_name}"-*.desktop.bak; do
-    [[ -f "$f" ]] || continue
+    [[ -f $f ]] || continue
     [[ "$(basename "$f")" == "${container_name}.desktop" ]] && continue
     rm -f "$f"
   done
@@ -498,9 +498,9 @@ dbx_parse_args() {
       shift
       ;;
     --install | --uninstall)
-      [[ "$1" == "--install" ]] && ACTION="install" || ACTION="uninstall"
+      [[ $1 == "--install" ]] && ACTION="install" || ACTION="uninstall"
       shift
-      if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+      if [[ $# -gt 0 && ! $1 =~ ^-- ]]; then
         INSTALL_TYPE="$1"
         shift
       fi
@@ -531,7 +531,7 @@ dbx_show_help() {
 dbx_confirm() {
   local message="$1"
   local response=""
-  if [[ "$YES" == "true" ]]; then
+  if [[ $YES == "true" ]]; then
     return 0
   fi
   dbx_err "$message"
@@ -548,14 +548,14 @@ dbx_confirm() {
 
 # Run the pre-create hook if defined
 dbx_run_pre_create_hook() {
-  if [[ -n "${DBX_PRE_CREATE_HOOK:-}" ]]; then
+  if [[ -n ${DBX_PRE_CREATE_HOOK:-} ]]; then
     type "$DBX_PRE_CREATE_HOOK" &>/dev/null && "$DBX_PRE_CREATE_HOOK"
   fi
 }
 
 # Run the post-create hook if defined
 dbx_run_post_create_hook() {
-  if [[ -n "${DBX_POST_CREATE_HOOK:-}" ]]; then
+  if [[ -n ${DBX_POST_CREATE_HOOK:-} ]]; then
     type "$DBX_POST_CREATE_HOOK" &>/dev/null && "$DBX_POST_CREATE_HOOK"
   fi
 }
@@ -566,7 +566,7 @@ dbx_check_app_installed() {
   local check_app="${DBX_CHECK_APP:-}"
   local use_root="${DBX_USE_ROOT:-false}"
 
-  [[ -z "$check_app" ]] && return 0
+  [[ -z $check_app ]] && return 0
 
   # Check if dbxe is available (outer script context) vs inside container
   if type dbxe &>/dev/null; then
@@ -587,13 +587,13 @@ dbx_check_app_installed() {
 # Run the pre-export hook if defined
 dbx_run_pre_export_hook() {
   local hook="${DBX_PRE_EXPORT_HOOK:-}"
-  [[ -n "$hook" ]] && type "$hook" &>/dev/null && "$hook"
+  [[ -n $hook ]] && type "$hook" &>/dev/null && "$hook"
 }
 
 # Run the post-export hook if defined
 dbx_run_post_export_hook() {
   local hook="${DBX_POST_EXPORT_HOOK:-}"
-  [[ -n "$hook" ]] && type "$hook" &>/dev/null && "$hook"
+  [[ -n $hook ]] && type "$hook" &>/dev/null && "$hook"
 }
 
 # Ensure container exists, create if missing
@@ -603,9 +603,9 @@ dbx_ensure_container() {
   local use_root="${DBX_USE_ROOT:-false}"
   local container_name="${CONTAINER_NAME:-}"
 
-  [[ -z "$container_name" ]] && dbx_err "dbx_ensure_container: CONTAINER_NAME not set" && return 1
+  [[ -z $container_name ]] && dbx_err "dbx_ensure_container: CONTAINER_NAME not set" && return 1
 
-  if [[ "$recreate" == "true" ]]; then
+  if [[ $recreate == "true" ]]; then
     if dbx_container_exists "$container_name" "$use_root"; then
       if ! dbx_confirm "This will recreate the '${container_name}' container. All existing data and exports will be lost."; then
         dbx_log "Recreation cancelled."
@@ -621,7 +621,7 @@ dbx_ensure_container() {
     dbx_log "Container not found. Creating..."
   fi
 
-  if [[ "$recreate" == "true" ]] || ! dbx_container_exists "$container_name" "$use_root"; then
+  if [[ $recreate == "true" ]] || ! dbx_container_exists "$container_name" "$use_root"; then
     dbx_run_pre_create_hook
     dbx_assemble_container
     dbx_run_post_create_hook
@@ -635,7 +635,7 @@ dbx_ensure_exported() {
   local use_root="${DBX_USE_ROOT:-false}"
   local container_name="${CONTAINER_NAME:-}"
 
-  [[ -z "$export_app" ]] && dbx_err "dbx_ensure_exported: DBX_EXPORT_APP not set" && return 1
+  [[ -z $export_app ]] && dbx_err "dbx_ensure_exported: DBX_EXPORT_APP not set" && return 1
 
   if dbx_is_exported "$container_name" "$export_app"; then
     dbx_log "${export_app} already exported."
@@ -654,9 +654,9 @@ dbx_freshen() {
   local use_root="${DBX_USE_ROOT:-false}"
   local export_app="${DBX_EXPORT_APP:-}"
 
-  [[ -z "$container_name" ]] && dbx_err "dbx_freshen: CONTAINER_NAME not set" && return 1
-  [[ -z "$export_app" ]] && dbx_err "dbx_freshen: DBX_EXPORT_APP not set" && return 1
-  [[ "$use_root" == "true" ]] && use_root="--root " || use_root=""
+  [[ -z $container_name ]] && dbx_err "dbx_freshen: CONTAINER_NAME not set" && return 1
+  [[ -z $export_app ]] && dbx_err "dbx_freshen: DBX_EXPORT_APP not set" && return 1
+  [[ $use_root == "true" ]] && use_root="--root " || use_root=""
 
   dbx_log "Freshening container '${container_name}'..."
 
@@ -705,18 +705,18 @@ dbx_main() {
   local container_name="${CONTAINER_NAME:-}"
   local export_app="${DBX_EXPORT_APP:-}"
 
-  if [[ -z "$container_name" ]]; then
+  if [[ -z $container_name ]]; then
     dbx_err "CONTAINER_NAME not set"
     exit 1
   fi
-  if [[ -z "$export_app" ]]; then
+  if [[ -z $export_app ]]; then
     dbx_err "DBX_EXPORT_APP not set"
     exit 1
   fi
 
   case "$ACTION" in
   uninstall)
-    if [[ "$RM_CONTAINER" == "true" ]]; then
+    if [[ $RM_CONTAINER == "true" ]]; then
       dbx_do_remove "$container_name" "$export_app" "$use_root"
     else
       dbx_do_uninstall "$container_name" "$export_app" "$use_root"
@@ -724,7 +724,7 @@ dbx_main() {
     exit 0
     ;;
   install)
-    if [[ "$RECREATE" == "true" ]]; then
+    if [[ $RECREATE == "true" ]]; then
       if dbx_container_exists "$container_name" "$use_root"; then
         if ! dbx_confirm "This will recreate the '${container_name}' container. All existing data and exports will be lost."; then
           dbx_log "Recreation cancelled."

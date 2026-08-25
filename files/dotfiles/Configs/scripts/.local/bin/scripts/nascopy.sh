@@ -65,7 +65,7 @@ check_gitignore() {
   local source_dir="$1"
 
   # Skip remote destinations (user@host:/path or host:/path)
-  if [[ "$source_dir" == *:* ]]; then
+  if [[ $source_dir == *:* ]]; then
     return 1
   fi
 
@@ -93,7 +93,7 @@ parse_arguments() {
       ;;
     # Handle profile flag
     --profile)
-      if [[ -z "${2:-}" ]]; then
+      if [[ -z ${2:-} ]]; then
         echo "Error: --profile requires a profile name" >&2
         usage >&2
         exit 1
@@ -191,7 +191,7 @@ build_and_execute_rsync() {
   if [ ${#SOURCES[@]} -gt 0 ]; then
     resolve_dir="${SOURCES[0]%/}"
     # Skip remote sources
-    if [[ "$resolve_dir" == *:* ]]; then
+    if [[ $resolve_dir == *:* ]]; then
       resolve_dir=""
     fi
   fi
@@ -205,7 +205,7 @@ build_and_execute_rsync() {
       has_exclude_from=true
       local exclude_path="${flag#--exclude-from=}"
       # Resolve relative paths to absolute, skip if file doesn't exist
-      if [[ "$exclude_path" != /* ]]; then
+      if [[ $exclude_path != /* ]]; then
         if [ -f "$exclude_path" ]; then
           exclude_path="$(abs_path "$exclude_path")"
         elif [ -n "$resolve_dir" ] && [ -f "${resolve_dir}/${exclude_path}" ]; then

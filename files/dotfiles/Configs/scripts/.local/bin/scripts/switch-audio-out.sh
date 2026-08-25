@@ -34,7 +34,7 @@ switch_audio_to() {
   local target_id
   target_id="$(resolve_audio_id "$target_name")"
 
-  if [[ -z "$target_id" ]]; then
+  if [[ -z $target_id ]]; then
     echo "WARN: audio output '$target_name' not found" >&2
     return 1
   fi
@@ -51,7 +51,7 @@ toggle_audio_output() {
   current_name="$(current_default_audio_name)"
   local target_name
 
-  if [[ "$current_name" == "$OUTPUT_A_NAME" ]]; then
+  if [[ $current_name == "$OUTPUT_A_NAME" ]]; then
     target_name="$OUTPUT_B_NAME"
   else
     target_name="$OUTPUT_A_NAME"
@@ -61,7 +61,7 @@ toggle_audio_output() {
 }
 
 # ── CLI Entry Point (only when executed directly) ────────────────────────────
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ ${BASH_SOURCE[0]} == "${0}" ]]; then
   case "${1:-}" in
   "") toggle_audio_output ;;
   output_a) switch_audio_to "$OUTPUT_A_NAME" ;;

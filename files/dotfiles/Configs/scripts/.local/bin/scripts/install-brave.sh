@@ -23,7 +23,7 @@ source "${SCRIPT_DIR}/distrobox-installer.sh"
 _dbx_brave_pre_export() {
   local install_type="${INSTALL_TYPE:-stable}"
   DBX_REPO_URL="https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo"
-  [[ "$install_type" == "beta" ]] && DBX_REPO_URL="https://brave-browser-rpm-beta.s3.brave.com/brave-browser-beta.repo"
+  [[ $install_type == "beta" ]] && DBX_REPO_URL="https://brave-browser-rpm-beta.s3.brave.com/brave-browser-beta.repo"
 
   dbx_browser_install_dnf "$CONTAINER_NAME" "$DBX_PKG_NAME" "$DBX_REPO_URL"
   dbx_browser_create_xdg_bridge "$CONTAINER_NAME"
@@ -31,7 +31,7 @@ _dbx_brave_pre_export() {
 
 _dbx_brave_post_export() {
   # ponytail: distrobox-export copies Icon= verbatim from the container .desktop; stable RPM's icon is brave-browser-stable
-  [[ "${INSTALL_TYPE:-stable}" == "stable" ]] && DBX_ICON_NAME="brave-browser-stable"
+  [[ ${INSTALL_TYPE:-stable} == "stable" ]] && DBX_ICON_NAME="brave-browser-stable"
   dbx_browser_cleanup_exported "$CONTAINER_NAME" "$DBX_FLATPAK_ID"
   dbx_browser_configure_desktop "$CONTAINER_NAME" "$DBX_PKG_NAME" "false" "$DBX_FLATPAK_ID" "$(dbx_browser_detect_wrapper "$DBX_WRAPPER")" "$DBX_ICON_NAME"
 }
@@ -84,15 +84,15 @@ main() {
 
   local filtered_args=()
   for arg in "$@"; do
-    [[ "$arg" == "--flatpak" ]] && DBX_FLATPAK="true" && continue
+    [[ $arg == "--flatpak" ]] && DBX_FLATPAK="true" && continue
     filtered_args+=("$arg")
   done
-  [[ "$DBX_FLATPAK" == "true" ]] && INSTALL_TYPE="stable"
+  [[ $DBX_FLATPAK == "true" ]] && INSTALL_TYPE="stable"
 
   local ACTION="default"
   dbx_parse_args "${filtered_args[@]}" || true
 
-  if [[ "$DBX_FLATPAK" == "true" && "$ACTION" == "install" ]]; then
+  if [[ $DBX_FLATPAK == "true" && $ACTION == "install" ]]; then
     if flatpak list --app --columns=application 2>/dev/null | grep -q "^${DBX_FLATPAK_ID}$"; then
       dbx_log "Flatpak already installed, skipping install."
     else
@@ -107,25 +107,25 @@ main() {
 
     local wrapper_path
     wrapper_path=$(dbx_browser_detect_wrapper "$DBX_WRAPPER")
-    [[ -z "$wrapper_path" ]] && dbx_err "Wrapper not found: ${DBX_WRAPPER}" && exit 1
+    [[ -z $wrapper_path ]] && dbx_err "Wrapper not found: ${DBX_WRAPPER}" && exit 1
     dbx_browser_flatpak_desktop_file "$wrapper_path"
 
     dbx_log "Flatpak installation complete."
     exit 0
   fi
 
-  if [[ "$DBX_FLATPAK" == "true" && "$ACTION" == "uninstall" ]]; then
+  if [[ $DBX_FLATPAK == "true" && $ACTION == "uninstall" ]]; then
     dbx_browser_uninstall_flatpak
     dbx_log "Flatpak uninstall complete."
     exit 0
   fi
 
-  if [[ "$ACTION" == "uninstall" ]]; then
+  if [[ $ACTION == "uninstall" ]]; then
     local installed_as
     installed_as=$(dbx_browser_detect_installed)
 
-    if [[ "$installed_as" == "flatpak" ]]; then
-      [[ "$RM_CONTAINER" == "true" ]] && dbx_log "Note: --rm flag ignored for auto-detected Flatpak uninstall."
+    if [[ $installed_as == "flatpak" ]]; then
+      [[ $RM_CONTAINER == "true" ]] && dbx_log "Note: --rm flag ignored for auto-detected Flatpak uninstall."
       dbx_browser_uninstall_flatpak
       dbx_log "Flatpak uninstall complete."
       exit 0
