@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Shared GPU detection (DRM_SYS_PATH + detect_hybrid_graphics).
+# shellcheck source=./gpu-detect.sh
+source "$HOME/.local/bin/scripts/gpu-detect.sh"
+
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 STEAM_SHUTDOWN_TIMEOUT="${STEAM_SHUTDOWN_TIMEOUT:-10}"
@@ -70,7 +74,7 @@ shutdown_if_allowed() {
   [[ -f "${XDG_RUNTIME_DIR:-}/bazzite-steam-nested.lock" ]] && active_type="nested"
   [[ -f "${XDG_RUNTIME_DIR:-}/bazzite-steam-tenfoot.lock" ]] && active_type="tenfoot"
 
-  [[ "$active_type" == "$mode" ]] && return 0
+  [[ $active_type == "$mode" ]] && return 0
 
   shutdown_steam_if_running
   cleanup_lock_files
@@ -142,7 +146,7 @@ detect_gamescope_profile_niri() {
       | if any(.value.model | test("SSCR2|C1|OLED"; "i")) then "HDMI-A"
         elif any(.key | startswith("DP-")) then "DP"
         else empty end
-    ' 2>/dev/null)" && [[ -n "$prefix" ]]; then
+    ' 2>/dev/null)" && [[ -n $prefix ]]; then
       break
     fi
     attempt=$((attempt + 1))
@@ -175,15 +179,8 @@ detect_gamescope_profile_niri() {
   esac
 }
 
-# ponytail: yes/no check only — doesn't report which device IDs, just whether
-# both an integrated and a discrete Vulkan device are present. Use vulkaninfo
-# --summary manually (see earlier answer) if you need the actual device IDs.
-has_hybrid_graphics() {
-  command -v vulkaninfo &>/dev/null || return 1
-  local types
-  types="$(vulkaninfo --summary 2>/dev/null | grep -oP 'deviceType\s*=\s*PHYSICAL_DEVICE_TYPE_\K\w+')"
-  grep -q '^DISCRETE_GPU$' <<<"$types" && grep -q '^INTEGRATED_GPU$' <<<"$types"
-}
+# ponytail: hybrid detection now comes from gpu-detect.sh (sysfs-based,
+# "both GPUs drive a connected output"). Replaces the old vulkaninfo check.
 
 # ── Session Cleanup ──────────────────────────────────────────────────────────
 
@@ -192,7 +189,12 @@ cleanup_orphaned_session() {
 
   # Prefer fuser — single syscall, no tree-walking needed
   if command -v fuser &>/dev/null; then
-    fuser -k -9 "$LOCK_FILE" 2>/dev/null || true
+    # ponytail: fuser -k would also kill THIS process (it holds fd 200 on the
+    # lock); kill only the other holder(s) so the lock can be reclaimed.
+    for pid in $(fuser "$LOCK_FILE" 2>/dev/null); do
+      [[ $pid == "$$" ]] && continue
+      kill -9 "$pid" 2>/dev/null || true
+    done
   fi
 
   # ponytail: fuser fallback used to try a gamescope-specific pkill pattern,
@@ -318,7 +320,7 @@ acquire_lock() {
 # ── Plain Mode ───────────────────────────────────────────────────────────────
 
 run_plain() {
-  if [[ "${SKIP_RESTART:-}" == "1" ]] && is_steam_running; then
+  if [[ ${SKIP_RESTART:-} == "1" ]] && is_steam_running; then
     log_info "Steam already running and SKIP_RESTART=1 — leaving existing session alone"
     return 0
   fi
@@ -334,7 +336,7 @@ main() {
   local mode_args=() extra_args=() found_sep=false
 
   for arg in "${args[@]}"; do
-    if [[ "$arg" == "--" ]]; then
+    if [[ $arg == "--" ]]; then
       found_sep=true
       continue
     fi
@@ -370,7 +372,7 @@ main() {
     ;;
   nested)
     MODE_TAG="bazzified-steam-nested"
-    STEAM_ARGS+=(-gamepadui -pipewire -steamos3 "${extra_args[@]}")
+    STEAM_ARGS+=(-gamepadui -pipewire -steamos3)
     GAMESCOPE_PATH="$(command -v nscb 2>/dev/null)" || {
       log_error "Missing gamescope dependency!"
       exit 1
@@ -379,7 +381,7 @@ main() {
     # `-p fallback -e` on any detection failure), then user args + terminator.
     detect_gamescope_profile_niri || true
     GAMESCOPE_ARGS+=("${extra_args[@]}")
-    has_hybrid_graphics && GAMESCOPE_ARGS+=(-p prime)
+    detect_hybrid_graphics &>/dev/null && GAMESCOPE_ARGS+=(-p prime)
     GAMESCOPE_ARGS+=(--)
     WRAPPERS=()
     ((LG_C1_CONNECTED)) && WRAPPERS+=(

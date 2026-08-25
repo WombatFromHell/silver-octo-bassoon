@@ -7,7 +7,7 @@ STEAM_CMD="/usr/bin/bazzite-steam"
 
 # Detect if running inside a container
 in_container() {
-  [[ -n "${CONTAINER_ID:-}" ]] && return 0
+  [[ -n ${CONTAINER_ID:-} ]] && return 0
   [[ -f /run/.containerenv ]] && return 0
   [[ -f /.dockerenv ]] && return 0
   grep -q container /proc/1/cgroup 2>/dev/null && return 0

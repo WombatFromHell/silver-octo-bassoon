@@ -13,9 +13,9 @@ set -euo pipefail
 
 # chromium-flags.sh is mandatory: the browser is always launched through it.
 CHROMIUM_FLAGS_SCRIPT="$HOME/.local/bin/scripts/chromium-flags.sh"
-[[ -x "$CHROMIUM_FLAGS_SCRIPT" ]] ||
+[[ -x $CHROMIUM_FLAGS_SCRIPT ]] ||
   CHROMIUM_FLAGS_SCRIPT="$(command -v chromium-flags.sh 2>/dev/null || true)"
-if [[ ! -x "$CHROMIUM_FLAGS_SCRIPT" ]]; then
+if [[ ! -x $CHROMIUM_FLAGS_SCRIPT ]]; then
   echo "Error: chromium-flags.sh not found" >&2
   exit 1
 fi
@@ -26,7 +26,10 @@ readonly CHROMIUM_FLAGS_SCRIPT
 readonly UPDATE_DEFER_SECONDS="${UPDATE_DEFER_SECONDS:-10}"
 readonly PROFILE_DIR="${PROFILE_DIR:-$HOME/.config/chromium-wrapper}"
 readonly CONTAINER_ENV_FILE="${CONTAINER_ENV_FILE:-/run/.containerenv}"
-readonly DRM_SYS_PATH="${DRM_SYS_PATH:-/sys/class/drm}"
+
+# GPU detection (DRM_SYS_PATH + detect_hybrid_graphics) lives in gpu-detect.sh.
+# shellcheck source=./gpu-detect.sh
+source "$HOME/.local/bin/scripts/gpu-detect.sh"
 
 # Effective config. Defaults are legacy-safe; a profile (sourced) and the
 # environment override these — environment ALWAYS wins over the .conf.
@@ -50,15 +53,15 @@ die() {
 }
 
 is_in_container() {
-  [[ -n "${CONTAINER_ID:-}" ]] ||
-    [[ -f "$CONTAINER_ENV_FILE" ]] ||
+  [[ -n ${CONTAINER_ID:-} ]] ||
+    [[ -f $CONTAINER_ENV_FILE ]] ||
     [[ -f /.dockerenv ]] ||
     grep -q container /proc/1/cgroup 2>/dev/null
 }
 
 is_flatpak_installed() {
   local id="${1:-$FLATPAK_NAME}"
-  [[ -n "$id" ]] &&
+  [[ -n $id ]] &&
     command -v flatpak &>/dev/null &&
     (flatpak info "$id" &>/dev/null || flatpak list --app 2>/dev/null | grep -q "$id")
 }
@@ -68,7 +71,7 @@ is_flatpak_installed() {
 load_profile() {
   local name="$1" f="$PROFILE_DIR/$1.conf"
   PROFILE="$1"
-  [[ -f "$f" ]] || return 1
+  [[ -f $f ]] || return 1
   # ponytail: profiles are sourced, not parsed — values must be valid bash.
   # Swap in a strict parser only if untrusted profiles become a concern.
   local env_bin="$BROWSER_BINARY" env_fp="$FLATPAK_NAME" env_cont="$CONTAINER_NAME"
@@ -77,8 +80,8 @@ load_profile() {
   source "$f"
   # Environment always overrides the .conf (and clears the mutually
   # exclusive counterpart).
-  if [[ -n "$env_fp" ]]; then BROWSER_BINARY=""; fi
-  if [[ -n "$env_bin" ]]; then FLATPAK_NAME=""; fi
+  if [[ -n $env_fp ]]; then BROWSER_BINARY=""; fi
+  if [[ -n $env_bin ]]; then FLATPAK_NAME=""; fi
   BROWSER_BINARY="${env_bin:-$BROWSER_BINARY}"
   FLATPAK_NAME="${env_fp:-$FLATPAK_NAME}"
   CONTAINER_NAME="${env_cont:-$CONTAINER_NAME}"
@@ -86,10 +89,10 @@ load_profile() {
   IGPU_PCI_ID="${env_igpu:-$IGPU_PCI_ID}"
   DGPU_PCI_ID="${env_dgpu:-$DGPU_PCI_ID}"
   CHROME_GPU="${env_gpu:-$CHROME_GPU}"
-  if [[ -n "$BROWSER_BINARY" && -n "$FLATPAK_NAME" ]]; then
+  if [[ -n $BROWSER_BINARY && -n $FLATPAK_NAME ]]; then
     die "profile '$PROFILE': BROWSER_BINARY and FLATPAK_NAME are mutually exclusive"
   fi
-  if [[ -z "$BROWSER_BINARY" && -z "$FLATPAK_NAME" ]]; then
+  if [[ -z $BROWSER_BINARY && -z $FLATPAK_NAME ]]; then
     die "profile '$PROFILE': set exactly one of BROWSER_BINARY or FLATPAK_NAME"
   fi
   return 0
@@ -97,11 +100,11 @@ load_profile() {
 
 init_profile() {
   local name="${1:-}"
-  [[ -n "$name" ]] || die "--init requires a profile name"
-  [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid profile name: $name"
+  [[ -n $name ]] || die "--init requires a profile name"
+  [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid profile name: $name"
   mkdir -p "$PROFILE_DIR"
   local f="$PROFILE_DIR/$name.conf"
-  [[ -e "$f" ]] || {
+  [[ -e $f ]] || {
     cat >"$f" <<EOF
 # chromium-wrapper profile: $name
 # Exactly ONE of BROWSER_BINARY / FLATPAK_NAME is required (mutually exclusive).
@@ -122,7 +125,7 @@ EOF
 }
 
 legacy_setup() {
-  if [[ -n "${PROFILE:-}" ]]; then
+  if [[ -n ${PROFILE:-} ]]; then
     echo "Warning: profile '$PROFILE' not found ($PROFILE_DIR/$PROFILE.conf) — using legacy Brave defaults (create it with: ${0##*/} --init $PROFILE)" >&2
   else
     echo "Warning: no profile — using legacy Brave defaults (create one with: ${0##*/} --init brave)" >&2
@@ -160,11 +163,11 @@ resolve_legacy_browser() {
   local container=false
   is_in_container && container=true
   BROWSER=$(find_browser) || die "no Brave found (legacy path — try: ${0##*/} --init brave)"
-  if [[ "$BROWSER" == "flatpak" ]]; then
+  if [[ $BROWSER == "flatpak" ]]; then
     LAUNCH_METHOD=flatpak
     UPDATE_METHOD=flatpak
     UPDATE_TARGET="$FLATPAK_NAME"
-  elif [[ "$container" == false ]]; then
+  elif [[ $container == false ]]; then
     LAUNCH_METHOD=distrobox
     UPDATE_METHOD=distrobox
     UPDATE_TARGET="$BROWSER"
@@ -178,7 +181,7 @@ resolve_legacy_browser() {
 # Profile: FLATPAK_NAME → flatpak; BROWSER_BINARY on host PATH → direct;
 # BROWSER_BINARY in CONTAINER_NAME → distrobox; otherwise fail loudly.
 resolve_profile_browser() {
-  if [[ -n "$FLATPAK_NAME" ]]; then
+  if [[ -n $FLATPAK_NAME ]]; then
     is_flatpak_installed || die "profile '$PROFILE': flatpak app $FLATPAK_NAME is not installed"
     BROWSER=flatpak
     LAUNCH_METHOD=flatpak
@@ -193,7 +196,7 @@ resolve_profile_browser() {
     UPDATE_TARGET="$BROWSER"
     return 0
   fi
-  if [[ -n "$CONTAINER_NAME" ]] &&
+  if [[ -n $CONTAINER_NAME ]] &&
     command -v distrobox-enter &>/dev/null &&
     distrobox-enter -n "$CONTAINER_NAME" -- bash -c "command -v '$BROWSER_BINARY'" &>/dev/null; then
     BROWSER="$BROWSER_BINARY"
@@ -211,51 +214,29 @@ resolve_profile_browser() {
 # lever that moves Chromium's Wayland GL renderer (env vars / --gpu-* are
 # ignored by the Wayland GL path). Match the render node by PCI id, then
 # verify the resolved /dev node still exists.
+# (detect_hybrid_graphics is provided by gpu-detect.sh)
 apply_gpu_selection() {
   local target="$IGPU_PCI_ID"
-  [[ "$CHROME_GPU" == "dgpu" ]] && target="$DGPU_PCI_ID"
+  [[ $CHROME_GPU == "dgpu" ]] && target="$DGPU_PCI_ID"
   GPU_FLAGS=()
   local rn v d dev
   for rn in "$DRM_SYS_PATH"/renderD[0-9]*; do
     [[ -r "$rn/device/vendor" && -r "$rn/device/device" ]] || continue
     v=$(cat "$rn/device/vendor")
     d=$(cat "$rn/device/device")
-    [[ "$v" == "0x1002" && "$d" == "$target" ]] || continue
+    [[ $v == "0x1002" && $d == "$target" ]] || continue
     dev="/dev/dri/${rn##*/}"
-    [[ -e "$dev" ]] || continue
+    [[ -e $dev ]] || continue
     GPU_FLAGS=(--render-node-override="$dev")
     break
   done
-}
-
-# Hybrid graphics is "in use" (not merely enabled) only when ≥2 distinct GPU
-# devices each drive a connected output — i.e. the desktop actually spans GPUs.
-# ponytail: counts distinct PCI devices with a connected connector via sysfs;
-# no drm library needed. Prints the active-GPU count, returns 0 if hybrid.
-detect_hybrid_graphics() {
-  local card gpu count=0
-  local -A seen
-  for card in "$DRM_SYS_PATH"/card[0-9]*; do
-    [[ -d "$card/device" ]] || continue
-    gpu=$(readlink -f "$card/device")
-    gpu=${gpu##*/}
-    [[ -n "${seen[$gpu]:-}" ]] && continue
-    for status in "$card"/*/status; do
-      [[ -f "$status" ]] && grep -q '^connected$' "$status" || continue
-      seen[$gpu]=1
-      count=$((count + 1))
-      break
-    done
-  done
-  echo "$count"
-  ((count >= 2))
 }
 
 # Hybrid graphics: when ≥2 GPUs each drive an output, pick one explicitly.
 # Default to the iGPU; only CHROME_GPU=dgpu overrides that. Single-GPU systems
 # leave CHROME_GPU unset and let apply_gpu_selection's own default handle it.
 resolve_gpu_flags() {
-  if [[ -z "$CHROME_GPU" ]] && detect_hybrid_graphics &>/dev/null; then
+  if [[ -z $CHROME_GPU ]] && detect_hybrid_graphics &>/dev/null; then
     CHROME_GPU=igpu
   fi
   apply_gpu_selection
@@ -265,7 +246,7 @@ resolve_gpu_flags() {
 
 notify() {
   local title="$1" body="$2" urgency="${3:-normal}" timeout="${4:-3000}"
-  [[ -z "$title" || -z "$body" ]] && return 0
+  [[ -z $title || -z $body ]] && return 0
   command -v notify-send &>/dev/null &&
     notify-send -a "$NOTIFY_APP" -u "$urgency" -t "$timeout" "$title" "$body" 2>/dev/null || true
 }
@@ -285,23 +266,23 @@ run_command_or_fail() {
 # ponytail: applying can still race a browser launched from the same container;
 # safe only because dnf/rpm renames into place and a running inode stays valid.
 _check_update() {
-  if [[ "$1" == "flatpak" ]]; then
+  if [[ $1 == "flatpak" ]]; then
     local probe
     probe=$(flatpak update --no-deploy -y "$2" 2>&1) || true
-    [[ "$probe" != *"Nothing to do"* ]]
+    [[ $probe != *"Nothing to do"* ]]
     return
   fi
   local prefix=()
-  [[ "$1" == "distrobox" ]] && prefix=(distrobox-enter -n "$CONTAINER_NAME" --)
+  [[ $1 == "distrobox" ]] && prefix=(distrobox-enter -n "$CONTAINER_NAME" --)
   "${prefix[@]}" dnf check-update "$2" &>/dev/null
   [[ $? -eq 100 ]] # 100 = updates available; 0 = none; anything else = error
 }
 
 _apply_update() {
   local strategy="$1" target="$2" out rc=0 prefix=()
-  if [[ "$strategy" == "flatpak" ]]; then
+  if [[ $strategy == "flatpak" ]]; then
     out=$(flatpak update -y "$target" 2>&1) || rc=$?
-    if [[ $rc -eq 0 ]] && [[ "$out" == *"Updates complete"* ]]; then
+    if [[ $rc -eq 0 ]] && [[ $out == *"Updates complete"* ]]; then
       echo "$out"
       notify "Browser Updated" "Restart the browser to finish updating."
       return 0
@@ -310,7 +291,7 @@ _apply_update() {
     notify "Update Failed" "Failed to update $target." critical
     return "$rc"
   fi
-  [[ "$strategy" == "distrobox" ]] && prefix=(distrobox-enter -n "$CONTAINER_NAME" --)
+  [[ $strategy == "distrobox" ]] && prefix=(distrobox-enter -n "$CONTAINER_NAME" --)
   if ! "${prefix[@]}" sudo -n true &>/dev/null; then
     echo "Skipping update: passwordless sudo not configured${prefix[*]:+ in ${CONTAINER_NAME}}." >&2
     return 0
@@ -414,19 +395,19 @@ main() {
       ;;
     esac
   done
-  if [[ "$explicit" == true && -z "$profile" ]]; then
+  if [[ $explicit == true && -z $profile ]]; then
     die "-p requires a profile name (try: ${0##*/} --init brave)"
   fi
 
   # No profile requested, or the named .conf does not exist → legacy path.
-  if [[ -n "$profile" ]] && load_profile "$profile"; then
+  if [[ -n $profile ]] && load_profile "$profile"; then
     resolve_profile_browser
   else
     legacy_setup
     resolve_legacy_browser
   fi
 
-  if [[ "$LAUNCH_METHOD" != "direct" ]]; then
+  if [[ $LAUNCH_METHOD != "direct" ]]; then
     perform_browser_update "$UPDATE_METHOD" "$UPDATE_TARGET" </dev/null &
     disown || true
   fi
@@ -435,8 +416,8 @@ main() {
   execute_launch "$LAUNCH_METHOD" "$BROWSER" "${GPU_FLAGS[@]}" "${launch_args[@]}"
 }
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  if [[ "${1:-}" == --helper-* ]]; then
+if [[ ${BASH_SOURCE[0]} == "${0}" ]]; then
+  if [[ ${1:-} == --helper-* ]]; then
     _dispatch "${1#--helper-}" "${@:2}"
   else
     main "$@"
