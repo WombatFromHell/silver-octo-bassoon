@@ -76,6 +76,21 @@ output "Dell Inc. AW3426DW 4JSLXH4" {
         }
     }
 }
+workspace "main" {
+    open-on-output "Dell Inc. AW3426DW 4JSLXH4"
+}
+workspace "alt" {
+    open-on-output "Dell Inc. AW3426DW 4JSLXH4"
+}
+output "LG Electronics LG TV SSCR2 0x01010101" {
+    mode "2560x1440@119.998"
+    scale 1
+    position x=2560 y=0
+    variable-refresh-rate on-demand=true
+}
+workspace "gamescope" {
+    open-on-output "LG Electronics LG TV SSCR2 0x01010101"
+}
 hotkey-overlay {
     skip-at-startup
 }
@@ -85,23 +100,21 @@ screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 animations {
 
 }
-workspace "main" {
-
-}
-workspace "gamescope2" {
-    // cover iGPU HDMI port
-    open-on-output "HDMI-A-2"
-}
-workspace "gamescope" {
-    // cover dGPU HDMI port
-    open-on-output "HDMI-A-1"
-}
+// workspace "main" {
+// }
 // https://yalter.github.io/niri/Configuration:-Window-Rules
 window-rule {
     match app-id="steam" title="^notificationtoasts_\\d+_desktop$"
     default-floating-position x=10 y=10 relative-to="bottom-right"
 }
-// matches for XWayland Steam BPM and game windows
+// fallback to desktop
+window-rule {
+    match app-id="steam" title="Steam Big Picture Mode"
+    open-fullscreen true
+    open-focused true
+    open-on-workspace "alt"
+}
+// default to external monitor first (if connected)
 window-rule {
     match app-id="steam" title="Steam Big Picture Mode"
     open-fullscreen true
@@ -109,25 +122,18 @@ window-rule {
     open-on-workspace "gamescope"
 }
 window-rule {
-    match app-id="steam" title="Steam Big Picture Mode"
+    match app-id="gamescope"
     open-fullscreen true
     open-focused true
-    open-on-workspace "gamescope2"
+    open-on-workspace "alt"
 }
-// matches for gamescope on HDMI-A-1>DP-1
 window-rule {
     match app-id="gamescope"
     open-fullscreen true
     open-focused true
     open-on-workspace "gamescope"
 }
-window-rule {
-    // prefer HDMI-A-2 over HDMI-A-1 (if it exists)
-    match app-id="gamescope"
-    open-fullscreen true
-    open-focused true
-    open-on-workspace "gamescope2"
-}
+// fallback to desktop
 // Open the Firefox picture-in-picture player as floating by default.
 window-rule {
     // This app-id regular expression will work for both:
