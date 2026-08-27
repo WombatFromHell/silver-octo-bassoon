@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Parse the optional FPS limit, defaulting to 60.
+# Parse the optional FPS limit, defaulting to 60
 fps=60
 if [[ ${1:-} =~ ^[0-9]+$ ]]; then
   fps=$1
@@ -17,4 +17,11 @@ if [[ ${1:-} != "--" ]]; then
 fi
 shift # Drop the '--'
 
-exec env MANGOHUD=1 MANGOHUD_CONFIG="read_cfg,fps_limit=$fps,no_display" "$@"
+cfg="fps_limit_method=early,fps_limit=$fps"
+if [[ -n ${MANGOHUD_CONFIG:-} ]]; then
+  cfg="${MANGOHUD_CONFIG},${cfg}"
+else
+  cfg="read_cfg,${cfg}"
+fi
+
+exec env MANGOHUD_CONFIG="$cfg" mangohud "$@"

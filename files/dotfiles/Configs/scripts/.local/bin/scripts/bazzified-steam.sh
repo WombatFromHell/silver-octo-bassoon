@@ -385,12 +385,16 @@ main() {
     GAMESCOPE_ARGS+=(--)
     WRAPPERS=()
     ((LG_C1_CONNECTED)) && WRAPPERS+=(
-      "$HOME/.local/bin/scripts/lgc1-wol.py --"
+      "$HOME/.local/bin/scripts/lgc1-wold.py --" # tv wol on startup + resume from standby
       "$HOME/.local/bin/scripts/pactl_gate_sentinel.sh"
     )
-    WRAPPERS+=("gamemode --")
+    WRAPPERS+=(
+      "gamemode --"
+    )
     [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=(
       PROTON_ENABLE_WAYLAND=1
+      ENABLE_GAMESCOPE_WSI=0
+      VRR_OUTPUTS="HDMI-A-2,HDMI-A-1,DP-4,DP-1"
       IDLE_CMD="$HOME/.local/bin/scripts/on_idle.sh idle"
       ACTIVE_CMD="$HOME/.local/bin/scripts/on_idle.sh active"
       IDLE_TIMEOUT=60        # DPMS off after 1 min
