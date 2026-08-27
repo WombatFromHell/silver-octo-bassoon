@@ -247,7 +247,7 @@ def main():
     cmd = None
     if "--" in sys.argv:
         idx = sys.argv.index("--")
-        cmd = sys.argv[idx + 1:]
+        cmd = sys.argv[idx + 1 :]
         sys.argv = sys.argv[:idx]
     args = parse_args()
     print("Waking TV...")

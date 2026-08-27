@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Shared GPU detection (DRM_SYS_PATH + detect_hybrid_graphics).
-# shellcheck source=./gpu-detect.sh
+# shellcheck source=./gpu-detect.sh disable=SC1091
 source "$HOME/.local/bin/scripts/gpu-detect.sh"
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -220,6 +220,23 @@ cleanup_orphaned_session() {
 
 # ── Command Building ─────────────────────────────────────────────────────────
 
+# ponytail: single source of truth for steam env defaults. Call with no args to
+# default to empty; pass KEY=VALUE… to set a mode's defaults. Keeps any
+# env-provided STEAM_ENV_VARS so the override semantics survive centralizing.
+with_steam_env() {
+  [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=("$@")
+}
+
+# ponytail: assemble the gamescope argument vector in one place. Base profile
+# comes from detection; user args + prime (hybrid) + terminator appended here so
+# main() stays out of command construction (SoC).
+assemble_gamescope_args() {
+  detect_gamescope_profile_niri || true
+  GAMESCOPE_ARGS+=("$@")
+  detect_hybrid_graphics &>/dev/null && GAMESCOPE_ARGS+=(-p prime)
+  GAMESCOPE_ARGS+=(--)
+}
+
 build_steam_command() {
   # Environment variables
   STEAM_CMD=(env "${STEAM_ENV_VARS[@]}")
@@ -326,7 +343,12 @@ run_plain() {
   fi
 
   shutdown_if_allowed "plain"
-  exec "$STEAM" "${STEAM_ARGS[@]}" "$@"
+  # ponytail: route through build_steam_command so plain + session modes share
+  # one launch path; extra args become the final steam arguments.
+  STEAM_ARGS=("$@")
+  with_steam_env
+  build_steam_command
+  exec "${STEAM_CMD[@]}"
 }
 
 # ── Main Execution ───────────────────────────────────────────────────────────
@@ -340,7 +362,7 @@ main() {
       found_sep=true
       continue
     fi
-    if "$found_sep"; then extra_args+=("$arg"); else mode_args+=("$arg"); fi
+    if [[ $found_sep == true ]]; then extra_args+=("$arg"); else mode_args+=("$arg"); fi
   done
 
   local cmd="${mode_args[0]:-}"
@@ -360,14 +382,16 @@ main() {
   # No separate config phase; no duplicated mode matching; no intermediate vars.
   case "$cmd" in
   "")
-    [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=()
+    # ponytail: extra args after `--` go to the outermost launcher — steam here,
+    # gamescope in nested mode (see assemble_gamescope_args).
+    with_steam_env
     run_plain "${extra_args[@]}"
     ;;
   tenfoot)
     MODE_TAG="bazzified-steam-tenfoot"
     STEAM_ARGS+=(-gamepadui -pipewire "${extra_args[@]}")
     WRAPPERS=("gamemode --")
-    [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=()
+    with_steam_env
     run_session "tenfoot"
     ;;
   nested)
@@ -377,29 +401,20 @@ main() {
       log_error "Missing gamescope dependency!"
       exit 1
     }
-    # ponytail: detect first (always sets a base profile; falls back to
-    # `-p fallback -e` on any detection failure), then user args + terminator.
-    detect_gamescope_profile_niri || true
-    GAMESCOPE_ARGS+=("${extra_args[@]}")
-    detect_hybrid_graphics &>/dev/null && GAMESCOPE_ARGS+=(-p prime)
-    GAMESCOPE_ARGS+=(--)
+    assemble_gamescope_args "${extra_args[@]}"
     WRAPPERS=()
     ((LG_C1_CONNECTED)) && WRAPPERS+=(
       "$HOME/.local/bin/scripts/lgc1-wold.py --" # tv wol on startup + resume from standby
       "$HOME/.local/bin/scripts/pactl_gate_sentinel.sh"
     )
-    WRAPPERS+=(
-      "gamemode --"
-    )
-    [[ ${STEAM_ENV_VARS+_} ]] || STEAM_ENV_VARS=(
-      PROTON_ENABLE_WAYLAND=1
-      ENABLE_GAMESCOPE_WSI=0
-      VRR_OUTPUTS="HDMI-A-2,HDMI-A-1,DP-4,DP-1"
-      IDLE_CMD="$HOME/.local/bin/scripts/on_idle.sh idle"
-      ACTIVE_CMD="$HOME/.local/bin/scripts/on_idle.sh active"
-      IDLE_TIMEOUT=60        # DPMS off after 1 min
-      ENABLE_SLEEP_INHIBIT=0 # don't block system-level 'sleep'
-    )
+    WRAPPERS+=("gamemode --")
+    with_steam_env \
+      PROTON_ENABLE_WAYLAND=1 \
+      ENABLE_GAMESCOPE_WSI=0 \
+      IDLE_CMD="$HOME/.local/bin/scripts/on_idle.sh idle" \
+      ACTIVE_CMD="$HOME/.local/bin/scripts/on_idle.sh active" \
+      IDLE_TIMEOUT=60 \
+      ENABLE_SLEEP_INHIBIT=0
     run_session "nested"
     ;;
   *)
