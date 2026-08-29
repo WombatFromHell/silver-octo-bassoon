@@ -154,14 +154,13 @@ detect_gamescope_profile_niri() {
   done
 
   LG_C1_CONNECTED=0
+  GAMESCOPE_ARGS=(-p "tenfoot,hdr")
   case "$prefix" in
   HDMI-A)
     LG_C1_CONNECTED=1
-    GAMESCOPE_ARGS=(-p "std,hdr" -e)
     log_info "Detected LG TV → HDR profile"
     ;;
   DP)
-    GAMESCOPE_ARGS=(-p wstd -e)
     log_info "Detected DP monitor (no TV) → SDR profile"
     ;;
   *)
@@ -173,7 +172,6 @@ detect_gamescope_profile_niri() {
       | join(", ")
     ' 2>/dev/null)"
     log_warn "No known monitor after ${attempt} attempts (active: ${active_names:-none}); using default gamescope args"
-    GAMESCOPE_ARGS=(-p fallback -e)
     return 1
     ;;
   esac
@@ -389,14 +387,14 @@ main() {
     ;;
   tenfoot)
     MODE_TAG="bazzified-steam-tenfoot"
-    STEAM_ARGS+=(-gamepadui -pipewire "${extra_args[@]}")
+    STEAM_ARGS+=(-tenfoot -pipewire "${extra_args[@]}")
     WRAPPERS=("gamemode --")
     with_steam_env
     run_session "tenfoot"
     ;;
   nested)
     MODE_TAG="bazzified-steam-nested"
-    STEAM_ARGS+=(-gamepadui -pipewire -steamos3)
+    STEAM_ARGS+=(-tenfoot -steamos3)
     GAMESCOPE_PATH="$(command -v nscb 2>/dev/null)" || {
       log_error "Missing gamescope dependency!"
       exit 1
@@ -410,7 +408,6 @@ main() {
     WRAPPERS+=("gamemode --")
     with_steam_env \
       PROTON_ENABLE_WAYLAND=1 \
-      ENABLE_GAMESCOPE_WSI=0 \
       IDLE_CMD="$HOME/.local/bin/scripts/on_idle.sh idle" \
       ACTIVE_CMD="$HOME/.local/bin/scripts/on_idle.sh active" \
       IDLE_TIMEOUT=60 \
