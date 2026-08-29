@@ -55,8 +55,27 @@
   "workspaceDragReorder": false,
   "maxWorkspaceIcons": 5,
   "workspaceAppIconSizeOffset": 4,
+  "workspaceActiveAppHighlightEnabled": true,
   "workspaceOccupiedColorMode": "sch",
   "workspaceFocusedBorderColor": "surfaceText",
+  "workspaceNameIcons": {
+    "main": {
+      "type": "icon",
+      "value": "filter_1"
+    },
+    "alt": {
+      "type": "icon",
+      "value": "filter_2"
+    },
+    "gaming": {
+      "type": "icon",
+      "value": "star"
+    },
+    "gamescope": {
+      "type": "icon",
+      "value": "api"
+    }
+  },
   "appIdSubstitutions": [],
   "dankLauncherV2UnloadOnClose": true,
   "networkPreference": "wifi",
@@ -199,7 +218,7 @@
       "maximizeDetection": true,
       "scrollEnabled": true,
       "scrollXBehavior": "workspace",
-      "scrollYBehavior": "column",
+      "scrollYBehavior": "workspace",
       "shadowIntensity": 0,
       "shadowOpacity": 60,
       "shadowColorMode": "default",
@@ -239,6 +258,12 @@
     },
     "dms_clipboard_search": {
       "trigger": "cb"
+    },
+    "dms_power": {
+      "trigger": "pw"
+    },
+    "dms_qr_generator": {
+      "trigger": "qrg"
     }
   },
   "configVersion": 16
