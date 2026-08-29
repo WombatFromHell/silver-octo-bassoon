@@ -13,6 +13,7 @@ SEARCH_PATHS=(
   /var/lib/flatpak/exports/share/applications
   /run/current-system/sw/share/applications
   "$HOME/.nix-profile/share/applications"
+  "$HOME/.local/share/nix-profile/share/applications"
 )
 
 NEW_WINDOW_BROWSERS=(

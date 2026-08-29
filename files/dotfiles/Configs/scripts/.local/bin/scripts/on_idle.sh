@@ -14,7 +14,7 @@ set -euo pipefail
 # Output<->GPU association comes from gpu-detect.sh's sysfs map.
 
 scripts_dir="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
-# shellcheck source=./gpu-detect.sh
+# shellcheck source=./gpu-detect.sh disable=SC1091
 source "$scripts_dir/gpu-detect.sh"
 
 STATE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/on_idle_off.lst"
@@ -52,14 +52,17 @@ external_by_edid() {
   # collision ever appears. `|| true` neutralizes grep's no-match exit
   # under pipefail.
   niri_outputs | jq -r '
-    to_entries[] | "\(.key)\t\(.value.make) \(.value.model) \(.value.serial)"' \
-    | grep -iF "$EXT_IDENT" | head -n1 | cut -f1 || true
+    to_entries[] | "\(.key)\t\(.value.make) \(.value.model) \(.value.serial)"' |
+    grep -iF "$EXT_IDENT" | head -n1 | cut -f1 || true
 }
 
 find_external() {
   local o
   o="$(external_by_name)"
-  [[ -n $o ]] && { echo "$o"; return; }
+  [[ -n $o ]] && {
+    echo "$o"
+    return
+  }
   external_by_edid
 }
 

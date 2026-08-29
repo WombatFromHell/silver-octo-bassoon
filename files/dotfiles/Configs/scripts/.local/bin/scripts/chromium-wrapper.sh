@@ -12,9 +12,12 @@
 set -euo pipefail
 
 # chromium-flags.sh is mandatory: the browser is always launched through it.
-CHROMIUM_FLAGS_SCRIPT="$HOME/.local/bin/scripts/chromium-flags.sh"
+# ponytail: prefer a PATH-resolved chromium-flags.sh (covers install.sh's
+# symlink and the store bin); fall back to a sibling of this script.
+scripts_dir="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+CHROMIUM_FLAGS_SCRIPT="$(command -v chromium-flags.sh 2>/dev/null || true)"
 [[ -x $CHROMIUM_FLAGS_SCRIPT ]] ||
-  CHROMIUM_FLAGS_SCRIPT="$(command -v chromium-flags.sh 2>/dev/null || true)"
+  CHROMIUM_FLAGS_SCRIPT="$scripts_dir/chromium-flags.sh"
 if [[ ! -x $CHROMIUM_FLAGS_SCRIPT ]]; then
   echo "Error: chromium-flags.sh not found" >&2
   exit 1
@@ -28,8 +31,8 @@ readonly PROFILE_DIR="${PROFILE_DIR:-$HOME/.config/chromium-wrapper}"
 readonly CONTAINER_ENV_FILE="${CONTAINER_ENV_FILE:-/run/.containerenv}"
 
 # GPU detection (DRM_SYS_PATH + detect_hybrid_graphics) lives in gpu-detect.sh.
-# shellcheck source=./gpu-detect.sh
-source "$HOME/.local/bin/scripts/gpu-detect.sh"
+# shellcheck source=./gpu-detect.sh disable=SC1091
+source "$scripts_dir/gpu-detect.sh"
 
 # Effective config. Defaults are legacy-safe; a profile (sourced) and the
 # environment override these — environment ALWAYS wins over the .conf.
@@ -151,8 +154,10 @@ find_browser() {
       return 0
     }
   done
-  if command -v distrobox-enter &>/dev/null &&
-    distrobox-enter -n "$CONTAINER_NAME" -- bash -c 'command -v brave-browser' &>/dev/null; then
+  # ponytail: `distrobox-enter` hangs when probed (blocks on terminal/tty),
+  # so container existence via `distrobox ls` is the only cheap signal.
+  if command -v distrobox &>/dev/null &&
+    distrobox ls 2>/dev/null | grep -qw "$CONTAINER_NAME"; then
     echo "brave-browser"
     return 0
   fi
@@ -196,9 +201,12 @@ resolve_profile_browser() {
     UPDATE_TARGET="$BROWSER"
     return 0
   fi
+  # ponytail: same enter-hang as find_browser; container existence via ls.
+  # If the container exists but lacks the binary, the failure surfaces at
+  # launch (command not found) instead of resolution.
   if [[ -n $CONTAINER_NAME ]] &&
-    command -v distrobox-enter &>/dev/null &&
-    distrobox-enter -n "$CONTAINER_NAME" -- bash -c "command -v '$BROWSER_BINARY'" &>/dev/null; then
+    command -v distrobox &>/dev/null &&
+    distrobox ls 2>/dev/null | grep -qw "$CONTAINER_NAME"; then
     BROWSER="$BROWSER_BINARY"
     LAUNCH_METHOD=distrobox
     UPDATE_METHOD=distrobox
@@ -343,7 +351,12 @@ _dispatch() {
   shift
   case "$cmd" in
   in-container) is_in_container ;;
-  find-browser) find_browser ;;
+  # Legacy default: the helper runs outside legacy_setup, so apply the
+  # legacy container here or the distrobox check is skipped.
+  find-browser)
+    CONTAINER_NAME="${CONTAINER_NAME:-$LEGACY_CONTAINER}"
+    find_browser
+    ;;
   flatpak-installed) is_flatpak_installed "${1:-$FLATPAK_NAME}" ;;
   detect-hybrid) detect_hybrid_graphics ;;
   notify) notify "${1:-}" "${2:-}" "${3:-}" "${4:-}" ;;

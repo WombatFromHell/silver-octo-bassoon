@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # Shared GPU detection (DRM_SYS_PATH + detect_hybrid_graphics).
+scripts_dir="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
 # shellcheck source=./gpu-detect.sh disable=SC1091
-source "$HOME/.local/bin/scripts/gpu-detect.sh"
+source "$scripts_dir/gpu-detect.sh"
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -353,7 +354,7 @@ run_plain() {
 
 main() {
   local args=("$@")
-  local mode_args=() extra_args=() found_sep=false
+  local mode_args=() extra_args=() found_sep=false steam_env=()
 
   for arg in "${args[@]}"; do
     if [[ $arg == "--" ]]; then
@@ -402,16 +403,23 @@ main() {
     assemble_gamescope_args "${extra_args[@]}"
     WRAPPERS=()
     ((LG_C1_CONNECTED)) && WRAPPERS+=(
-      "$HOME/.local/bin/scripts/lgc1-wold.py --" # tv wol on startup + resume from standby
-      "$HOME/.local/bin/scripts/pactl_gate_sentinel.sh"
+      "$scripts_dir/lgc1-wold.py --" # tv wol on startup + resume from standby
+      "$scripts_dir/pactl_gate_sentinel.sh"
     )
     WRAPPERS+=("gamemode --")
-    with_steam_env \
-      PROTON_ENABLE_WAYLAND=1 \
-      IDLE_CMD="$HOME/.local/bin/scripts/on_idle.sh idle" \
-      ACTIVE_CMD="$HOME/.local/bin/scripts/on_idle.sh active" \
-      IDLE_TIMEOUT=60 \
+    steam_env=(
+      PROTON_ENABLE_WAYLAND=1
+      IDLE_TIMEOUT=60
       ENABLE_SLEEP_INHIBIT=0
+    )
+    # ponytail: skip idle hooks if on_idle.sh isn't installed; the scheduler
+    # gets no IDLE/ACTIVE command rather than a dead path.
+    if command -v "$scripts_dir/on_idle.sh" &>/dev/null; then
+      steam_env+=(IDLE_CMD="$scripts_dir/on_idle.sh idle" ACTIVE_CMD="$scripts_dir/on_idle.sh active")
+    else
+      log_info "Skipping idle hooks: on_idle.sh not installed"
+    fi
+    with_steam_env "${steam_env[@]}"
     run_session "nested"
     ;;
   *)

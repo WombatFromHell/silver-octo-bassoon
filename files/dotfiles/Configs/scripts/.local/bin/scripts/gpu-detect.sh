@@ -45,13 +45,13 @@ outputs_of_gpu() {
 # distinct GPUs with a connected connector. Prints the count, returns 0 if hybrid.
 detect_hybrid_graphics() {
   local gpu
-  local -A seen
+  local -A seen=()
   while read -r _ gpu; do
     [[ -n ${seen[$gpu]:-} ]] && continue
     seen[$gpu]=1
   done < <(connector_gpu_map)
   echo "${#seen[@]}"
-  (( ${#seen[@]} >= 2 ))
+  ((${#seen[@]} >= 2))
 }
 
 gpu_detect_self_test() {
