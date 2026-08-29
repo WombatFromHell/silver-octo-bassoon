@@ -56,6 +56,9 @@ local volmmute = "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"
 --   hl.exec_cmd("nm-applet")
 --   hl.exec_cmd("waybar & hyprpaper & firefox")
 -- end)
+hl.on("hyprland.start", function ()
+	hl.exec_cmd("hyprctl setcursor Breeze_Light 32")
+end)
 
 -------------------------------
 ---- ENVIRONMENT VARIABLES ----
@@ -322,6 +325,10 @@ end
 -- Example special workspace (scratchpad)
 hl.bind(mainMod .. " + S", hl.dsp.workspace.toggle_special("magic"))
 hl.bind(mainMod .. " + SHIFT + S", hl.dsp.window.move({ workspace = "special:magic" }))
+
+-- Scroll through windows of the current workspace with mainMod + scroll
+hl.bind(mainMod .. " + mouse_down", hl.dsp.focus({ direction = "right" }), { repeating = false })
+hl.bind(mainMod .. " + mouse_up", hl.dsp.focus({ direction = "left" }), { repeating = false })
 
 -- Scroll through existing workspaces with mainMod + ctrl + scroll
 hl.bind(mainMod .. " + CTRL + mouse_down", hl.dsp.focus({ workspace = "e+1" }))
