@@ -1,0 +1,13 @@
+[Unit]
+Description=Danksearch (dsearch) via UWSM
+PartOf=wayland-session-pre@niri.desktop.target wayland-session-pre@hyprland.desktop.target
+After=wayland-session-pre@niri.desktop.target wayland-session-pre@hyprland.desktop.target
+Before=wayland-session@niri.desktop.target wayland-session@hyprland.desktop.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/dsearch serve
+ExecStop=/usr/bin/pkill -TERM -x dsearch
+
+[Install]
+WantedBy=wayland-session-pre@niri.desktop.target wayland-session-pre@hyprland.desktop.target
