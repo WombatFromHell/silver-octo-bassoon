@@ -154,7 +154,7 @@ function planner
     start-with-llm qwen3.8_27b.sh $argv
 end
 function coder
-    start-with-llm qwen3.6_35b_t.sh $argv
+    start-with-llm qwen3.8_27b_t.sh $argv
 end
 
 function fish_title
