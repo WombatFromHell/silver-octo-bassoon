@@ -69,9 +69,7 @@ output "Dell Inc. AW3426DW 4JSLXH4" {
     scale 1
     position x=0 y=0
     variable-refresh-rate on-demand=true
-    hdr mode="auto" {
-        reference-luminance 250
-    }
+    // hdr mode="on"
     layout {
         gaps 8
         default-column-width {
