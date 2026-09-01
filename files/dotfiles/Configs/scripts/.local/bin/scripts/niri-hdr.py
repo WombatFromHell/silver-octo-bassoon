@@ -44,38 +44,39 @@ def _brace_delta(line):
     return line.count("{") - line.count("}")
 
 
+def _block_end(lines, start):
+    """Last line index where the brace(s) opened at `start` balance out; the
+    last line of the file if they never do."""
+    depth = 0
+    for j in range(start, len(lines)):
+        depth += _brace_delta(lines[j])
+        if depth <= 0:
+            return j
+    return len(lines) - 1
+
+
 def find_outputs(lines):
     """Return [(label, start_idx, end_idx)] for each top-level output block."""
     outs = []
     for i, line in enumerate(lines):
         m = OUTPUT_RE.match(line)
-        if not m:
-            continue
-        depth = 0
-        end = i
-        for j in range(i, len(lines)):
-            depth += _brace_delta(lines[j])
-            end = j
-            if depth <= 0:
-                break
-        outs.append((m.group(1), i, end))
+        if m:
+            outs.append((m.group(1), i, _block_end(lines, i)))
     return outs
 
 
 def find_hdr(lines, start, end):
-    """Return (block_start, block_end) of the first hdr line in lines[start:end],
+    """Return (hdr_line_idx, block_end) of the first hdr line in lines[start:end],
     extending to its closing brace if it opens one. None if absent."""
     for i in range(start, end + 1):
-        if not HDR_RE.match(lines[i]):
-            continue
-        j, depth = i, 0
-        while j < len(lines):
-            depth += _brace_delta(lines[j])
-            j += 1
-            if depth <= 0:
-                break
-        return i, j - 1
+        if HDR_RE.match(lines[i]):
+            return i, _block_end(lines, i)
     return None
+
+
+def hdr_blocks(lines):
+    """Output blocks [(label, start, end)] that contain an hdr mode= line."""
+    return [o for o in find_outputs(lines) if find_hdr(lines, o[1], o[2]) is not None]
 
 
 def _comment_block(lines, i0, i1):
@@ -107,26 +108,27 @@ def transform(lines, label, enable):
             False,
             (
                 f'output "{label}" not found (candidates: '
-                f"{', '.join(candidate_labels(lines)) or 'none'})"
+                f"{', '.join(l for l, _, _ in outs) or 'none'})"
             ),
         )
-    label0, start, end = matches[0]
+    start, end = matches[0][1:]
     h = find_hdr(lines, start, end)
     if h is None:
-        return lines, False, f'output "{label0}" has no hdr mode= line'
+        return lines, False, f'output "{label}" has no hdr mode= line'
     i0, i1 = h
     commented = lines[i0].lstrip().startswith("//")
     changed = False
-    if commented == enable:
-        if enable:
+    if enable:
+        if commented:
             lines = _uncomment_block(lines, i0, i1)
-        else:
-            lines = _comment_block(lines, i0, i1)
-        changed = True
-    # niri-spicy has no "off" value: remap legacy mode="off" -> "on".
-    if enable and OFF_RE.search(lines[i0]):
-        lines = list(lines)
-        lines[i0] = OFF_RE.sub('mode="on"', lines[i0], count=1)
+            changed = True
+        # niri-spicy has no "off" value: remap legacy mode="off" -> "on".
+        if OFF_RE.search(lines[i0]):
+            lines = list(lines)
+            lines[i0] = OFF_RE.sub('mode="on"', lines[i0], count=1)
+            changed = True
+    elif not commented:
+        lines = _comment_block(lines, i0, i1)
         changed = True
     return lines, changed, None
 
@@ -154,10 +156,12 @@ def self_test():
         "}"
     )
     lines = orig.split("\n")
-    results = []
+    passed = []
 
-    def check(name, cond, detail=""):
-        results.append((name, cond, detail))
+    def check(name, cond):
+        ok = bool(cond)
+        passed.append(ok)
+        print(("PASS " if ok else "FAIL ") + name)
 
     # 1. disable A: exactly the 3-line block commented, nothing else touched
     out, changed, reason = transform(lines, "A", False)
@@ -218,26 +222,7 @@ def self_test():
     out, changed, reason = transform(lines, "A", True)
     check("already enabled found", reason is None and not changed)
 
-    failed = False
-    for name, ok, detail in results:
-        print(
-            ("PASS " if ok else "FAIL ")
-            + name
-            + (f" ({detail})" if detail and not ok else "")
-        )
-        failed = not ok or failed
-    return 1 if failed else 0
-
-
-def list_hdr_candidates(lines):
-    """Labels of output blocks that have an hdr mode= line, config order."""
-    return [l for l, s, e in find_outputs(lines) if find_hdr(lines, s, e) is not None]
-
-
-def candidate_labels(lines):
-    """All output labels, HDR-capable first, then non-capable (stable order)."""
-    hdr = list_hdr_candidates(lines)
-    return hdr + [l for l, _, _ in find_outputs(lines) if l not in hdr]
+    return 1 if not all(passed) else 0
 
 
 def die(msg, code=1):
@@ -289,27 +274,25 @@ def main():
         text = f.read()
     lines = text.split("\n")
 
+    outs = find_outputs(lines)
+    hdr = hdr_blocks(lines)
     if args.list:
-        for label in list_hdr_candidates(lines):
+        for label, _, _ in hdr:
             print(f"HDR: {label}")
         return
-
-    outs = find_outputs(lines)
     if args.output:
         label = args.output
     elif len(outs) == 1:
         label = outs[0][0]
-    elif len(outs) > 1:
-        # default: the first block that actually has an hdr mode= line
-        with_hdr = [o for o in outs if find_hdr(lines, o[1], o[2]) is not None]
-        if with_hdr:
-            label = with_hdr[0][0]
-        else:
-            die(
-                f"multiple output blocks, none with an hdr mode= line, use --output "
-                f"(candidates: {', '.join(candidate_labels(lines))})",
-                2,
-            )
+    elif hdr:
+        # default: first block that actually has an hdr mode= line
+        label = hdr[0][0]
+    elif outs:
+        die(
+            f"multiple output blocks, none with an hdr mode= line, use --output "
+            f"(candidates: {', '.join(l for l, _, _ in outs)})",
+            2,
+        )
     else:
         label = None
 
