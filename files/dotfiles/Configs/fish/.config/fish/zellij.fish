@@ -130,11 +130,33 @@ end
 
 function __zj_claim_attach -d "Atomically claim the attach marker; succeeds only for the first caller"
     mkdir -p "$__zj_attached_dir" 2>/dev/null
-    mkdir (__zj_marker $argv[1]) 2>/dev/null
+    if mkdir (__zj_marker $argv[1]) 2>/dev/null
+        # we won the race -- stamp ownership so a future caller can tell
+        # if we're actually still alive
+        echo $fish_pid >(__zj_marker $argv[1])/pid
+        return 0
+    end
+    # ponytail: someone already holds it -- but if that someone is dead
+    # (killed terminal, crash, OOM), the marker is just litter. Check the
+    # stamped pid; if it's gone, the lock is stale, clear it and retry
+    # once. This is the only new logic -- no session-tracking, no polling.
+    set -l owner_file (__zj_marker $argv[1])/pid
+    if test -f "$owner_file"
+        set -l owner_pid (cat "$owner_file" 2>/dev/null)
+        if test -n "$owner_pid"; and not kill -0 $owner_pid 2>/dev/null
+            rm -rf (__zj_marker $argv[1]) 2>/dev/null
+            mkdir -p "$__zj_attached_dir" 2>/dev/null
+            if mkdir (__zj_marker $argv[1]) 2>/dev/null
+                echo $fish_pid >(__zj_marker $argv[1])/pid
+                return 0
+            end
+        end
+    end
+    return 1
 end
 
 function __zj_release_attach -d "Release the attach marker"
-    rmdir (__zj_marker $argv[1]) 2>/dev/null
+    rm -rf (__zj_marker $argv[1]) 2>/dev/null
 end
 
 # --- Completions ---
@@ -144,21 +166,15 @@ complete -c zk -a "(__zj_sessions)"
 
 # --- Public API ---
 function za -d "Attach to session, creating it if missing (default: \$ZELLIJ_DEFAULT_SESSION)"
-    # Block manual attachment if we're a zellij pane that reached this
-    # shell over SSH without $ZELLIJ being forwarded (prevents broken
-    # self-referential nesting).
     if __zj_is_nested_ssh
         echo "Error: Already inside a zellij session reached over SSH (\$ZELLIJ wasn't forwarded). Refusing to nest 'za' to avoid a broken attach." >&2
         return 1
     end
     set -l target (__zj_session_arg $argv[1] $ZELLIJ_DEFAULT_SESSION)
-    # ponytail: touch/rm on the marker dir, not a claim/release -- za must
-    # attach unconditionally even if auto-attach already holds the marker,
-    # so it can't go through __zj_claim_attach without breaking that case.
-    mkdir -p "$__zj_attached_dir" 2>/dev/null
-    touch (__zj_marker $target) 2>/dev/null
+    mkdir -p (__zj_marker $target) 2>/dev/null
+    echo $fish_pid >(__zj_marker $target)/pid
     zellij attach -c $target
-    rm -f (__zj_marker $target) 2>/dev/null
+    rm -rf (__zj_marker $target) 2>/dev/null
 end
 
 function zd -d "Delete a session (default: current)"
