@@ -150,9 +150,6 @@ function start-with-llm
     end
 end
 complete -c start-with-llm -f -a "(__fish_complete_start-llm)"
-function planner
-    start-with-llm qwen3.8_27b.sh $argv
-end
 function coder
     start-with-llm qwen3.8_27b_t.sh $argv
 end
