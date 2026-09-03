@@ -217,6 +217,9 @@ if status is-interactive; and not set -q HERDR_ENV
     if __herdr_is_nested_ssh
         return 0
     end
+    if set -q ZELLIJ; or set -q TMUX
+        return 0
+    end
 
     set -l auto $HERDR_AUTO_ATTACH
     test "$TERM_PROGRAM" = vscode; and set auto false

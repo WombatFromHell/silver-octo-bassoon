@@ -217,6 +217,10 @@ if status is-interactive; and not set -q TMUX
         return 0
     end
 
+    if set -q HERDR_ENV
+        return 0
+    end
+
     # Conditions to skip auto-start:
     set -l skip_autostart false
     if not __tmux_is_truthy "$TMUX_AUTO_ATTACH"

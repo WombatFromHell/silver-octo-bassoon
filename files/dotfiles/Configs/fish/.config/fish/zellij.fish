@@ -204,6 +204,9 @@ if status is-interactive; and not set -q ZELLIJ
     if __zj_is_nested_ssh
         return 0
     end
+    if set -q HERDR_ENV
+        return 0
+    end
     if not __zj_is_truthy "$ZELLIJ_AUTO_ATTACH"
         return 0
     else if string match -qir '^(vscode|cursor|windsurf|zed|hyper)$' "$TERM_PROGRAM"; or set -q INSIDE_EMACS; or set -q JETBRAINS_IDE
