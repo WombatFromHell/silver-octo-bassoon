@@ -23,4 +23,4 @@ gvfs.private
 **/.config/herdr/sessions/*
 **/.config/herdr/herdr*.lock
 
-Lossless.dll
+Lossless.dll*
