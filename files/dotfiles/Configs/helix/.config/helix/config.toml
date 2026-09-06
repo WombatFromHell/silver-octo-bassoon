@@ -27,3 +27,6 @@ auto-signature-help = true
 C-h = ":toggle file-picker.hidden"
 # Toggle gitignore visibility
 C-t = ":toggle file-picker.git-ignore"
+# Move between buffer tabs easier
+H = ":buffer-previous"
+L = ":buffer-next"
