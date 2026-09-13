@@ -1,0 +1,16 @@
+{
+  "providers": {
+    "llama-cpp": {
+      "baseUrl": "http:/127.0.0.1:9931/v1",
+      "api": "openai-completions",
+      "apiKey": "llama-cpp",
+      "models": [
+        {
+          "id": "qwen3.8-27b",
+          "name": "Qwen3.8-27B (llama.cpp)",
+          "contextWindow": 131072
+        }
+      ]
+    }
+  }
+}

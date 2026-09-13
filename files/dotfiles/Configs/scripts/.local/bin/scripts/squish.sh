@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")" && pwd)"
-# shellcheck source=./squish-common.sh
+# shellcheck source=src/squish-common.sh
 source "${SCRIPT_DIR}/squish-common.sh"
 
 #######################################
@@ -11,7 +11,8 @@ source "${SCRIPT_DIR}/squish-common.sh"
 #######################################
 
 declare -r VERSION="dev"
-declare -r SCRIPT_NAME=$(basename "$0")
+SCRIPT_NAME="$(basename "$0")"
+readonly SCRIPT_NAME
 
 declare -ra BASE_MKSQUASHFS_ARGS=(
   -comp zstd
@@ -192,17 +193,18 @@ resolve_tracker_file() {
     case ${#matches[@]} in
     0)
       log error "No tracker file found for archive '$input_abs'. Is it currently mounted?"
-      exit 1
+      return 1
       ;;
     1)
-      TRACKER_FILE="${matches[0]}"
+      echo "${matches[0]}"
+      return 0
       ;;
     *)
       log error "Unexpected: ${#matches[@]} tracker files all reference archive '$input_abs':"
       local m
       for m in "${matches[@]}"; do log error "  $m"; done
       log error "Remove stale tracker files manually and retry."
-      exit 1
+      return 1
       ;;
     esac
 
@@ -219,23 +221,24 @@ resolve_tracker_file() {
     case ${#matches[@]} in
     0)
       log error "No tracker file in '${tracker_dir}' found referencing mountpoint '$input_abs'."
-      exit 1
+      return 1
       ;;
     1)
-      TRACKER_FILE="${matches[0]}"
+      echo "${matches[0]}"
+      return 0
       ;;
     *)
       log error "Corrupt tracker state: ${#matches[@]} tracker files all reference mountpoint '$input_abs':"
       local m
       for m in "${matches[@]}"; do log error "  $m"; done
       log error "Remove stale tracker files manually and retry."
-      exit 1
+      return 1
       ;;
     esac
 
   else
     log error "Cannot resolve tracker: '$input_abs' is neither a .sqsh file nor a directory."
-    exit 1
+    return 1
   fi
 }
 
@@ -299,6 +302,19 @@ mount_archive() {
   log info "Tracker    : $tracker_file"
 }
 
+do_unmount() {
+  local mountpoint="$1"
+  if ! fusermount -u "$mountpoint" 2>/dev/null && ! umount "$mountpoint" 2>/dev/null; then
+    return 1
+  fi
+  if rmdir "$mountpoint" 2>/dev/null; then
+    log info "Removed mountpoint directory '$mountpoint'."
+  else
+    log warn "Mountpoint directory '$mountpoint' is not empty; leaving it in place."
+  fi
+  return 0
+}
+
 unmount_tracker() {
   local tracker_file="$1"
   local mountpoint archive_abs
@@ -313,15 +329,9 @@ unmount_tracker() {
   log info "Unmounting '$mountpoint'..."
   [[ -n $archive_abs ]] && log info "Archive    : $archive_abs"
 
-  if ! fusermount -u "$mountpoint" 2>/dev/null && ! umount "$mountpoint" 2>/dev/null; then
+  if ! do_unmount "$mountpoint"; then
     log error "Failed to unmount '$mountpoint'. Is it still in use?"
     return 1
-  fi
-
-  if rmdir "$mountpoint" 2>/dev/null; then
-    log info "Removed mountpoint directory '$mountpoint'."
-  else
-    log warn "Mountpoint directory '$mountpoint' is not empty; leaving it in place."
   fi
 
   local mounts_dir
@@ -339,7 +349,6 @@ unmount_archive() {
   local input_abs
   input_abs="$(realpath "$input")"
 
-  local TRACKER_FILE=""
   if [[ $FORCE -eq 1 ]]; then
     if [[ -f $input_abs && $input_abs == *.sqsh ]]; then
       local cands live=()
@@ -358,11 +367,10 @@ unmount_archive() {
     elif [[ -d $input_abs ]]; then
       if is_mounted "$input_abs"; then
         log info "Unmounting orphan mount '$input_abs' (no tracker)..."
-        if ! fusermount -u "$input_abs" 2>/dev/null && ! umount "$input_abs" 2>/dev/null; then
+        if ! do_unmount "$input_abs"; then
           log error "Failed to unmount '$input_abs'. Is it still in use?"
           exit 1
         fi
-        rmdir "$input_abs" 2>/dev/null && log info "Removed mountpoint directory '$input_abs'."
         log info "Unmounted successfully."
         return 0
       else
@@ -373,15 +381,8 @@ unmount_archive() {
     fi
   fi
 
-  if [[ -z $TRACKER_FILE ]]; then
-    resolve_tracker_file "$input_abs"
-  fi
-
-  if [[ ! -f $TRACKER_FILE ]]; then
-    log error "No tracker file found at '$TRACKER_FILE'. Is the archive currently mounted?"
-    exit 1
-  fi
-
+  local TRACKER_FILE
+  TRACKER_FILE="$(resolve_tracker_file "$input_abs")" || exit 1
   unmount_tracker "$TRACKER_FILE" || exit 1
 }
 
@@ -422,8 +423,7 @@ compress_cli() {
 
 compress_pipe() {
   local target="$1"
-  mksquashfs "${SOURCES[@]}" "$target" "${BASE_MKSQUASHFS_ARGS[@]}" -percentage 2>&1 |
-    awk '/^[0-9]+$/{print; fflush(); next} {print > "/dev/stderr"}'
+  pipe_progress mksquashfs "${SOURCES[@]}" "$target" "${BASE_MKSQUASHFS_ARGS[@]}" -percentage
 }
 
 #######################################
@@ -436,9 +436,9 @@ determine_output_filename() {
     first_source_basename=$(basename "${SOURCES[0]}")
     OUTPUT_FILE="${first_source_basename}.sqsh"
 
-    # ponytail: KIO mode always uses the archive-* convention; a per-source
-    # default is meaningless when several sources are bundled into one archive
-    [[ $KIO_MODE -eq 1 ]] && OUTPUT_FILE=""
+    # ponytail: KIO mode uses the archive-* convention when several sources
+    # are bundled into one archive; a single source still infers <name>.sqsh
+    [[ $KIO_MODE -eq 1 && ${#SOURCES[@]} -gt 1 ]] && OUTPUT_FILE=""
 
     if [[ -n $OUTPUT_FILE && -e $OUTPUT_FILE ]]; then
       log info "Conflict detected: '$OUTPUT_FILE' already exists."
@@ -545,7 +545,7 @@ parse_arguments() {
       echo " -o, --output <file> Specify output filename (default: <first_source>.sqsh)"
       echo " -y, --skip-verify Skip SHA-256 verification before mounting"
       echo " -f, --force     Remove stale trackers / tolerate missing ones on mount & unmount"
-      echo " -k, --kio       KIO service-menu mode: args are file:// URIs, output uses 'archive-*' naming"
+      echo " -k, --kio       KIO service-menu mode: args are file:// URIs; multi-source output uses 'archive-*' naming"
       echo " --pipe Machine-readable mode: percentages to stdout, logs to stderr"
       echo " -h, --help Show this help message"
       exit 0
@@ -569,20 +569,22 @@ parse_arguments() {
     esac
   done
 
-  if [[ -z $action_arg ]] && [[ $action == @(check|mount|unmount) ]]; then
-    if [[ ${#SOURCES[@]} -eq 1 ]]; then
-      action_arg="${SOURCES[0]}"
-    else
-      log error "Argument for '$action' is missing or invalid."
-      exit 1
+  case $action in
+  check | mount | unmount)
+    if [[ -z $action_arg ]]; then
+      if [[ ${#SOURCES[@]} -eq 1 ]]; then
+        action_arg="${SOURCES[0]}"
+      else
+        log error "Argument for '$action' is missing or invalid."
+        exit 1
+      fi
     fi
-  fi
+    ;;
+  esac
 
   case "$action" in
   check)
-    check_archive "$action_arg" "SquashFS Archival" || exit $?
-    report_health_dialog 1 "$(basename "$action_arg")" "SquashFS Archival"
-    exit 0
+    run_check "$action_arg" "SquashFS Archival"
     ;;
   mount)
     check_squashfuse
@@ -616,28 +618,15 @@ parse_arguments() {
 #######################################
 
 main() {
-  check_dependencies
   parse_arguments "$@"
+  check_dependencies
   determine_output_filename
 
   local exit_code=0
 
   if [[ $PIPE_MODE -eq 1 ]]; then
     compress_pipe "$OUTPUT_FILE" || exit_code=$?
-
-    if [[ $exit_code -ne 0 ]]; then
-      log error "Compression failed (exit code: $exit_code)."
-      [[ -f $OUTPUT_FILE ]] && rm -f "$OUTPUT_FILE"
-      exit "$exit_code"
-    fi
-
-    generate_checksum "$OUTPUT_FILE"
-    log info "Checksum written to '${OUTPUT_FILE}.sha256'."
-    log info "Successfully created '$OUTPUT_FILE'."
-    exit 0
-  fi
-
-  if command -v yad &>/dev/null; then
+  elif command -v yad &>/dev/null; then
     log info "Starting compression with YAD UI..."
     compress_with_yad "$OUTPUT_FILE" || exit_code=$?
   elif command -v zenity &>/dev/null; then

@@ -151,7 +151,10 @@ function start-with-llm
 end
 complete -c start-with-llm -f -a "(__fish_complete_start-llm)"
 function coder
-    start-with-llm qwen3.8_27b_t.sh $argv
+    start-with-llm qwen3.8_27b_t_iq3.sh $argv
+end
+function coder2
+    start-with-llm qwen3.8_27b_t_q3.sh $argv
 end
 
 function fish_title
@@ -218,7 +221,7 @@ function update_wayland_env_vars -d "Safely sync GUI env vars into this shell an
 
     # 2. Only the live socket for our desktop, else leave systemd values alone.
     # NIRI_SOCKET: only managed when niri is the active desktop; else cleared.
-    if string match -qr 'niri' -- "$target_desktop"
+    if string match -qr niri -- "$target_desktop"
         # Live socket wins (most-recent-first). Also derives WAYLAND_DISPLAY if missing.
         if set -l niri_sock (command ls -t "$XDG_RUNTIME_DIR/niri.*.sock" 2>/dev/null)[1]
             and test -S "$niri_sock"
@@ -253,10 +256,14 @@ function update_wayland_env_vars -d "Safely sync GUI env vars into this shell an
     for var in WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP NIRI_SOCKET
         set -l tg ""
         switch $var
-            case WAYLAND_DISPLAY; set tg "$target_wayland"
-            case DISPLAY; set tg "$target_display"
-            case XDG_CURRENT_DESKTOP; set tg "$target_desktop"
-            case NIRI_SOCKET; set tg "$target_niri"
+            case WAYLAND_DISPLAY
+                set tg "$target_wayland"
+            case DISPLAY
+                set tg "$target_display"
+            case XDG_CURRENT_DESKTOP
+                set tg "$target_desktop"
+            case NIRI_SOCKET
+                set tg "$target_niri"
         end
 
         set -q $var; and set -l cur $$var; or set -l cur ""

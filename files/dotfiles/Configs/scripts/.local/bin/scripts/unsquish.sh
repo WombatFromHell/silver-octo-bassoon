@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")" && pwd)"
-# shellcheck source=./squish-common.sh
+# shellcheck source=src/squish-common.sh
 source "${SCRIPT_DIR}/squish-common.sh"
 
 #######################################
@@ -11,7 +11,8 @@ source "${SCRIPT_DIR}/squish-common.sh"
 #######################################
 
 declare -r VERSION="dev"
-declare -r SCRIPT_NAME=$(basename "$0")
+SCRIPT_NAME="$(basename "$0")"
+readonly SCRIPT_NAME
 
 declare -ra BASE_UNSQUASHFS_ARGS=(
   -no-xattrs
@@ -21,7 +22,7 @@ declare -ra BASE_UNSQUASHFS_ARGS=(
 # GLOBAL STATE
 #######################################
 
-declare -i SKIP_CHECKSUM=0
+declare -i IGNORE_CHECKSUM=0
 declare -i PIPE_MODE=0
 declare INPUT_FILE=""
 declare OUTPUT_DIR=""
@@ -95,8 +96,7 @@ extract_cli() {
 
 extract_pipe() {
   local target="$1"
-  unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}" -percentage -d "$target" "$INPUT_FILE" 2>&1 |
-    awk '/^[0-9]+$/{print; fflush(); next} {print > "/dev/stderr"}'
+  pipe_progress unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}" -percentage -d "$target" "$INPUT_FILE"
 }
 
 #######################################
@@ -136,10 +136,12 @@ determine_output_dir() {
 parse_arguments() {
   pre_scan_pipe_mode "$@"
 
+  local action="" action_arg=""
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
     -y | --yes)
-      SKIP_CHECKSUM=1
+      IGNORE_CHECKSUM=1
       shift
       ;;
     --pipe)
@@ -155,13 +157,12 @@ parse_arguments() {
       fi
       ;;
     --check)
+      action="check"
       if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
-        check_archive "$2" "SquashFS Extraction" || exit $?
-        report_health_dialog 1 "$(basename "$2")" "SquashFS Extraction"
-        exit 0
+        action_arg="$2"
+        shift 2
       else
-        log error "Argument for $1 is missing or invalid."
-        exit 1
+        shift
       fi
       ;;
     --list | --ls)
@@ -199,6 +200,17 @@ parse_arguments() {
     esac
   done
 
+  if [[ $action == check ]]; then
+    if [[ -z $action_arg && -n $INPUT_FILE ]]; then
+      action_arg="$INPUT_FILE"
+    fi
+    if [[ -z $action_arg ]]; then
+      log error "Argument for '--check' is missing or invalid."
+      exit 1
+    fi
+    run_check "$action_arg" "SquashFS Extraction"
+  fi
+
   if [[ -z $INPUT_FILE ]]; then
     log error "No archive file specified."
     echo "Usage: $SCRIPT_NAME <archive.sqsh> [-o output_dir] [-y]"
@@ -218,12 +230,12 @@ parse_arguments() {
 #######################################
 
 main() {
-  check_dependencies
   parse_arguments "$@"
+  check_dependencies
   determine_output_dir
 
   if ! check_archive "$INPUT_FILE" "SquashFS Extraction"; then
-    if [[ $SKIP_CHECKSUM -eq 1 ]]; then
+    if [[ $IGNORE_CHECKSUM -eq 1 ]]; then
       log info "Checksum verification failed but -y was passed; continuing anyway."
     else
       exit 1
@@ -234,18 +246,7 @@ main() {
 
   if [[ $PIPE_MODE -eq 1 ]]; then
     extract_pipe "$OUTPUT_DIR" || exit_code=$?
-
-    if [[ $exit_code -ne 0 ]]; then
-      log error "Extraction failed (exit code: $exit_code)."
-      [[ -d $OUTPUT_DIR ]] && rm -rf "$OUTPUT_DIR"
-      exit "$exit_code"
-    fi
-
-    log info "Successfully extracted '$INPUT_FILE' to '$OUTPUT_DIR'."
-    exit 0
-  fi
-
-  if command -v yad &>/dev/null; then
+  elif command -v yad &>/dev/null; then
     log info "Starting extraction with YAD UI..."
     extract_with_yad "$OUTPUT_DIR" || exit_code=$?
   elif command -v zenity &>/dev/null; then

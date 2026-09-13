@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Mount / unmount SSHFS; prompts for password if no valid key is found.
 NAS_HOME="$HOME/.mnt/nas-home"
-MOUNT_POINT="josh@192.168.1.153:/home/josh"
+MOUNT_POINT="josh@192.168.1.153:/virtual-home"
 
 # /run/user/$UID is a Linux-only (systemd) convention; macOS has no equivalent
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}"
@@ -34,7 +34,7 @@ if [[ "$(uname)" == "Darwin" ]]; then
 fi
 
 SSHFS_CONNECTION_OPTS=(-o "delay_connect,reconnect,ServerAliveInterval=30,ConnectTimeout=3,ConnectionAttempts=1")
-SSHFS_OPTS=(-o "follow_symlinks")
+SSHFS_OPTS=(-o "follow_symlinks,port=2022")
 #
 LINUX_SSHFS_OPTS=(-o "idmap=user,noatime")
 MAC_SSHFS_OPTS=(-o "noappledouble,noapplexattr")

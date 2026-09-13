@@ -13,12 +13,10 @@
 log() {
   local level="$1"
   shift
-  if [[ $PIPE_MODE -eq 1 ]]; then
+  if [[ $PIPE_MODE -eq 1 || $level != "info" ]]; then
     echo "[${level^^}] $*" >&2
-  elif [[ $level == "info" ]]; then
-    echo "[INFO] $*"
   else
-    echo "[${level^^}] $*" >&2
+    echo "[INFO] $*"
   fi
 }
 
@@ -34,6 +32,16 @@ pre_scan_pipe_mode() {
       return 0
     fi
   done
+}
+
+#######################################
+# PIPE MODE
+#######################################
+
+# Usage: pipe_progress <cmd args...>
+# Machine-readable mode: bare percentage lines to stdout, rest to stderr.
+pipe_progress() {
+  "$@" 2>&1 | awk '/^[0-9]+$/{print; fflush(); next} {print > "/dev/stderr"}'
 }
 
 #######################################
@@ -55,35 +63,35 @@ run_with_dialog() {
     [[ $seen -eq 0 ]] && backend+=("$arg") || dialog+=("$arg")
   done
 
-  local status_file fifo pid_file pipe_pid
+  local status_file fifo pipe_pid
   status_file=$(mktemp)
-  pid_file=$(mktemp)
   fifo=$(mktemp -u)
   mkfifo "$fifo"
 
-  run_progress_pipeline pipe_pid "$fifo" "$status_file" "$pid_file" "${backend[@]}"
+  run_progress_pipeline pipe_pid "$fifo" "$status_file" "${backend[@]}"
 
   "${dialog[@]}" <"$fifo"
   local dialog_exit=$?
 
   if [[ $dialog_exit -ne 0 ]]; then
+    # ponytail: killing the drain subshell suffices; SIGPIPE propagates
+    # drain -> grep -> tee -> backend and kills it.
     kill "$pipe_pid" 2>/dev/null || true
-    [[ -f $pid_file ]] && kill "$(cat "$pid_file")" 2>/dev/null || true
     wait "$pipe_pid" 2>/dev/null || true
-    rm -f "$status_file" "$pid_file" "$fifo"
+    rm -f "$status_file" "$fifo"
     return "$dialog_exit"
   fi
 
   wait "$pipe_pid" || true
   local cmd_exit
   cmd_exit=$(cat "$status_file")
-  rm -f "$status_file" "$pid_file" "$fifo"
+  rm -f "$status_file" "$fifo"
 
   [[ $cmd_exit -ne 0 ]] && return "$cmd_exit"
   return 0
 }
 
-# Usage: run_progress_pipeline <pipe_pid_ref> <fifo> <status_file> <pid_file> <cmd args...>
+# Usage: run_progress_pipeline <pipe_pid_ref> <fifo> <status_file> <cmd args...>
 run_progress_pipeline() {
   local -n _pipe_pid_ref=$1
   shift
@@ -91,16 +99,12 @@ run_progress_pipeline() {
   shift
   local status_file="$1"
   shift
-  local pid_file="$1"
-  shift
   local cmd=("$@")
 
   (
-    "${cmd[@]}" 2>&1 &
-    local cmd_pid=$!
-    printf '%s\n' "$cmd_pid" >"$pid_file"
-    wait "$cmd_pid"
-    echo "$?" >"$status_file"
+    local rc=0
+    "${cmd[@]}" 2>&1 || rc=$?
+    echo "$rc" >"$status_file"
   ) | tee >(grep -v -E '^[0-9]+$' >&2) | grep --line-buffered -E '^[0-9]+$' |
     {
       # ponytail: keep draining after the dialog closes at 100% so the backend
@@ -129,7 +133,7 @@ uri_to_path() {
   local u="${1#file://}" out="" var
   while [[ $u =~ %([0-9A-Fa-f][0-9A-Fa-f]) ]]; do
     out+="${u%%"${BASH_REMATCH[0]}"*}"
-    printf -v var "\\x${BASH_REMATCH[1]}"
+    printf -v var "%b" "\\x${BASH_REMATCH[1]}"
     out+="$var"
     u="${u#*"${BASH_REMATCH[0]}"}"
   done
@@ -162,6 +166,17 @@ verify_checksum_pair() {
   fi
 
   log info "Checksum VERIFIED for '$target_basename'"
+}
+
+# Usage: run_check <archive> <ui_title>
+# Verifies archive integrity and exits: health dialog + 0 on pass, 1 on fail.
+run_check() {
+  local archive="$1" title="$2"
+  if check_archive "$archive" "$title"; then
+    report_health_dialog 1 "$(basename "$archive")" "$title"
+    exit 0
+  fi
+  exit 1
 }
 
 # Usage: check_archive <input> <ui_title>
@@ -229,6 +244,9 @@ hash_with_progress() {
 # Shows a GUI confirmation of checksum health. No-op without yad.
 report_health_dialog() {
   local healthy="$1" file="$2" title="$3"
+  # ponytail: --pipe is the headless mode (it already suppresses the yad
+  # progress bar in hash_with_progress); no confirmation popup either.
+  [[ $PIPE_MODE -eq 1 ]] && return 0
   if ! command -v yad &>/dev/null; then
     return 0
   fi
