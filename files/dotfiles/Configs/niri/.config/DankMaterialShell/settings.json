@@ -110,8 +110,6 @@
   "dockBorderEnabled": true,
   "dockBorderColor": "primary",
   "dockBorderOpacity": 0.24,
-  "dankIslandBarId": "default",
-  "dankIslandNotificationExpand": true,
   "osdAlwaysShowValue": true,
   "osdPowerProfileEnabled": true,
   "powerMenuActions": [
@@ -227,7 +225,9 @@
       "shadowOpacity": 60,
       "shadowColorMode": "default",
       "shadowCustomColor": "#000000",
-      "clickThrough": false
+      "clickThrough": false,
+      "island": true,
+      "islandNotificationExpand": true
     }
   ],
   "desktopClockCustomColor": {
@@ -270,5 +270,5 @@
       "trigger": "qrg"
     }
   },
-  "configVersion": 17
+  "configVersion": 18
 }
