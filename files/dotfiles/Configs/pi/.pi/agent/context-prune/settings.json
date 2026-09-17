@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "showPruneStatusLine": true,
+  "showStartupNotice": false,
+  "summarizerModel": "default",
+  "summarizerThinking": "minimal",
+  "pruneOn": "on-context-tag",
+  "notifySkipped": true,
+  "batchingMode": "turn"
+}

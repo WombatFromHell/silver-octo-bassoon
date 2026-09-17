@@ -18,7 +18,9 @@
     "npm:pi-rtk-optimizer",
     "npm:pi-tool-display",
     "npm:context-mode",
-    "npm:pi-subagents@0.65.0"
+    "npm:pi-subagents@0.65.0",
+    "npm:pi-context-prune",
+    "npm:@rokiy/pi-ui"
   ],
   "enableInstallTelemetry": false
 }

@@ -4,6 +4,17 @@
 - Always use a 'FINDINGS.md' -> 'PLAN.md' -> 'REVIEW.md' workflow, where progress is kept up to date on task boundries, and keep these files under the '.pi/' directory of a project.
 - Delegate to our subagents (see subagent rules below) when we need to explore, plan, or review code. Code changes must always be done in our main session.
 
+# Context policy
+
+- During investigation, implementation, and test/fix loops, retain tool outputs.
+- Do not request context pruning between individual tool calls.
+- Call `context_checkpoint` only after one of:
+  - investigation is complete and an implementation plan is established;
+  - a coherent implementation/test batch is complete;
+  - the task switches to a materially different subsystem;
+  - accumulated tool output is becoming a context-window risk.
+- Do not create checkpoints for routine reads, greps, test reruns, or small edits.
+
 # Tool Usage Rules
 - Always try context-mode commands first before falling back to built-ins, e.g.: 'ctx_batch_execute', 'ctx_execute', 'ctx_execute_file', 'ctx_index', 'ctx_search', 'ctx_fetch_and_index'
 - Only use bash commands that are gated with a timeout (max 5 minutes), and prompt explicitly if more time is required.
