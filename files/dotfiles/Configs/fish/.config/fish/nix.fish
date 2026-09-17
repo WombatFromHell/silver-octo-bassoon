@@ -146,9 +146,13 @@ if command -q nix
         end
         function nixos_fdeploy
             if test (count $argv) -lt 2
-                echo "Usage: nixos_fdeploy <flake-path> <host> [user@remote-ip] [extra nix args...]"
+                echo "Usage: nixos_fdeploy <flake-path> <host> [user@remote-ip] [--switch] [extra nix args...]"
                 return 1
             end
+
+            # --switch: activate now. Default: boot (register generation, activate on next boot)
+            set -l action (if contains -- --switch $argv; echo switch; else; echo boot; end)
+            set argv (string match -v -- --switch $argv)
 
             set -l flake_path $argv[1]
             set -l target_host $argv[2]
@@ -195,9 +199,10 @@ if command -q nix
                 set switch_bin "$build_out/bin/switch"
             end
 
-            echo "Activating new generation as 'deployer'..."
+            echo "Deploying to $remote_target (action: $action)..."
+            echo "Re-run activation: ssh $remote_target sudo $switch_bin $action"
             command ssh -t $remote_target \
-                "sudo nix-env --profile /nix/var/nix/profiles/system --set $build_out && sudo $switch_bin switch"
+                "sudo nix-env --profile /nix/var/nix/profiles/system --set $build_out && sudo $switch_bin $action"
         end
         function nixos_deploy_nas
             set -l flake_root $HOME/Projects/nasty-config
