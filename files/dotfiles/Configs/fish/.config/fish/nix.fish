@@ -207,7 +207,7 @@ if command -q nix
         function nixos_deploy_nas
             set -l flake_root $HOME/Projects/nasty-config
             nixos_fdeploy $flake_root nasty homenas-deployer \
-                --option extra-substituters "https://nasty.cachix.org https://xilo.nanogoblin.duckdns.org" \
+                --option extra-substituters "https://nasty.cachix.org https://xilo.nanogoblin.duckdns.org/c/default/xilopkgs" \
                 --option extra-trusted-public-keys "nasty.cachix.org-1:s+X88yw6+asphCNphTId/RQZHfmDF4fQ0uyzEz5SxLc=" \
                 $argv
         end
