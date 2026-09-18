@@ -27,7 +27,7 @@ strategy_flatpak() {
   # options after `run` so flags land right after the app id — the only
   # position flatpak forwards them to the launched command.
   local i=2
-  while (( i < ${#args[@]} )) && [[ ${args[i]} == -* ]]; do ((i++)); done
+  while ((i < ${#args[@]})) && [[ ${args[i]} == -* ]]; do ((i++)); done
   printf '%s\n' "${args[0]:-}" "${args[1]:-}" "${args[@]:2:i-2}" \
     "${args[i]:-}" "${FLAGS_LIST[@]}" "${args[@]:i+1}"
 }

@@ -258,20 +258,22 @@ run_command_or_fail() {
 _check_update() {
   if [[ $1 == "flatpak" ]]; then
     local probe
-    probe=$(flatpak update --no-deploy -y "$2" 2>&1) || true
+    probe=$(LC_ALL=C flatpak update --no-deploy -y "$2" 2>&1) || true
     [[ $probe != *"Nothing to do"* ]]
     return
   fi
-  local prefix=()
+  local prefix=() rc=0
   [[ $1 == "distrobox" ]] && prefix=(distrobox-enter -n "$CONTAINER_NAME" --)
-  "${prefix[@]}" dnf check-update "$2" &>/dev/null
-  [[ $? -eq 100 ]] # 100 = updates available; 0 = none; anything else = error
+  # ponytail: rc captured locally — a bare `$?` here only survives because
+  # callers use `if !`, which suppresses errexit.
+  "${prefix[@]}" dnf check-upgrade "$2" &>/dev/null || rc=$?
+  [[ $rc -eq 100 ]] # 100 = updates available; 0 = none; anything else = error
 }
 
 _apply_update() {
   local strategy="$1" target="$2" out rc=0 prefix=()
   if [[ $strategy == "flatpak" ]]; then
-    out=$(flatpak update -y "$target" 2>&1) || rc=$?
+    out=$(LC_ALL=C flatpak update -y "$target" 2>&1) || rc=$?
     if [[ $rc -eq 0 ]] && [[ $out == *"Updates complete"* ]]; then
       echo "$out"
       notify "Browser Updated" "Restart the browser to finish updating."
