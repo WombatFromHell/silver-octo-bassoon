@@ -12,15 +12,14 @@
   "packages": [
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@juicesharp/rpiv-todo",
-    "git:github.com/DietrichGebert/ponytail",
     "npm:pi-blackhole",
     "npm:pi-web-access",
     "npm:pi-rtk-optimizer",
     "npm:pi-tool-display",
     "npm:context-mode",
-    "npm:pi-subagents@0.65.0",
-    "npm:pi-context-prune",
-    "npm:@rokiy/pi-ui"
+    "npm:@rokiy/pi-ui",
+    "npm:pi-subagents-lite",
+    "npm:pi-ponytail"
   ],
   "enableInstallTelemetry": false
 }

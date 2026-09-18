@@ -82,11 +82,17 @@
   },
   "languages": {
     "Nix": {
-      "language_servers": ["nixd", "nil"],
+      "language_servers": [
+        "nixd",
+        "nil"
+      ],
       "formatter": {
         "external": {
           "command": "alejandra",
-          "arguments": ["--quiet", "--"],
+          "arguments": [
+            "--quiet",
+            "--"
+          ],
         },
       },
       "format_on_save": "on",
@@ -99,7 +105,9 @@
       "use_on_type_format": false,
     },
     "Python": {
-      "language_servers": ["ty"],
+      "language_servers": [
+        "ty"
+      ],
       "formatter": {
         "language_server": {
           "name": "ruff",
@@ -134,7 +142,9 @@
     "shell": {
       "with_arguments": {
         "program": "fish",
-        "args": ["-l"],
+        "args": [
+          "-l"
+        ],
       },
     },
   },

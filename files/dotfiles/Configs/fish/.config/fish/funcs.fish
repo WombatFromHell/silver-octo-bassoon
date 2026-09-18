@@ -151,9 +151,6 @@ function start-with-llm
 end
 complete -c start-with-llm -f -a "(__fish_complete_start-llm)"
 function coder
-    start-with-llm qwen3.8_27b_t_iq3.sh $argv
-end
-function coder2
     start-with-llm qwen3.8_27b_t_q3.sh $argv
 end
 
