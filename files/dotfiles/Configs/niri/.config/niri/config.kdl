@@ -176,11 +176,11 @@ window-rule {
     open-floating true
 }
 window-rule {
-    match app-id="org.kde.dolphin" title="^Copying (.*) — Dolphin"
+    match app-id="org.kde.dolphin" title="^Copying.* — Dolphin$"
     open-floating true
 }
 window-rule {
-    match app-id="org.kde.dolphin" title="^Moving (.*) — Dolphin"
+    match app-id="org.kde.dolphin" title="^Moving.* — Dolphin$"
     open-floating true
 }
 window-rule {

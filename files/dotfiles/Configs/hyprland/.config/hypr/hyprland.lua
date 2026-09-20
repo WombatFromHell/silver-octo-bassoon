@@ -66,8 +66,9 @@ end)
 
 -- See https://wiki.hypr.land/Configuring/Advanced-and-Cool/Environment-variables/
 
-hl.env("XCURSOR_SIZE", "32")
-hl.env("HYPRCURSOR_SIZE", "32")
+-- hl.env("AQ_DRM_DEVICES", "/dev/dri/card0:/dev/dri/card1")
+-- hl.env("XCURSOR_SIZE", "32")
+-- hl.env("HYPRCURSOR_SIZE", "32")
 
 -----------------------
 ----- PERMISSIONS -----
@@ -404,3 +405,4 @@ hl.window_rule({
 
 -- DMS Include Configs
 require("dms.outputs")
+require("dms.cursor")

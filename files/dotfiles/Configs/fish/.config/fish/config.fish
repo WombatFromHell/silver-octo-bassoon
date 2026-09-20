@@ -53,7 +53,7 @@ if status is-interactive
         mkdir -p "$GOMODPATH" "$GOBIN" "$GOMODCACHE"
     end
 
-    set -x RUSTUP_HOME $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
+    set -x RUSTUP_HOME $HOME/.rustup
     set -x CARGO_HOME $HOME/.cargo
     set -x MISE_SHIMS $HOME/.local/share/mise/shims
     set -x LMS_BIN $HOME/.lmstudio/bin
