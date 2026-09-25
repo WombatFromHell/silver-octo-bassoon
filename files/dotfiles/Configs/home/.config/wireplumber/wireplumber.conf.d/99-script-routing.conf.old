@@ -1,0 +1,24 @@
+wireplumber.components = [
+  {
+    name = "custom-gate-route.lua",
+    type = "script/lua",
+    provides = "custom.custom-gate-route"
+  }
+  {
+    name = "browser-gate-route.lua",
+    type = "script/lua",
+    provides = "custom.browser-gate-route"
+  }
+  {
+    name = "hdmi-gamescope-route.lua",
+    type = "script/lua",
+    provides = "custom.hdmi-gamescope-route"
+  }
+]
+wireplumber.profiles = {
+  main = {
+    custom.custom-gate-route = required
+    custom.browser-gate-route = required
+    custom.hdmi-gamescope-route = required
+  }
+}
