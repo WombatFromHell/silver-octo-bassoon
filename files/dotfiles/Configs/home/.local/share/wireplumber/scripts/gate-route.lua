@@ -14,6 +14,16 @@ M.CONFIG = {
 	match_tokens = { "brave", "waterfox" },
 }
 
+--- Compute the gate state.
+-- The gamescope session is itself the "gate open" signal (env-driven); the
+-- sentinel is the escape-hatch for non-gamescope environments.
+-- @param is_gamescope boolean  XDG_CURRENT_DESKTOP is "gamescope"
+-- @param sentinel_present boolean  gate_sentinel node present
+-- @return boolean  gate open
+function M.compute_gate_open(is_gamescope, sentinel_present)
+	return is_gamescope or sentinel_present
+end
+
 local function node_in(nodes, name)
 	for _, n in ipairs(nodes) do
 		if n["node.name"] == name then return true end
@@ -100,8 +110,11 @@ end
 if Log then
 	local log = Log.open_topic("s-gate-route")
 
-	-- Gate state: open iff the gate_sentinel sink exists.
-	local gate_open = false
+	-- Gate state: open iff the gamescope env is set OR the gate_sentinel sink
+	-- exists. The gamescope session is itself the "gate open" signal; the
+	-- sentinel is the escape-hatch for non-gamescope environments.
+	local is_gamescope = os.getenv("XDG_CURRENT_DESKTOP") == "gamescope"
+	local gate_open = M.compute_gate_open(is_gamescope, false)
 	local om_gate = ObjectManager({
 		Interest({
 			type = "node",
@@ -110,7 +123,7 @@ if Log then
 		}),
 	})
 	local function on_gate_changed()
-		gate_open = om_gate:get_n_objects() >= 1
+		gate_open = M.compute_gate_open(is_gamescope, om_gate:get_n_objects() >= 1)
 		log:info("gate " .. (gate_open and "OPEN" or "CLOSED"))
 	end
 	om_gate:connect("object-added", on_gate_changed)
