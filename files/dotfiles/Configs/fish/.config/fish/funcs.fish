@@ -124,33 +124,18 @@ function lactd_uv
     flatpak run io.github.ilya_zlobintsev.LACT cli profile set UV
 end
 function start-llm
-    # lactd_reset
-    /var/mnt/data1/vllm/llm.sh start $argv
+    /var/mnt/data1/vllm/llm.sh start
 end
-function __fish_complete_start-llm
-    for s in /var/mnt/data/vllm/workspace/*.sh
-        basename "$s"
-    end
-end
-complete -c start-llm -f -a "(__fish_complete_start-llm)"
-
 function stop-llm
     /var/mnt/data1/vllm/llm.sh stop
-    # lactd_uv
 end
 function start-with-llm
-    start-llm $argv[1]
-    eval $argv[2..-1]
-    if set -q argv[2] # only if <cmd> args exist
-        stop-llm
-    end
+    start-llm
+    $argv
+    stop-llm
 end
-complete -c start-with-llm -f -a "(__fish_complete_start-llm)"
 function coder
-    start-with-llm qwen3.8_27b_t_iq3.sh $argv
-end
-function coder2
-    start-with-llm qwen3.8_27b_t_q3.sh $argv
+    start-with-llm $argv
 end
 
 function fish_title
