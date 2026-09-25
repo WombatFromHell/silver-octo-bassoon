@@ -125,11 +125,7 @@ function lactd_uv
 end
 function start-llm
     # lactd_reset
-    set -l model $argv[1]
-    if test -z "$model"
-        set model "qwen3.8_27b.sh"
-    end
-    /var/mnt/data1/vllm/llm.sh start $model
+    /var/mnt/data1/vllm/llm.sh start $argv
 end
 function __fish_complete_start-llm
     for s in /var/mnt/data/vllm/workspace/*.sh
