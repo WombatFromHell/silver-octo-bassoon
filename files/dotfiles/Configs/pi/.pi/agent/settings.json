@@ -2,23 +2,18 @@
   "subagents": {
     "defaultModel": "llama-cpp/qwen3.8-27b"
   },
-  "lastChangelogVersion": "0.86.1",
-  "theme": "catppuccin-mocha",
-  "compaction": {
-    "enabled": true
-  },
+  "lastChangelogVersion": "0.87.1",
   "packages": [
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@juicesharp/rpiv-todo",
     "npm:pi-web-access",
-    "npm:pi-rtk-optimizer",
-    "npm:pi-tool-display",
-    "npm:context-mode",
-    "npm:@rokiy/pi-ui",
     "npm:pi-subagents-lite",
-    "npm:pi-ponytail",
-    "npm:pi-handoff",
-    "npm:pi-blackhole"
+    "npm:pi-cache-optimizer",
+    "npm:pi-web-ui",
+    "npm:pi-blackhole",
+    "npm:pi-rtk-optimizer",
+    "git:github.com/WombatFromHell/pi-llama-extensions"
   ],
-  "enableInstallTelemetry": false
+  "enableInstallTelemetry": false,
+  "theme": "dark"
 }
