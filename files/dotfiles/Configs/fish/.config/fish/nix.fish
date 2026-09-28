@@ -7,24 +7,25 @@ if command -q nix
             --option show-trace true \
             --option connect-timeout 5 \
             --option extra-deprecated-features or-as-identifier \
-            --option extra-experimental-festures "nix-command flakes eval-cache"
+            --option extra-experimental-features "nix-command flakes eval-cache"
 
-        function nix_build
-            if contains -- --sudo $argv
-                set -l args (string match -v '--sudo' $argv)
-                command sudo -i nix-fast-build $NFB_COMMON_OPTS $args
+        function _nfb
+            # Run a nix-fast-build program with common opts, honoring --sudo
+            set -l prog $argv[1]
+            set -l args $argv[2..-1]
+            if contains -- --sudo $args
+                set args (string match -v -- --sudo $args)
+                command sudo -i $prog $NFB_COMMON_OPTS $args
             else
-                command nix-fast-build $NFB_COMMON_OPTS $argv
+                command $prog $NFB_COMMON_OPTS $args
             end
+        end
+        function nix_build
+            _nfb nix-fast-build $argv
         end
         function nix_eval
             set -lx GC_INITIAL_HEAP_SIZE 2G
-            if contains -- --sudo $argv
-                set -l args (string match -v '--sudo' $argv)
-                command sudo -i nix-eval-jobs $NFB_COMMON_OPTS $args
-            else
-                command nix-eval-jobs $NFB_COMMON_OPTS $argv
-            end
+            _nfb nix-eval-jobs $argv
         end
         function hm_fswitch
             if test (count $argv) -lt 2
@@ -45,14 +46,14 @@ if command -q nix
                 set -l extra_args (string match -v -- '--dry-run' $extra_args)
                 echo "Evaluating $target via nix-eval-jobs..."
                 nix_eval --flake $attr $extra_args
-                return 0
+                or return 1
             end
 
             # Expand relative paths or environment variables safely
             nix_build \
-                --flake "$flake_path#homeConfigurations.\"$target\".activationPackage" \
-                --option extra-substituters "https://xilo.nanogoblin.duckdns.org/c/default/xilopkgs" \
+                --flake $attr \
                 --out-link /tmp/hm-result $extra_args
+            # --option extra-substituters "https://xilo.nanogoblin.duckdns.org/c/default/xilopkgs"
             and /tmp/hm-result-/activate
         end
         function nixos_fswitch
@@ -74,7 +75,7 @@ if command -q nix
                 set -l extra_args (string match -v -- '--dry-run' $remaining)
                 echo "Evaluating $target_host via nix-eval-jobs..."
                 nix_eval --flake $attr $extra_args
-                return 0
+                or return 1
             end
 
             # Parse action mode: 'switch' vs default 'build'
@@ -162,9 +163,9 @@ if command -q nix
             if test -z "$remote_target"; or string match -q -- "--*" "$remote_target"
                 set -l extra_args $argv[3..-1]
                 set remote_target "deployer@$target_host"
-                set -g _fdeploy_extra $extra_args
+                set -l _fdeploy_extra $extra_args
             else
-                set -g _fdeploy_extra $argv[4..-1]
+                set -l _fdeploy_extra $argv[4..-1]
             end
 
             set -l attr "$flake_path#nixosConfigurations.\"$target_host\".config.system.build.toplevel"
@@ -206,18 +207,27 @@ if command -q nix
         end
         function nixos_deploy_nas
             set -l flake_root $HOME/Projects/nasty-config
+            set -l substituters "https://nasty.cachix.org"
+            set -l passthrough
+            for arg in $argv
+                if test "$arg" = --with-xilo
+                    set substituters "$substituters https://xilo.nanogoblin.duckdns.org/c/default/xilopkgs"
+                else
+                    set -a passthrough $arg
+                end
+            end
             nixos_fdeploy $flake_root nasty homenas-deployer \
-                --option extra-substituters "https://nasty.cachix.org https://xilo.nanogoblin.duckdns.org/c/default/xilopkgs" \
+                --option extra-substituters "$substituters" \
                 --option extra-trusted-public-keys "nasty.cachix.org-1:s+X88yw6+asphCNphTId/RQZHfmDF4fQ0uyzEz5SxLc=" \
-                $argv
+                $passthrough
         end
     end
 
     function nix_collect_garbage
         if contains -- --sudo $argv
             # strip '--sudo' from argv
-            set args (string match -v '--sudo' $argv)
-            command sudo -i nix-collect-garbage $argv
+            set -l args (string match -v -- --sudo $argv)
+            command sudo -i nix-collect-garbage $args
             command sudo -i nix store optimise
         else
             command nix-collect-garbage $argv
@@ -226,7 +236,7 @@ if command -q nix
     end
 
     function nixenv_ls
-        if test "$argv[1]" = -r -o "$argv[1]" = --sudo
+        if contains -- $argv[1] -r --sudo
             sudoe nix-env --list-generations
         else
             nix-env --list-generations
@@ -234,7 +244,7 @@ if command -q nix
     end
 
     function nixenv_rm
-        if test "$argv[1]" = -r -o "$argv[1]" = --sudo
+        if contains -- $argv[1] -r --sudo
             sudoe nix-env --delete-generations
         else
             nix-env --delete-generations
@@ -248,7 +258,7 @@ if command -q nix
             nix run github:nix-community/home-manager -- switch
         end
         if command -q home-manager
-            set NIX_SESSION_VARS $HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
+            set -l NIX_SESSION_VARS $HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
             if test -r "$NIX_SESSION_VARS"
                 fenv source "$NIX_SESSION_VARS"
             end
@@ -310,11 +320,6 @@ if command -q nix
             end
 
             set -l xilo_bin (command -v xilo)
-            if test -z "$xilo_bin"
-                echo "Error: 'xilo' not found or not installed!" >&2
-                return 1
-            end
-
             set -l xilo_secrets /run/agenix/xilo
             set -l push_creds_mode ""
 
@@ -376,6 +381,7 @@ if command -q nix
     alias hmrb='home-manager switch --rollback'
     #
     alias hmfs="hm_fswitch $FLAKE_ROOT $(whoami)@$(hostname)"
+    alias hmfsb="hm_fswitch $FLAKE_ROOT $(whoami)@$(hostname) --dry-run"
     #
     alias nhb='nh os switch -n $FLAKE_ROOT'
     alias nhs='nh os switch $FLAKE_ROOT'
