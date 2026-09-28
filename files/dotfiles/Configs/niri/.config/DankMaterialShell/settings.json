@@ -1,6 +1,14 @@
 {
   "currentThemeName": "custom",
   "customThemeFile": "/home/josh/.config/DankMaterialShell/themes/catppuccin/theme.json",
+  "registryThemeVariants": {
+    "catppuccin": {
+      "dark": {
+        "flavor": "mocha",
+        "accent": "teal"
+      }
+    }
+  },
   "radiusStrength": 38,
   "useFahrenheit": true,
   "blurBorderOpacity": 1,

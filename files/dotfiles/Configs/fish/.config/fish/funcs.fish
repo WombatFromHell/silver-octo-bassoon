@@ -131,8 +131,10 @@ function stop-llm
 end
 function start-with-llm
     start-llm
-    $argv
-    stop-llm
+    if set -q argv[1]
+        $argv
+        stop-llm
+    end
 end
 function coder
     start-with-llm $argv
