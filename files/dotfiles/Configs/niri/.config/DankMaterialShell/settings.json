@@ -89,6 +89,7 @@
     }
   ],
   "currentThemeCategory": "custom",
+  "audioShowStreamDevices": true,
   "barElevationEnabled": false,
   "blurWallpaperOnOverview": true,
   "controlCenterWidgets": [
@@ -163,6 +164,28 @@
   "dankLauncherV2UnloadOnClose": true,
   "dankLauncherV2IncludeFilesInAll": true,
   "dankLauncherV2IncludeFoldersInAll": true,
+  "dashTabs": [
+    {
+      "id": "overview",
+      "enabled": true
+    },
+    {
+      "id": "media",
+      "enabled": true
+    },
+    {
+      "id": "wallpaper",
+      "enabled": true
+    },
+    {
+      "id": "weather",
+      "enabled": true
+    },
+    {
+      "id": "notifications",
+      "enabled": true
+    }
+  ],
   "networkPreference": "wifi",
   "cursorSettings": {
     "theme": "System Default",
@@ -186,6 +209,7 @@
   "acPostLockMonitorTimeout": 60,
   "batteryCriticalNotificationType": 0,
   "osdAlwaysShowValue": true,
+  "osdMediaVolumeEnabled": false,
   "osdPowerProfileEnabled": true,
   "updaterIntervalSeconds": 1705032644,
   "updaterIncludeFlatpak": false,
