@@ -74,6 +74,11 @@ if test -r "$ALIASES_FISH_SRC"
     source "$ALIASES_FISH_SRC"
 end
 
+set REN_HELPER $HOME/.config/fish/ren.fish
+if test -r "$REN_HELPER"
+    source "$REN_HELPER"
+end
+
 if command -q atuin
     atuin init fish --disable-up-arrow | source
 end
