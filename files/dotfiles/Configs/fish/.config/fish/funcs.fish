@@ -117,6 +117,57 @@ function setup_podman_sock
     end
 end
 
+function ts_serve --description "Run a command while exposing a local service via tailscale serve"
+    argparse -s 'u/url=' 'p/port=' -- $argv
+    or return
+
+    # URL is required
+    if not set -q _flag_url
+        echo "ts-serve: missing required option -u/--url" >&2
+        echo "usage: ts-serve -u URL [-p PORT] command [args...]" >&2
+        return 2
+    end
+
+    # Port defaults to 443
+    set -q _flag_port; or set _flag_port 443
+
+    # A command to wrap is required too
+    if test (count $argv) -eq 0
+        echo "ts-serve: no command given" >&2
+        return 2
+    end
+
+    # Stash for the cleanup handlers (functions don't close over locals)
+    set -g __ts_serve_port $_flag_port
+
+    function _ts_serve_cleanup
+        tailscale serve reset
+        set -e __ts_serve_port
+        functions -e _ts_serve_cleanup _ts_serve_int _ts_serve_term
+    end
+
+    function _ts_serve_int --on-signal INT
+        _ts_serve_cleanup
+        exit 130
+    end
+
+    function _ts_serve_term --on-signal TERM
+        _ts_serve_cleanup
+        exit 143
+    end
+
+    tailscale serve --bg --https=$_flag_port $_flag_url
+    or begin
+        _ts_serve_cleanup
+        return 1
+    end
+
+    $argv
+    set -l cmd_status $status
+    _ts_serve_cleanup
+    return $cmd_status
+end
+
 function lactd_reset
     flatpak run io.github.ilya_zlobintsev.LACT cli profile set Default
 end
@@ -138,6 +189,12 @@ function start-with-llm
 end
 function coder
     start-with-llm $argv
+end
+function wcoder
+    ts_serve -u http://localhost:8787 start-with-llm env \
+        PI_WEB_HOST=0.0.0.0 \
+        PI_WEB_TOKEN=wcoder \
+        pi-web-ui --no-browser
 end
 
 function fish_title
