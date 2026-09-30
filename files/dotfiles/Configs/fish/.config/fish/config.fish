@@ -19,10 +19,6 @@ if status is-interactive
     if test -r "$FUNCS_FISH_SRC"
         source "$FUNCS_FISH_SRC"
     end
-    function update_env_on_prompt --on-event fish_prompt
-        update_wayland_env_vars
-        update_gpg_env
-    end
 
     set -g fish_greeting # disable initial fish greeting
     set -gx SHELL $(command -v fish) # ensure fish can run inside multiplexers
@@ -37,8 +33,9 @@ if status is-interactive
         set -g HERDR_ENABLED true
     else
         set -g TMUX_ENABLED true
-        set -g TMUX_AUTO_ATTACH true
+        # set -g TMUX_AUTO_ATTACH true
         set -g ZELLIJ_ENABLED true
+        set -g ZELLIJ_AUTO_ATTACH true
         set -g HERDR_ENABLED true
     end
 
@@ -78,5 +75,10 @@ if status is-interactive
     set SOURCES_FISH_SRC "$HOME/.config/fish/sources.fish"
     if test -r "$SOURCES_FISH_SRC"
         source "$SOURCES_FISH_SRC"
+    end
+
+    function update_env_on_prompt --on-event fish_prompt
+        update_wayland_env_vars
+        update_gpg_env
     end
 end

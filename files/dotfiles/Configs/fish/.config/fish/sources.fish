@@ -34,6 +34,16 @@ if test -r $ZELLIJ_HELPER
     source $ZELLIJ_HELPER
 end
 
+set LLM_HELPER $HOME/.config/fish/llm.fish
+if test -r $LLM_HELPER
+    source $LLM_HELPER
+end
+
+set NIRI_FIX $HOME/.config/fish/niri-fix.fish
+if test -r $NIRI_FIX
+    source $NIRI_FIX
+end
+
 set TRASH_FISH_SRC $HOME/.config/fish/trash.fish
 if test -r "$TRASH_FISH_SRC"
     source "$TRASH_FISH_SRC"
