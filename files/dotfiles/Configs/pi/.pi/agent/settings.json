@@ -2,17 +2,17 @@
   "subagents": {
     "defaultModel": "llama-cpp/qwen3.8-27b"
   },
-  "lastChangelogVersion": "0.87.1",
+  "lastChangelogVersion": "0.87.0",
   "packages": [
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@juicesharp/rpiv-todo",
-    "npm:pi-web-access",
     "npm:pi-subagents-lite",
     "npm:pi-cache-optimizer",
     "npm:pi-web-ui",
     "npm:pi-blackhole",
     "npm:pi-rtk-optimizer",
-    "git:github.com/WombatFromHell/pi-llama-extensions"
+    "git:github.com/WombatFromHell/pi-llama-extensions",
+    "npm:pi-ketch"
   ],
   "enableInstallTelemetry": false,
   "theme": "dark"
