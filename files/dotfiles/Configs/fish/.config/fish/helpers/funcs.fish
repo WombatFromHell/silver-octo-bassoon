@@ -3,8 +3,7 @@ function is_online
     return $status
 end
 
-# Renamed for clarity: This function ONLY ensures the fisher.fish file exists.
-# It does NOT run `fisher update`.
+# Ensures the fisher.fish file exists in conf.d/. It does NOT run `fisher update`.
 function bootstrap_fisher
     set -l fisher_dir "$HOME/.config/fish/conf.d"
     set -l fisher_cache "$fisher_dir/fisher.fish"
@@ -12,26 +11,23 @@ function bootstrap_fisher
     # If the cache already exists and is non-empty, we are good.
     test -s "$fisher_cache"; and return 0
 
-    if is_online
-        # CRITICAL: Ensure the directories exist after clean_fish deleted them.
-        mkdir -p "$fisher_dir"
-        mkdir -p "$HOME/.config/fish/functions"
-
-        # Download fisher
-        curl -sL --max-time 5 \
-            https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish >"$fisher_cache"
-
-        # Verify the download actually wrote something
-        if test -s "$fisher_cache"
-            return 0
-        else
-            echo "Error: Something went wrong during 'bootstrap_fisher'!"
-            return 1
-        end
-    else
+    if not is_online
         echo "Error: Must have a working internet connection for this!"
         return 1
     end
+
+    # Download fisher (conf.d/ is the download target; fisher creates
+    # functions/ itself on update).
+    mkdir -p "$fisher_dir"
+    curl -sL --max-time 5 \
+        https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish >"$fisher_cache"
+
+    # Verify the download actually wrote something
+    test -s "$fisher_cache"; or begin
+        echo "Error: Something went wrong during 'bootstrap_fisher'!"
+        return 1
+    end
+    return 0
 end
 
 function yy -d "Yazi with cwd tracking on exit"
@@ -184,43 +180,19 @@ function fish_title
 end
 
 function clean_fish
-    set FISH_HOME "$HOME/.config/fish"
+    set -l FISH_HOME "$HOME/.config/fish"
 
-    if not is_online
-        echo "Error: Must have a working internet connection for this!"
-        return 1
-    end
+    # Nuke only what fisher/fish regenerate. Critical files
+    # (config.fish, fish_plugins, helpers/) are untouched.
+    rm -rf "$FISH_HOME"/{completions,conf.d,functions,themes} \
+           "$FISH_HOME"/fish_variables
 
-    if test -f "$FISH_HOME/fish_plugins"
-        cp -f "$FISH_HOME/fish_plugins" "$FISH_HOME/fish_plugins.bak"
-    end
-
-    # Nuke existing setup
-    rm -rf \
-        "$FISH_HOME"/completions \
-        "$FISH_HOME"/conf.d \
-        "$FISH_HOME"/functions \
-        "$FISH_HOME"/themes \
-        "$FISH_HOME"/fish_variables
-
-    # 1. Synchronously download/setup fisher (NO backgrounding '&')
-    if not bootstrap_fisher
-        echo "Error: Failed to bootstrap fisher. Check your internet connection."
-        return 1
-    end
-
-    # 2. Run fisher update in a fresh subshell.
-    # Because we put fisher.fish inside conf.d/, the new `fish` shell
-    # will automatically load it before executing "fisher update".
+    # bootstrap_fisher handles the offline check and downloads fisher.fish
+    # into conf.d/, which a fresh (non-interactive) fish shell loads
+    # automatically before running "fisher update".
+    bootstrap_fisher; or return 1
     echo "Running fisher update..."
-    if not fish -c "fisher update"
-        echo "Error: 'fisher update' failed."
-        return 1
-    end
-    # clean up if we have a valid 'fish_plugins'
-    if test -f "$FISH_HOME"/fish_plugins
-        rm -f "$FISH_HOME"/fish_plugins.bak
-    end
+    fish -c "fisher update"; or return 1
 end
 
 if command -q gpg-connect-agent

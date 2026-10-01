@@ -1,8 +1,3 @@
-# set PROFILE_CONF $HOME/.profile
-# if test -f $PROFILE_CONF
-#     fenv "source $PROFILE_CONF"
-# end
-
 # only run in an interactive shell
 if status is-interactive
     # When running as root via sudoe, $HOME may be /root but our configs live
@@ -26,28 +21,20 @@ if status is-interactive
     set_editor
     setup_podman_sock
 
-    if test (uname) = Darwin
-        set -g ZELLIJ_ENABLED true
-        set -g ZELLIJ_AUTO_ATTACH true
-        set -g TMUX_ENABLED true
-        set -g HERDR_ENABLED true
-    else
-        set -g TMUX_ENABLED true
-        # set -g TMUX_AUTO_ATTACH true
-        set -g ZELLIJ_ENABLED true
-        set -g ZELLIJ_AUTO_ATTACH true
-        set -g HERDR_ENABLED true
-    end
+    set -g TMUX_ENABLED true
+    set -g ZELLIJ_ENABLED true
+    set -g ZELLIJ_AUTO_ATTACH true
+    set -g HERDR_ENABLED true
 
     set -x XDG_DATA_HOME $HOME/.local/share
     set -x XDG_CONFIG_HOME $HOME/.config
-    set -gx TERMINFO_DIRS /usr/share/terminfo $TERMINFO_DIRS
+    set -gx TERMINFO_DIRS /usr/share/terminfo
 
     set -gx GOPATH $HOME/.local/share/go
     set -gx GOMODCACHE $GOPATH/pkg/mod
     set -gx GOBIN $GOPATH/bin
     if ! test -d "$GOPATH"
-        mkdir -p "$GOMODPATH" "$GOBIN" "$GOMODCACHE"
+        mkdir -p "$GOMODCACHE" "$GOBIN"
     end
 
     set -x RUSTUP_HOME $HOME/.rustup
