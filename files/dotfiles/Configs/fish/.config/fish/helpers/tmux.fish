@@ -19,14 +19,11 @@ if not command -q tmux
     return 0
 end
 
-# Check if a string represents a truthy value (1, true, yes, on).
-function __tmux_is_truthy -d "Check if argument is truthy"
-    string match -qir '^(1|true|yes|on)$' $argv[1]
-end
+
 
 # Abort if TMUX_ENABLED is false
 set -q TMUX_ENABLED; or set -g TMUX_ENABLED true
-if not __tmux_is_truthy "$TMUX_ENABLED"
+if not __is_truthy "$TMUX_ENABLED"
     return 0
 end
 
@@ -223,7 +220,7 @@ if status is-interactive; and not set -q TMUX
 
     # Conditions to skip auto-start:
     set -l skip_autostart false
-    if not __tmux_is_truthy "$TMUX_AUTO_ATTACH"
+    if not __is_truthy "$TMUX_AUTO_ATTACH"
         set skip_autostart true
     end
 
@@ -231,7 +228,7 @@ if status is-interactive; and not set -q TMUX
         set skip_autostart true
     else if test "$ZED_TERM" = true
         set skip_autostart true
-    else if test -n "$SSH_TTY"; and not __tmux_is_truthy "$TMUX_ON_SSH"
+    else if test -n "$SSH_TTY"; and not __is_truthy "$TMUX_ON_SSH"
         set skip_autostart true
     end
 
@@ -243,7 +240,7 @@ if status is-interactive; and not set -q TMUX
             return 0
         end
         # ponytail: single create-if-missing + attach like zellij's `attach -c`.
-        if __tmux_is_truthy "$TMUX_EXIT_ON_DETACH"
+        if __is_truthy "$TMUX_EXIT_ON_DETACH"
             exec tmux new-session -A -s $TMUX_DEFAULT_SESSION
         else
             tmux new-session -A -s $TMUX_DEFAULT_SESSION
@@ -256,14 +253,4 @@ complete -c tma -f -a "(__tmux_list_session_names)"
 complete -c tmr -f -a "(__tmux_list_session_names) -"
 complete -c tmk -f -a "(__tmux_list_session_names)"
 
-# --- GPG pinentry TTY sync ---
-# Keeps gpg-agent's registered TTY current as you move between tmux panes.
-function __tmux_update_gpg_tty --on-event fish_prompt
-    command -q gpg-connect-agent; or return 0
 
-    set -l current_tty (tty 2>/dev/null); or return 0
-    if test "$current_tty" != "$GPG_TTY"
-        set -gx GPG_TTY "$current_tty"
-        gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
-    end
-end

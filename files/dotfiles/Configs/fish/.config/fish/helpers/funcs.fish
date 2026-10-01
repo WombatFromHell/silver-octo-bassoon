@@ -1,6 +1,5 @@
-function is_online
-    ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1
-    return $status
+function __is_truthy -d "Check if argument is truthy (1, true, yes, on)"
+    string match -qir '^(1|true|yes|on)$' $argv[1]
 end
 
 # Ensures the fisher.fish file exists in conf.d/. It does NOT run `fisher update`.
@@ -11,40 +10,33 @@ function bootstrap_fisher
     # If the cache already exists and is non-empty, we are good.
     test -s "$fisher_cache"; and return 0
 
-    if not is_online
-        echo "Error: Must have a working internet connection for this!"
-        return 1
-    end
-
     # Download fisher (conf.d/ is the download target; fisher creates
-    # functions/ itself on update).
+    # functions/ itself on update). curl fails on network errors;
+    # test -s catches both network failure and empty response.
     mkdir -p "$fisher_dir"
     curl -sL --max-time 5 \
         https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish >"$fisher_cache"
 
-    # Verify the download actually wrote something
     test -s "$fisher_cache"; or begin
-        echo "Error: Something went wrong during 'bootstrap_fisher'!"
+        echo "Error: Failed to download fisher (network?)." >&2
         return 1
     end
     return 0
 end
 
+function yz -d "Run yazi"
+    command yazi $argv
+end
+alias ynz='env YAZI_NO_SESSION=1 yz'
+
 function yy -d "Yazi with cwd tracking on exit"
     set -l tmp (mktemp -t "yazi-cwd.XXXXXX")
-    command env YAZI_NO_SESSION=1 yazi $argv --cwd-file=$tmp
+    yz --cwd-file=$tmp $argv
     set cwd (cat -- $tmp)
     if test -n "$cwd" -a "$cwd" != "$PWD"
         cd -- "$cwd"
     end
     rm -f -- $tmp
-end
-function yz -d "Smarter session handling for Yazi"
-    if test (count $argv) -eq 0
-        command yazi
-    else
-        command env YAZI_NO_SESSION=1 yazi $argv
-    end
 end
 
 function to_clip

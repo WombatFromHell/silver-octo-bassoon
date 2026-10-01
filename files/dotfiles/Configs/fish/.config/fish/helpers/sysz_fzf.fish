@@ -58,16 +58,7 @@ function __systemd_fzf_core -S -a user_flag query
     end
     set -l journal_cmd_str "$journal_cmd"
 
-    set -l pager_cmd
-    if command -q less
-        set pager_cmd less -R
-    else if command -q bat
-        set pager_cmd bat "--paging=always"
-    else if command -q moar
-        set pager_cmd moar
-    else
-        set pager_cmd cat
-    end
+    set -l pager_cmd bat --paging=always
     set -l pager_str "$pager_cmd"
 
     # Use tmux new-window to isolate journalctl from fzf's terminal state,

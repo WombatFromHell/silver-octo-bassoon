@@ -99,8 +99,7 @@ function unlock_creds -d "Decrypt and export credentials as environment variable
             set env_var_name $spec
         end
 
-        # Resolve path
-        set -l cred_file (readlink -f "$CREDENTIALS_DIRECTORY/$key_name.cred")
+        set -l cred_file "$CREDENTIALS_DIRECTORY/$key_name.cred"
         if not test -f "$cred_file"
             echo "✘ Credential not found: $key_name ($cred_file)" >&2
             return 1
@@ -139,14 +138,8 @@ function rm_cred -d "Remove an encrypted credential file"
 
     set -l cred_file "$CREDENTIALS_DIRECTORY/$key.cred"
     if not test -f "$cred_file"
-        # Also try resolved path in case of symlinks
-        set -l resolved (readlink -f "$cred_file" 2>/dev/null)
-        if test -f "$resolved"
-            set cred_file "$resolved"
-        else
-            echo "✘ Credential not found: $key" >&2
-            return 1
-        end
+        echo "✘ Credential not found: $key" >&2
+        return 1
     end
 
     rm -f "$cred_file"

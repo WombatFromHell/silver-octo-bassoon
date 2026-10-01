@@ -54,7 +54,7 @@ if status is-interactive
     # exclude some common cli tools from done notifications
     set -U --erase __done_exclude
     set -g __done_exclude '^git (?!push|pull|fetch)'
-    set -g --append __done_exclude '^(nvim|nano|bat|cat|less|lazygit|lg|ssh|tmux|zellij|hx|zed)'
+    set -g --append __done_exclude '^(nvim|nano|bat|cat|less|lazygit|lg|ssh|tmux|zellij|hx|zed|yazi|yz|ynz|yy)'
     set -g --append __done_exclude '^sudo (nvim|nano|bat|cat|less|qwen|gemini|hx)'
     set -g --append __done_exclude '^sedit'
 

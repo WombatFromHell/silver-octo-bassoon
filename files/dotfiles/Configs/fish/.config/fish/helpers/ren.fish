@@ -39,7 +39,7 @@ function ren --description 'Regex batch rename; preview by default, atomic'
     # (cat - > file: a command substitution (cat -) does NOT inherit the pipe's stdin)
     if contains -- - $files
         set -l tf (mktemp)
-        cat - >$tf
+        command cat - >$tf
         set -l stdin_files (string split \n < $tf)
         rm -f $tf
         set -l expanded

@@ -1,7 +1,6 @@
 if command -q trash-put
     alias rmt='trash-put'
     alias rmrm='trash-rm'
-    alias rmd='trash-put'
     alias rmc='trash-empty'
     alias rmr='trash-restore'
 

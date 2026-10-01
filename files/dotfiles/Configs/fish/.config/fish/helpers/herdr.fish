@@ -103,10 +103,7 @@ end
 
 # --- Shared Helpers ---
 
-# Is a string truthy (1, true, yes, on)?
-function __herdr_is_truthy -d "Check if argument is truthy"
-    string match -qir '^(1|true|yes|on)$' $argv[1]
-end
+
 
 # Session names (for completions and hrdk).
 function __herdr_list_session_names -d "List session names"
@@ -224,13 +221,13 @@ if status is-interactive; and not set -q HERDR_ENV
     set -l auto $HERDR_AUTO_ATTACH
     test "$TERM_PROGRAM" = vscode; and set auto false
     test "$ZED_TERM" = true; and set auto false
-    test -n "$SSH_TTY"; and not __herdr_is_truthy "$HERDR_ON_SSH"; and set auto false
-    if __herdr_is_truthy "$auto"
+    test -n "$SSH_TTY"; and not __is_truthy "$HERDR_ON_SSH"; and set auto false
+    if __is_truthy "$auto"
         # ponytail: atomic claim, so simultaneous terminals can't both pass a
         # check-then-set race -- exactly one wins the mkdir and auto-attaches,
         # the rest stay plain shells. Released when the attach returns.
         if __herdr_claim_attach $HERDR_DEFAULT_SESSION
-            if __herdr_is_truthy "$HERDR_EXIT_ON_DETACH"
+            if __is_truthy "$HERDR_EXIT_ON_DETACH"
                 # ponytail: exec replaces this shell, so the marker clears only
                 # on next login ($XDG_RUNTIME_DIR reset), not on detach.
                 exec herdr --session $HERDR_DEFAULT_SESSION

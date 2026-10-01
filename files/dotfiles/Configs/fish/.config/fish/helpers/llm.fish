@@ -47,12 +47,8 @@ function llm-coder
         start-with-llm $pi_path
     end
 end
-function coder
-    llm-coder $argv
-end
-function rcoder
-    llm-coder --rocm $argv
-end
+alias coder='llm-coder'
+alias rcoder='llm-coder --rocm'
 function wcoder
     ts_serve -u http://localhost:8787 start-with-llm env \
         PI_WEB_HOST=0.0.0.0 \

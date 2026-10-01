@@ -37,6 +37,21 @@ if command -q nix
         function nix_build
             _nfb nix-fast-build $argv
         end
+        function _nix_find_closure
+            # Resolve a --out-link result to its real store path.
+            # Usage: _nix_find_closure <out-link>  (e.g. /tmp/nixos-result)
+            set -l out_link $argv[1]
+            if test -e "$out_link-"/result
+                realpath "$out_link-"/result
+            else if test -e "$out_link-"/toplevel
+                realpath "$out_link-"/toplevel
+            else if test -e "$out_link-"
+                realpath "$out_link-"
+            else
+                echo "Error: Could not locate built closure at $out_link-" >&2
+                return 1
+            end
+        end
         function nix_eval
             set -lx GC_INITIAL_HEAP_SIZE 2G
             _nfb nix-eval-jobs $argv
@@ -70,6 +85,25 @@ if command -q nix
             # --option extra-substituters "https://xilo.nanogoblin.duckdns.org/c/default/xilopkgs"
             and /tmp/hm-result-/activate
         end
+        function _nix_remote_deploy
+            # Push a closure to a remote host and activate it.
+            # Usage: _nix_remote_deploy <closure> <user@host> <action>
+            set -l closure $argv[1]
+            set -l target $argv[2]
+            set -l action $argv[3]
+
+            set -l switch_bin "$closure/bin/switch-to-configuration"
+            if not test -x "$switch_bin"
+                set switch_bin "$closure/bin/switch"
+            end
+
+            echo "Deploying to $target (action: $action)..."
+            command nix copy --to "ssh://$target" $closure
+            or return 1
+            command ssh -t $target \
+                "sudo nix-env --profile /nix/var/nix/profiles/system --set $closure && sudo $switch_bin $action"
+        end
+
         function nixos_fswitch
             if test (count $argv) -lt 2
                 echo "Error: Missing required arguments."
@@ -81,10 +115,9 @@ if command -q nix
             set -l target_host $argv[2]
             set -l remaining $argv[3..-1]
 
-            # Target attribute for NixOS top-level system closure
             set -l attr "$flake_path#nixosConfigurations.\"$target_host\".config.system.build.toplevel"
 
-            # MODE 1: Dry-Run (Parallel Evaluation Only via nix-eval-jobs)
+            # Dry-run: parallel evaluation only
             if contains -- --dry-run $remaining
                 set -l extra_args (string match -v -- '--dry-run' $remaining)
                 echo "Evaluating $target_host via nix-eval-jobs..."
@@ -101,7 +134,7 @@ if command -q nix
                 set remaining (string match -v 'build' $remaining)
             end
 
-            # Parse --remote <user@host> if deploying over SSH
+            # Parse --remote <user@host>
             set -l remote_target ""
             if contains -- --remote $remaining
                 set -l remote_idx (contains -i -- --remote $remaining)
@@ -110,7 +143,6 @@ if command -q nix
                 set remaining (string match -v -- "--remote" $remaining | string match -v -- "$remote_target")
             end
 
-            # MODE 2: Build (Generates out-link at /tmp/nixos-result-)
             echo "Building NixOS configuration for '$target_host'..."
             nix_build \
                 --flake $attr \
@@ -118,43 +150,22 @@ if command -q nix
                 $remaining
             or return 1
 
-            # Locate the built system closure path
-            set -l build_out ""
-            if test -e /tmp/nixos-result/result
-                set build_out (realpath /tmp/nixos-result-/result)
-            else if test -e /tmp/nixos-result/toplevel
-                set build_out (realpath /tmp/nixos-result/toplevel)
-            else
-                echo "Error: Could not locate built store path in /tmp/nixos-result-"
-                return 1
-            end
+            set -l build_out (_nix_find_closure /tmp/nixos-result)
+            or return 1
 
-            # Find the activation executable inside the output link
-            set -l switch_bin ""
-            if test -x "$build_out/bin/switch-to-configuration"
-                set switch_bin "$build_out/bin/switch-to-configuration"
-            else if test -x "$build_out/bin/switch"
-                set switch_bin "$build_out/bin/switch"
-            end
-
-            # Stop here if only 'build' mode was intended
             if not $do_switch
                 echo "Build successful! System closure available at: $build_out"
                 return 0
             end
 
-            # MODE 3: Switch (Runs activation script)
-            if test -z "$switch_bin"
-                echo "Error: Could not find switch-to-configuration executable in $build_out"
-                return 1
-            end
-
             if test -n "$remote_target"
-                echo "Deploying and switching configuration on remote host '$remote_target'..."
-                command nix copy --to "ssh://$remote_target" $build_out
-                and command ssh -t $remote_target "sudo nix-env --profile /nix/var/nix/profiles/system --set $build_out && sudo $switch_bin switch"
+                _nix_remote_deploy $build_out $remote_target switch
             else
                 echo "Switching local NixOS configuration..."
+                set -l switch_bin "$build_out/bin/switch-to-configuration"
+                if not test -x "$switch_bin"
+                    set switch_bin "$build_out/bin/switch"
+                end
                 command sudo nix-env --profile /nix/var/nix/profiles/system --set $build_out
                 and command sudo $switch_bin switch
             end
@@ -165,7 +176,6 @@ if command -q nix
                 return 1
             end
 
-            # --switch: activate now. Default: boot (register generation, activate on next boot)
             set -l action (if contains -- --switch $argv; echo switch; else; echo boot; end)
             set argv (string match -v -- --switch $argv)
 
@@ -173,11 +183,10 @@ if command -q nix
             set -l target_host $argv[2]
             set -l remote_target $argv[3]
 
-            # Default SSH target if omitted or passed as a flag
+            # Default SSH target if omitted or a flag was passed in its place
             if test -z "$remote_target"; or string match -q -- "--*" "$remote_target"
-                set -l extra_args $argv[3..-1]
                 set remote_target "deployer@$target_host"
-                set -l _fdeploy_extra $extra_args
+                set -l _fdeploy_extra $argv[3..-1]
             else
                 set -l _fdeploy_extra $argv[4..-1]
             end
@@ -193,47 +202,17 @@ if command -q nix
                 $_fdeploy_extra
             or return 1
 
-            set -l build_out ""
-            if test -e /tmp/nixos-deploy-result-/result
-                set build_out (realpath /tmp/nixos-deploy-result-/result)
-            else if test -e /tmp/nixos-deploy-result-/toplevel
-                set build_out (realpath /tmp/nixos-deploy-result-/toplevel)
-            else if test -e /tmp/nixos-deploy-result-
-                set build_out (realpath /tmp/nixos-deploy-result-)
-            else
-                echo "Error: Could not locate built closure in /tmp/nixos-deploy-result-"
-                return 1
-            end
-
-            echo "Pushing store closure to target ($remote_target)..."
-            command nix copy --to "ssh://$remote_target" $build_out
+            set -l build_out (_nix_find_closure /tmp/nixos-deploy-result)
             or return 1
 
-            set -l switch_bin "$build_out/bin/switch-to-configuration"
-            if not test -x "$switch_bin"
-                set switch_bin "$build_out/bin/switch"
-            end
-
-            echo "Deploying to $remote_target (action: $action)..."
-            echo "Re-run activation: ssh $remote_target sudo $switch_bin $action"
-            command ssh -t $remote_target \
-                "sudo nix-env --profile /nix/var/nix/profiles/system --set $build_out && sudo $switch_bin $action"
+            echo "Pushing store closure to target ($remote_target)..."
+            _nix_remote_deploy $build_out $remote_target $action
         end
         function nixos_deploy_nas
-            set -l flake_root $HOME/Projects/nasty-config
-            set -l substituters "https://nasty.cachix.org"
-            set -l passthrough
-            for arg in $argv
-                if test "$arg" = --with-xilo
-                    set substituters "$substituters https://xilo.nanogoblin.duckdns.org/c/default/xilopkgs"
-                else
-                    set -a passthrough $arg
-                end
-            end
-            nixos_fdeploy $flake_root nasty homenas-deployer \
-                --option extra-substituters "$substituters" \
+            nixos_fdeploy $HOME/Projects/nasty-config nasty homenas-deployer \
+                --option extra-substituters "https://nasty.cachix.org https://xilo.nanogoblin.duckdns.org/c/default/xilopkgs" \
                 --option extra-trusted-public-keys "nasty.cachix.org-1:s+X88yw6+asphCNphTId/RQZHfmDF4fQ0uyzEz5SxLc=" \
-                $passthrough
+                $argv
         end
     end
 
@@ -249,19 +228,14 @@ if command -q nix
         end
     end
 
-    function nixenv_ls
-        if contains -- $argv[1] -r --sudo
-            sudoe nix-env --list-generations
+    function nixenv
+        # Usage: nixenv <list-generations|delete-generations> [--sudo] [args...]
+        set -l subcmd $argv[1]
+        set -l rest $argv[2..-1]
+        if contains -- --sudo $rest
+            sudoe nix-env $subcmd (string match -v -- --sudo $rest)
         else
-            nix-env --list-generations
-        end
-    end
-
-    function nixenv_rm
-        if contains -- $argv[1] -r --sudo
-            sudoe nix-env --delete-generations
-        else
-            nix-env --delete-generations
+            nix-env $subcmd $rest
         end
     end
 
@@ -271,11 +245,9 @@ if command -q nix
             nix run github:nix-community/home-manager -- init
             nix run github:nix-community/home-manager -- switch
         end
-        if command -q home-manager
-            set -l NIX_SESSION_VARS $HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
-            if test -r "$NIX_SESSION_VARS"
-                fenv source "$NIX_SESSION_VARS"
-            end
+        set -l NIX_SESSION_VARS $HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
+        if test -r "$NIX_SESSION_VARS"
+            fenv source "$NIX_SESSION_VARS"
         end
     end
 
@@ -339,7 +311,9 @@ if command -q nix
 
             if test -f "$xilo_secrets"
                 set push_creds_mode agenix
-            else if ls_creds | string match -q '*XILO_URL*'; and ls_creds | string match -q '*XILO_TOKEN*'; and ls_creds | string match -q '*XILO_CACHE*'
+            else if ls_creds | string match -q '*XILO_URL*' \
+                      and ls_creds | string match -q '*XILO_TOKEN*' \
+                      and ls_creds | string match -q '*XILO_CACHE*'
                 set push_creds_mode creds
             else
                 echo "Error: no xilo credentials found (checked $xilo_secrets and ls_creds)" >&2
@@ -366,6 +340,7 @@ if command -q nix
             end
         end
         function xilo-push-hm
+            # Pushes the last hm_fswitch build (out-link: /tmp/hm-result)
             if test -r /tmp/hm-result-
                 unlock_creds XILO_TOKEN XILO_CACHE XILO_URL
                 xilo push /tmp/hm-result-
@@ -409,8 +384,8 @@ if command -q nix
     #
     alias nhdb='nh darwin switch -n $FLAKE_ROOT'
     alias nhds='nh darwin switch $FLAKE_ROOT'
-    alias nhdls='drls'
-    alias nhdrm='drrm'
+    alias nhdls='sudo darwin-rebuild --list-generations'
+    alias nhdrm='sudo nix-env -p /nix/var/nix/profile/system --delete-generations'
     #
     alias nix_hist='sudo -i nix profile history --profile /nix/var/nix/profiles/system'
     alias nix_rb='sudo -i nix profile rollback --profile /nix/var/nix/profile/system'

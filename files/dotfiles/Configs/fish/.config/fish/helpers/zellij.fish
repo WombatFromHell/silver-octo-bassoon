@@ -19,14 +19,11 @@ command -q zellij; or return 0
 set -q __zellij_loaded; and return 0
 set -g __zellij_loaded
 
-# Check if a string represents a truthy value (1, true, yes, on).
-function __zj_is_truthy -d "Check if argument is truthy"
-    string match -qir '^(1|true|yes|on)$' $argv[1]
-end
+
 
 # Abort if ZELLIJ_ENABLED is false
 set -q ZELLIJ_ENABLED; or set -g ZELLIJ_ENABLED true
-if not __zj_is_truthy "$ZELLIJ_ENABLED"
+if not __is_truthy "$ZELLIJ_ENABLED"
     return 0
 end
 
@@ -207,11 +204,11 @@ if status is-interactive; and not set -q ZELLIJ
     if set -q HERDR_ENV
         return 0
     end
-    if not __zj_is_truthy "$ZELLIJ_AUTO_ATTACH"
+    if not __is_truthy "$ZELLIJ_AUTO_ATTACH"
         return 0
     else if string match -qir '^(vscode|cursor|windsurf|zed|hyper)$' "$TERM_PROGRAM"; or set -q INSIDE_EMACS; or set -q JETBRAINS_IDE
         return 0
-    else if test -n "$SSH_TTY"; and not __zj_is_truthy "$ZELLIJ_ON_SSH"
+    else if test -n "$SSH_TTY"; and not __is_truthy "$ZELLIJ_ON_SSH"
         return 0
     end
     # ponytail: atomic claim, so simultaneous terminals can't both pass a
@@ -220,7 +217,7 @@ if status is-interactive; and not set -q ZELLIJ
     if not __zj_claim_attach $ZELLIJ_DEFAULT_SESSION
         return 0
     end
-    if __zj_is_truthy "$ZELLIJ_EXIT_ON_DETACH"
+    if __is_truthy "$ZELLIJ_EXIT_ON_DETACH"
         # ponytail: exec replaces this shell, so the marker clears only on
         # next login ($XDG_RUNTIME_DIR reset), not on detach.
         exec zellij attach -c $ZELLIJ_DEFAULT_SESSION
@@ -230,15 +227,4 @@ if status is-interactive; and not set -q ZELLIJ
     end
 end
 
-# --- GPG pinentry TTY sync ---
-# Same purpose as the tmux equivalent: keeps gpg-agent pointed at the
-# current pane's TTY, since zellij has no server-side focus hook to do
-# this automatically the way tmux's set-hook can.
-function __zellij_update_gpg_tty --on-event fish_prompt
-    command -q gpg-connect-agent; or return 0
-    set -l current_tty (tty 2>/dev/null); or return 0
-    if test "$current_tty" != "$GPG_TTY"
-        set -gx GPG_TTY "$current_tty"
-        gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
-    end
-end
+
