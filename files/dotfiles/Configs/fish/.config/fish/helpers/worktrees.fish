@@ -1,6 +1,27 @@
 # =============================================================================
 # Git Worktree Management Functions
 # =============================================================================
+# Convention: <gwtX> [opts] [worktree path]
+#
+#   A bare name (no '/') resolves to an existing worktree (matched by path
+#   basename or branch); if none exists it defaults to ./.wt/<name>.
+#   Arguments containing '/' are used verbatim.
+#
+#   gwta [opts] <name|path>      Add worktree (opts: -b <base>, -d, -f)
+#   gwt  [name]                  Switch to worktree (no arg: fzf picker)
+#   gwtl                         List worktrees
+#   gwti                         Info for current worktree
+#   gwtr [opts] <name|path>      Remove worktree (opts: -f, -B also delete branch)
+#   gwtp                         Prune stale worktrees
+#   gwtm <name|path> [target]    Merge worktree branch into target
+#   gwtms <name|path> [target]   Squash-merge worktree branch into target
+#   gwtcp <name|path>            Cherry-pick commits from worktree (fzf multi)
+#
+#   Legacy aliases: gwtc=gwta  gwts=gwt  gwtrm='gwtr -B'
+#
+#   Note: add `/.wt/` to .gitignore in repos that use the default path, so
+#   the main worktree's `git status` stays clean.
+# =============================================================================
 
 # -----------------------------------------------------------------------------
 # Helper Functions
@@ -23,6 +44,24 @@ function __gwt_list --description "List worktrees: path, commit, branch"
         end
         printf '%s\t%s\t%s\n' "$path" "$commit" "$branch"
     end
+end
+
+function __gwt_resolve --description "Resolve a worktree name or path to a path"
+    set -l arg $argv[1]
+    if test -z "$arg"
+        return 1
+    end
+    # Verbatim if it contains a slash (absolute, relative, ./x, ~/x)
+    if string match -q -- '*/*' $arg
+        echo $arg
+        return 0
+    end
+    set -l found (__gwt_find_by_name $arg)
+    if test -n "$found"
+        echo $found
+        return 0
+    end
+    echo ./.wt/$arg
 end
 
 function __gwt_find_by_name --description "Find worktree path by name or branch pattern"
@@ -103,86 +142,44 @@ function __gwt_complete_branches --description "Completion: local branch names"
 end
 
 # -----------------------------------------------------------------------------
-# Core Functions (existing, enhanced)
+# Core Functions
 # -----------------------------------------------------------------------------
 
-function gwt --description "Switch to a git worktree by name or branch"
-    if test (count $argv) -eq 0
-        echo "Usage: gwt <worktree-name-or-branch>"
+function gwta --description "Add a worktree: gwta [-b <base>] [-d] [-f] <name|path>"
+    argparse -s b/base= d/detach f/force -- $argv; or return
+    set -l name $argv[1]
+    if test -z "$name"
+        echo "Usage: gwta [-b <base>] [-d] [-f] <name|path>" >&2
         return 1
     end
+    set -l path (__gwt_resolve $name)
+    or return 1
+    set -l cmd git worktree add
+    set -q _flag_force; and set -a cmd -f
+    set -q _flag_detach; and set -a cmd --detach
+    if set -q _flag_base
+        # -b <base>: new branch named after the path basename, branched from <base>
+        set -a cmd -b (basename $path)
+        set -a cmd $path $_flag_base
+    else
+        set -a cmd $path
+    end
+    command $cmd
+end
 
-    set -l path (__gwt_find_by_name $argv[1])
-
-    if test -n "$path"
-        cd $path
+function gwt --description "Switch to a worktree (no arg: fzf picker)"
+    if set -q argv[1]
+        set -l path (__gwt_resolve $argv[1])
+        or return 1
+        cd -- $path; or return 1
         echo "Switched to worktree: $path"
     else
-        echo "Error: Worktree matching '$argv[1]' not found."
-        return 1
-    end
-end
-
-function gwts --description "Switch to a git worktree using fzf"
-    __gwt_fzf_check || return 1
-
-    set -l target (__gwt_list | fzf --header "Select worktree" | awk -F'\t' '{print $1}')
-
-    if test -n "$target"
-        cd $target
-        echo "Switched to: $target"
-    end
-end
-
-function gwtc --description "Create a new git worktree and branch"
-    set -l show_help 0
-    set -l detach_mode 0
-    set -l branch_name ""
-    set -l base_branch ""
-
-    # Parse arguments
-    while test (count $argv) -gt 0
-        switch $argv[1]
-            case -h --help
-                set show_help 1
-            case -d --detach
-                set detach_mode 1
-            case -b --branch
-                set -e argv[1]
-                set branch_name $argv[1]
-            case '*'
-                if test -z "$branch_name"
-                    set branch_name $argv[1]
-                end
+        __gwt_fzf_check; or return 1
+        set -l target (__gwt_list | fzf --header "Select worktree" | awk -F'\t' '{print $1}')
+        if test -n "$target"
+            cd -- $target
+            echo "Switched to: $target"
         end
-        set -e argv[1]
-    end
-
-    if test $show_help -eq 1
-        echo "Usage: gwtc [-d|--detach] [-b <base-branch>] <new-branch-name>"
-        echo ""
-        echo "Create a new git worktree with a new branch."
-        echo ""
-        echo "Options:"
-        echo "  -d, --detach     Create detached HEAD worktree"
-        echo "  -b, --branch     Base branch for new branch (default: current branch)"
-        echo "  -h, --help       Show this help"
-        return 0
-    end
-
-    if test -z "$branch_name"
-        echo "Usage: gwtc <new-branch-name>"
-        echo "       gwtc -d <new-branch-name>"
-        return 1
-    end
-
-    if test $detach_mode -eq 1
-        # Create detached worktree
-        git worktree add ../$branch_name --detach
-    else if test -n "$base_branch"
-        git worktree add ../$branch_name -b $branch_name $base_branch
-    else
-        git worktree add ../$branch_name -b $branch_name
     end
 end
 
@@ -247,111 +244,43 @@ end
 # Remove Functions
 # -----------------------------------------------------------------------------
 
-function gwtr --description "Remove a git worktree"
-    if test (count $argv) -eq 0
-        echo "Usage: gwtr <worktree-path-or-name>"
-        echo "       gwtr -f <worktree-path-or-name>  (force)"
+function gwtr --description "Remove a worktree: gwtr [-f] [-B] <name|path>"
+    argparse -s f/force B/del-branch -- $argv; or return
+    set -l name $argv[1]
+    if test -z "$name"
+        echo "Usage: gwtr [-f] [-B] <name|path>" >&2
         return 1
     end
+    set -l path (__gwt_resolve $name)
+    or return 1
 
-    set -l force_mode 0
-    set -l target ""
+    # Grab the branch before removal (for -B)
+    set -l wt_branch (__gwt_get_branch $path)
 
-    # Parse arguments
-    if test "$argv[1]" = -f -o "$argv[1]" = --force
-        set force_mode 1
-        set target $argv[2]
-    else
-        set target $argv[1]
-    end
-
-    # Find the actual path if name/branch was given
-    if not test -d "$target"
-        set target (__gwt_find_by_name $target)
-        if test -z "$target"
-            echo "Error: Worktree not found"
-            return 1
-        end
-    end
-
-    if test $force_mode -eq 0
-        __gwt_validate "$target" or return 1
+    if not set -q _flag_force
+        __gwt_validate $path; or return 1
 
         # Confirm with fzf if available
         if __gwt_fzf_check
-            echo "About to remove: $target"
-            set -l confirm (echo -e "yes\\nno" | fzf --prompt "Confirm removal: ")
+            echo "About to remove: $path"
+            set -l confirm (printf 'yes\nno' | fzf --prompt "Confirm removal: ")
             if test "$confirm" != yes
-                echo Cancelled
+                echo "Cancelled"
                 return 0
             end
         end
     end
 
-    git worktree remove $target
-    if test $status -eq 0
-        echo "Removed worktree: $target"
-    else
-        return 1
-    end
-end
+    set -l cmd git worktree remove
+    set -q _flag_force; and set -a cmd --force
+    set -a cmd $path
+    command $cmd; or return 1
+    echo "Removed worktree: $path"
 
-function gwtrm --description "Remove worktree and delete its branch"
-    if test (count $argv) -eq 0
-        echo "Usage: gwtrm <worktree-path-or-name> [--force]"
-        return 1
-    end
-
-    set -l force_mode 0
-    set -l target $argv[1]
-
-    # Check for --force flag
-    if test (count $argv) -gt 1
-        if test "$argv[2]" = -f -o "$argv[2]" = --force
-            set force_mode 1
+    if set -q _flag_B
+        if test -n "$wt_branch" -a "$wt_branch" != "(detached)"
+            git branch -D "$wt_branch"; and echo "Deleted branch: $wt_branch"
         end
-    end
-
-    # Find the actual path if name/branch was given
-    if not test -d "$target"
-        set target (__gwt_find_by_name $target)
-        if test -z "$target"
-            echo "Error: Worktree not found"
-            return 1
-        end
-    end
-
-    # Get the branch name before removing
-    set -l wt_branch (__gwt_get_branch "$target")
-
-    if test -z "$wt_branch" -o "$wt_branch" = "(detached)"
-        echo "Error: Cannot determine branch for '$target'"
-        return 1
-    end
-
-    # Validate and remove worktree (skip validation if --force)
-    if test $force_mode -eq 0
-        __gwt_validate "$target" or return 1
-    end
-
-    echo "Removing worktree and deleting branch '$wt_branch'..."
-
-    if test $force_mode -eq 1
-        git worktree remove --force $target
-    else
-        git worktree remove $target
-    end
-    if test $status -ne 0
-        return 1
-    end
-    echo "Removed worktree: $target"
-
-    # Delete the branch
-    git branch -D "$wt_branch"
-    if test $status -eq 0
-        echo "Deleted branch: $wt_branch"
-    else
-        echo "Warning: Could not delete branch '$wt_branch'"
     end
 end
 
@@ -367,25 +296,21 @@ end
 # -----------------------------------------------------------------------------
 
 function gwtm --description "Merge a worktree's branch into a target branch"
-    if test (count $argv) -eq 0
-        echo "Usage: gwtm <worktree> [target-branch]"
+    set -l worktree_name $argv[1]
+    if test -z "$worktree_name"
+        echo "Usage: gwtm <name|path> [target-branch]"
         echo ""
         echo "Merge the worktree's branch into target (default: main/master)"
         return 1
     end
-
-    set -l worktree_name $argv[1]
-    set -l target_branch (test (count $argv) -gt 1; and echo $argv[2]; or echo "")
+    set -l target_branch $argv[2]
 
     # Find worktree
-    set -l worktree_path (__gwt_find_by_name $worktree_name)
-    if test -z "$worktree_path"
-        echo "Error: Worktree '$worktree_name' not found"
-        return 1
-    end
+    set -l worktree_path (__gwt_resolve $worktree_name)
+    or return 1
 
     # Get the worktree's branch
-    set -l source_branch (__gwt_get_branch "$worktree_path")
+    set -l source_branch (__gwt_get_branch $worktree_path)
     if test -z "$source_branch" -o "$source_branch" = "(detached)"
         echo "Error: Worktree is detached or branch unknown"
         return 1
@@ -404,7 +329,7 @@ function gwtm --description "Merge a worktree's branch into a target branch"
                 set target_branch master
             else
                 echo "Error: No target branch specified and couldn't determine default"
-                echo "Usage: gwtm <worktree> <target-branch>"
+                echo "Usage: gwtm <name|path> <target-branch>"
                 return 1
             end
         end
@@ -433,7 +358,7 @@ function gwtm --description "Merge a worktree's branch into a target branch"
 
         # Offer to remove worktree
         if __gwt_fzf_check
-            set -l cleanup (echo -e "no\\nyes" | fzf --prompt "Remove worktree '$worktree_path'? ")
+            set -l cleanup (printf 'no\nyes' | fzf --prompt "Remove worktree '$worktree_path'? ")
             if test "$cleanup" = yes
                 gwtr "$worktree_path"
             end
@@ -444,25 +369,21 @@ function gwtm --description "Merge a worktree's branch into a target branch"
 end
 
 function gwtms --description "Squash-merge a worktree's branch into a target branch"
-    if test (count $argv) -eq 0
-        echo "Usage: gwtms <worktree> [target-branch]"
+    set -l worktree_name $argv[1]
+    if test -z "$worktree_name"
+        echo "Usage: gwtms <name|path> [target-branch]"
         echo ""
         echo "Squash-merge the worktree's branch into target (default: main/master)"
         return 1
     end
-
-    set -l worktree_name $argv[1]
-    set -l target_branch (test (count $argv) -gt 1; and echo $argv[2]; or echo "")
+    set -l target_branch $argv[2]
 
     # Find worktree
-    set -l worktree_path (__gwt_find_by_name $worktree_name)
-    if test -z "$worktree_path"
-        echo "Error: Worktree '$worktree_name' not found"
-        return 1
-    end
+    set -l worktree_path (__gwt_resolve $worktree_name)
+    or return 1
 
     # Get the worktree's branch
-    set -l source_branch (__gwt_get_branch "$worktree_path")
+    set -l source_branch (__gwt_get_branch $worktree_path)
     if test -z "$source_branch" -o "$source_branch" = "(detached)"
         echo "Error: Worktree is detached or branch unknown"
         return 1
@@ -496,24 +417,20 @@ function gwtms --description "Squash-merge a worktree's branch into a target bra
 end
 
 function gwtcp --description "Cherry-pick commits from a worktree (interactive)"
-    if test (count $argv) -eq 0
-        echo "Usage: gwtcp <worktree>"
+    set -l worktree_name $argv[1]
+    if test -z "$worktree_name"
+        echo "Usage: gwtcp <name|path>"
         return 1
     end
 
     __gwt_fzf_check || return 1
 
-    set -l worktree_name $argv[1]
-
     # Find worktree
-    set -l worktree_path (__gwt_find_by_name $worktree_name)
-    if test -z "$worktree_path"
-        echo "Error: Worktree '$worktree_name' not found"
-        return 1
-    end
+    set -l worktree_path (__gwt_resolve $worktree_name)
+    or return 1
 
     # Get the worktree's branch
-    set -l source_branch (__gwt_get_branch "$worktree_path")
+    set -l source_branch (__gwt_get_branch $worktree_path)
     if test -z "$source_branch" -o "$source_branch" = "(detached)"
         echo "Error: Worktree is detached or branch unknown"
         return 1
@@ -522,8 +439,14 @@ function gwtcp --description "Cherry-pick commits from a worktree (interactive)"
     echo "Select commits from '$source_branch' to cherry-pick:"
     echo ""
 
-    # Get commits from the branch (excluding current branch)
-    set -l commits (git log --oneline "$source_branch" --not $(git branch --show-current) 2>/dev/null | fzf --multi --preview "git show --stat {1}")
+    # Get commits from the branch (excluding current branch; detached HEAD
+    # has no branch to exclude, so show the branch's full history)
+    set -l not_ref
+    set -l current (git branch --show-current 2>/dev/null)
+    if test -n "$current"
+        set not_ref --not $current
+    end
+    set -l commits (git log --oneline "$source_branch" $not_ref 2>/dev/null | fzf --multi --preview "git show --stat {1}")
 
     if test -z "$commits"
         echo "No commits selected"
@@ -549,20 +472,26 @@ function gwtcp --description "Cherry-pick commits from a worktree (interactive)"
 end
 
 # -----------------------------------------------------------------------------
+# Legacy Aliases
+# -----------------------------------------------------------------------------
+alias gwtc='gwta'
+alias gwts='gwt'
+alias gwtrm='gwtr -B'
+
+# -----------------------------------------------------------------------------
 # Fish Completions
 # -----------------------------------------------------------------------------
 
+complete -c gwta -d 'Add worktree'
+complete -c gwta -s b -l base -d 'Base branch' -xa '(__gwt_complete_branches)'
+complete -c gwta -s d -l detach -d 'Detached HEAD'
+complete -c gwta -s f -l force -d 'Force'
 complete -c gwt -xa '(__gwt_complete_names)' -d 'Switch to worktree'
-complete -c gwts -d 'Switch to worktree (fzf)'
-complete -c gwtc -d 'Create worktree'
-complete -c gwtc -s d -l detach -d 'Create detached HEAD'
-complete -c gwtc -s b -l branch -d 'Base branch' -xa '(__gwt_complete_branches)'
 complete -c gwtl -d 'List worktrees'
 complete -c gwti -d 'Show worktree info'
 complete -c gwtr -xa '(__gwt_complete_names)' -d 'Remove worktree'
 complete -c gwtr -s f -l force -d 'Force removal'
-complete -c gwtrm -xa '(__gwt_complete_names)' -d 'Remove worktree + branch'
-complete -c gwtrm -s f -l force -d 'Force removal'
+complete -c gwtr -s B -l del-branch -d 'Also delete branch'
 complete -c gwtp -d 'Prune stale worktrees'
 complete -c gwtm -xa '(__gwt_complete_names)' -d 'Merge worktree'
 complete -c gwtm -n __fish_use_subcommand -xa '(__gwt_complete_branches)' -d 'Target branch'

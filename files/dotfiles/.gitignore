@@ -6,4 +6,5 @@ Configs/fish/.config/fish/*
 !Configs/fish/.config/fish/sources.fish
 !Configs/fish/.config/fish/helpers/
 Configs/fish/.config/fish/helpers/*
+!Configs/fish/.config/fish/helpers/*/
 !Configs/fish/.config/fish/helpers/*.fish

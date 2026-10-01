@@ -36,62 +36,26 @@ set -q HERDR_AUTO_ATTACH; or set -g HERDR_AUTO_ATTACH false
 set -q HERDR_EXIT_ON_DETACH; or set -g HERDR_EXIT_ON_DETACH false
 set -q HERDR_ON_SSH; or set -g HERDR_ON_SSH false
 
-# --- SSH nesting guard ---
+# --- SSH nesting guard (shared core: 00-mux-common.fish) ---
 # Same problem as tmux/zellij: SSH does not forward $HERDR_ENV to the remote
-# shell, even when "remote" is the very host you're already herdr'd into. A
-# shell reached via `ssh localhost` from inside a pane looks like a fresh
-# login; if it auto-attaches (or a client runs hrd/hrda) it re-attaches the
-# very session it's already a pane of.
-#
-# herdr has no tmux-style "set-environment on the server", so mirror zellij:
-# use a fixed, $HOME-rooted file as shared out-of-band storage -- $HOME
-# survives the SSH hop because it's the same user on the same host. Right
-# before running `ssh` from inside herdr, bump a depth counter in that file;
-# right after `ssh` returns, decrement it.
-#
-# This is scoped correctly because the check only ever matters when $HERDR_ENV
-# is *absent* locally -- a sibling pane that still has $HERDR_ENV set is never
-# affected, even though the counter file is shared.
+# shell. The full rationale and shared depth-counter logic live in
+# 00-mux-common.fish; a $HOME-rooted file is the storage backend here.
 
 set -g __herdr_guard_file "$HOME/.cache/herdr-fish/nested_ssh_depth"
 
-function __herdr_ssh_depth -d "Read the current nested-ssh depth from the guard file"
-    if test -f "$__herdr_guard_file"
-        set -l val (cat "$__herdr_guard_file" 2>/dev/null)
-        if string match -qr '^[0-9]+$' -- "$val"
-            echo $val
-            return
-        end
-    end
-    echo 0
-end
-
 function __herdr_ssh_preexec -d "Mark an outgoing ssh hop for herdr nesting detection" --on-event fish_preexec
-    set -q HERDR_ENV; or return
-    string match -qr '(^|[\s;&|]+)ssh($|\s)' -- "$argv[1]"; or return
-    mkdir -p (dirname "$__herdr_guard_file") 2>/dev/null
-    math (__herdr_ssh_depth) + 1 >"$__herdr_guard_file" 2>/dev/null
+    __mux_ssh_preexec HERDR_ENV file $__herdr_guard_file $argv[1]
 end
 
 function __herdr_ssh_postexec -d "Clear the outgoing ssh hop marker" --on-event fish_postexec
-    set -q HERDR_ENV; or return
-    string match -qr '(^|[\s;&|]+)ssh($|\s)' -- "$argv[1]"; or return
-    set -l depth (math (__herdr_ssh_depth) - 1)
-    if test $depth -le 0
-        rm -f "$__herdr_guard_file" 2>/dev/null
-    else
-        echo $depth >"$__herdr_guard_file" 2>/dev/null
-    end
+    __mux_ssh_postexec HERDR_ENV file $__herdr_guard_file $argv[1]
 end
 
 # Check if the *current* shell is a herdr pane that reached us over SSH and
 # lost $HERDR_ENV along the way. Only meaningful when $HERDR_ENV is unset
-# locally -- if it's set, we're a normal pane and are never "nested" regardless
-# of what the shared counter file says.
+# locally.
 function __herdr_is_nested_ssh -d "Detect nested herdr over SSH"
-    set -q HERDR_ENV; and return 1
-    set -q SSH_TTY; or set -q SSH_CONNECTION; or return 1
-    test (__herdr_ssh_depth) -gt 0
+    __mux_is_nested_ssh HERDR_ENV file $__herdr_guard_file
 end
 
 # Shared guard used by hrd/hrda: print the error and fail if nested-SSH.
@@ -121,24 +85,10 @@ end
 
 # --- Attach marker (first-client-only auto-attach) ---
 # Mirrors the zellij helper: herdr exposes no "is this session already
-# attached" query we key auto-attach off of, so track it locally with an
-# atomically-claimed marker dir. $XDG_RUNTIME_DIR resets each login, so a
-# leaked marker (exec/exit-on-detach) still re-arms next boot.
-set -g __herdr_attached_dir /tmp/herdr-fish
-test -n "$XDG_RUNTIME_DIR"; and set -g __herdr_attached_dir "$XDG_RUNTIME_DIR/herdr-fish"
-
-function __herdr_marker -d "Attach-marker path for a session"
-    echo "$__herdr_attached_dir/attached_$argv[1]"
-end
-
-function __herdr_claim_attach -d "Atomically claim the attach marker; succeeds only for the first caller"
-    mkdir -p "$__herdr_attached_dir" 2>/dev/null
-    mkdir (__herdr_marker $argv[1]) 2>/dev/null
-end
-
-function __herdr_release_attach -d "Release the attach marker"
-    rmdir (__herdr_marker $argv[1]) 2>/dev/null
-end
+# attached" query we key auto-attach off of, so track it locally via the
+# shared marker in 00-mux-common.fish. $XDG_RUNTIME_DIR resets each login, so
+# a leaked marker (exec/exit-on-detach) still re-arms next boot.
+set -g __herdr_attached_dir (__mux_attach_dir herdr-fish)
 
 # --- Public API ---
 
@@ -214,26 +164,26 @@ if status is-interactive; and not set -q HERDR_ENV
     if __herdr_is_nested_ssh
         return 0
     end
-    if set -q ZELLIJ; or set -q TMUX
-        return 0
-    end
+    __mux_in_other_mux HERDR_ENV; and return 0
 
+    # IDE list kept in sync with zellij.fish:
     set -l auto $HERDR_AUTO_ATTACH
-    test "$TERM_PROGRAM" = vscode; and set auto false
-    test "$ZED_TERM" = true; and set auto false
+    string match -qir '^(vscode|cursor|windsurf|zed|hyper)$' "$TERM_PROGRAM"; and set auto false
+    set -q INSIDE_EMACS; and set auto false
+    set -q JETBRAINS_IDE; and set auto false
     test -n "$SSH_TTY"; and not __is_truthy "$HERDR_ON_SSH"; and set auto false
     if __is_truthy "$auto"
         # ponytail: atomic claim, so simultaneous terminals can't both pass a
         # check-then-set race -- exactly one wins the mkdir and auto-attaches,
         # the rest stay plain shells. Released when the attach returns.
-        if __herdr_claim_attach $HERDR_DEFAULT_SESSION
+        if __mux_claim_attach $__herdr_attached_dir $HERDR_DEFAULT_SESSION
             if __is_truthy "$HERDR_EXIT_ON_DETACH"
                 # ponytail: exec replaces this shell, so the marker clears only
                 # on next login ($XDG_RUNTIME_DIR reset), not on detach.
                 exec herdr --session $HERDR_DEFAULT_SESSION
             else
                 herdr --session $HERDR_DEFAULT_SESSION
-                __herdr_release_attach $HERDR_DEFAULT_SESSION
+                __mux_release_attach $__herdr_attached_dir $HERDR_DEFAULT_SESSION
             end
         end
     end

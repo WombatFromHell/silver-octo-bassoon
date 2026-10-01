@@ -15,7 +15,7 @@
 function encrypt_cred -d "Encrypt a secret to systemd-creds storage"
     set -l key $argv[1]
     if test -z "$key"
-        echo "Usage: cred_encrypt KEY" >&2
+        echo "Usage: encrypt_cred KEY" >&2
         return 1
     end
 

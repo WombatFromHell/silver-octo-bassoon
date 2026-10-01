@@ -33,68 +33,23 @@ set -q TMUX_ON_SSH; or set -g TMUX_ON_SSH false
 set -q TMUX_AUTO_ATTACH; or set -g TMUX_AUTO_ATTACH false
 set -q TMUX_EXIT_ON_DETACH; or set -g TMUX_EXIT_ON_DETACH false
 
-# --- SSH nesting guard ---
-# Problem: SSH does not forward $TMUX (or $TMUX_PANE) to the remote shell,
-# even when "remote" is the very host you're already tmux'd into. So a
-# shell reached via `ssh <same host>` from inside a pane looks, to fish,
-# indistinguishable from a totally fresh login. If that shell then runs
-# `tma` (manually, or via TMUX_AUTO_ATTACH), it will happily
-# create-or-attach the *same* session it's already a pane of, which
-# produces a self-referential attach and a resize feedback loop.
-#
-# Fix: since it really is the same host, it's also the same tmux *server*
-# (same default socket), which persists independently of any one client's
-# environment. We use that server as shared, out-of-band storage: right
-# before running `ssh` from inside tmux, bump a depth counter in the
-# server's global environment; right after `ssh` returns, decrement it.
-# A shell that lost $TMUX can still ask the (same) server "is there an
-# SSH hop in flight from you?" and get a truthful answer.
-#
-# This is scoped correctly because the "am I nested" check below only
-# ever matters when $TMUX is *absent* locally -- a sibling pane that
-# still has $TMUX set is never affected by the global counter, even
-# though the counter itself is server-wide.
-
-function __tmux_ssh_depth -d "Read the current nested-ssh depth from the tmux server"
-    set -l line (tmux show-environment -g TMUX_NESTED_SSH_DEPTH 2>/dev/null)
-    set -l val (string replace -r '^TMUX_NESTED_SSH_DEPTH=' '' -- $line)
-    if test -z "$val"
-        echo 0
-    else
-        echo $val
-    end
-end
-
+# --- SSH nesting guard (shared core: 00-mux-common.fish) ---
+# SSH does not forward $TMUX to the remote shell, even when "remote" is
+# the very host you're already tmux'd into. The full rationale and the
+# shared depth-counter logic live in 00-mux-common.fish; the tmux
+# server's global env is the shared storage backend here.
 function __tmux_ssh_preexec -d "Mark an outgoing ssh hop on the tmux server" --on-event fish_preexec
-    set -q TMUX; or return
-    string match -qr '(^|[\s;&|]+)ssh($|\s)' -- "$argv[1]"; or return
-    tmux set-environment -g TMUX_NESTED_SSH_DEPTH (math (__tmux_ssh_depth) + 1) 2>/dev/null
+    __mux_ssh_preexec TMUX tmux - $argv[1]
 end
 
 function __tmux_ssh_postexec -d "Clear the outgoing ssh hop marker" --on-event fish_postexec
-    set -q TMUX; or return
-    string match -qr '(^|[\s;&|]+)ssh($|\s)' -- "$argv[1]"; or return
-    set -l depth (math (__tmux_ssh_depth) - 1)
-    if test $depth -le 0
-        tmux set-environment -gu TMUX_NESTED_SSH_DEPTH 2>/dev/null
-    else
-        tmux set-environment -g TMUX_NESTED_SSH_DEPTH $depth 2>/dev/null
-    end
+    __mux_ssh_postexec TMUX tmux - $argv[1]
 end
 
 # Check if the *current* shell is a tmux pane that reached us over SSH and
-# lost $TMUX along the way. Only meaningful when $TMUX is unset locally --
-# if it's set, we're a normal pane and are never "nested" regardless of
-# what the server-wide counter says.
+# lost $TMUX along the way. Only meaningful when $TMUX is unset locally.
 function __tmux_is_nested_ssh -d "Detect nested tmux over SSH"
-    set -q TMUX; and return 1
-    # Only relevant if *this shell* is itself the product of an SSH
-    # connection -- a plain local shell must never be blocked just
-    # because some unrelated SSH session elsewhere left the counter
-    # above zero.
-    set -q SSH_TTY; or set -q SSH_CONNECTION; or return 1
-    command -q tmux; or return 1
-    test (__tmux_ssh_depth) -gt 0
+    __mux_is_nested_ssh TMUX tmux -
 end
 
 # --- Helper Functions ---
@@ -214,19 +169,19 @@ if status is-interactive; and not set -q TMUX
         return 0
     end
 
-    if set -q HERDR_ENV
-        return 0
-    end
+    __mux_in_other_mux TMUX; and return 0
 
-    # Conditions to skip auto-start:
+    # Conditions to skip auto-start (IDE list kept in sync with zellij.fish):
     set -l skip_autostart false
     if not __is_truthy "$TMUX_AUTO_ATTACH"
         set skip_autostart true
     end
 
-    if test "$TERM_PROGRAM" = vscode
+    if string match -qir '^(vscode|cursor|windsurf|zed|hyper)$' "$TERM_PROGRAM"
         set skip_autostart true
-    else if test "$ZED_TERM" = true
+    else if set -q INSIDE_EMACS
+        set skip_autostart true
+    else if set -q JETBRAINS_IDE
         set skip_autostart true
     else if test -n "$SSH_TTY"; and not __is_truthy "$TMUX_ON_SSH"
         set skip_autostart true

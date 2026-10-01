@@ -147,8 +147,12 @@ function tarc
         }
         # ponytail: no file list for _use_pv to du here (paths are relative
         # to tar's -C, not cwd) — indeterminate bar
+        # ponytail: escape \ and & so the path is a safe sed replacement
+        set -l prefix $paths[1]/
+        set prefix (string replace -a -- "\\" "\\\\" $prefix)
+        set prefix (string replace -a -- '&' "\\&" $prefix)
         git ls-files --cached --others --exclude-standard |
-            sed "s|^|$paths[1]/|" |
+            sed "s|^|$prefix|" |
             tar -cf - $gopts --no-recursion -T - |
             _use_pv |
             $_tarchk_cmd > $outfile

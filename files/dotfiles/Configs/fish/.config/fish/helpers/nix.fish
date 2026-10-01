@@ -385,7 +385,7 @@ if command -q nix
     alias nhdb='nh darwin switch -n $FLAKE_ROOT'
     alias nhds='nh darwin switch $FLAKE_ROOT'
     alias nhdls='sudo darwin-rebuild --list-generations'
-    alias nhdrm='sudo nix-env -p /nix/var/nix/profile/system --delete-generations'
+    alias nhdrm='sudo nix-env -p /nix/var/nix/profiles/system --delete-generations'
     #
     alias nix_hist='sudo -i nix profile history --profile /nix/var/nix/profiles/system'
     alias nix_rb='sudo -i nix profile rollback --profile /nix/var/nix/profile/system'

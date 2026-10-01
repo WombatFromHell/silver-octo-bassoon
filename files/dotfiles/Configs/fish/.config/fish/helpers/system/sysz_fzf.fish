@@ -1,11 +1,9 @@
-#!/usr/bin/env fish
 # =============================================================================
 # sysz_fzf.fish - Interactive systemctl with fzf for fish shell
 # =============================================================================
 #
 # Installation:
-#   Save to: ~/.config/fish/conf.d/systemd_fzf.fish
-#   Or source from config.fish: source path/to/systemd_fzf.fish
+#   Lives in helpers/sysz_fzf.fish; sourced automatically by sources.fish.
 #
 # Usage:
 #   sls [query]  - Browse system-level systemd units interactively
