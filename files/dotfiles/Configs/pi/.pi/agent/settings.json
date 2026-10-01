@@ -1,12 +1,12 @@
 {
-  "lastChangelogVersion": "0.99.2",
+  "lastChangelogVersion": "1.0.0",
   "packages": [
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:pi-rtk-optimizer",
     "npm:pi-ketch",
     "npm:pi-checklist",
     "npm:pi-graft",
-    "git:github.com/NotSoSeriouss/BetterCompaction"
+    "npm:@sting8k/pi-vcc"
   ],
   "enableInstallTelemetry": false,
   "theme": "dark"
