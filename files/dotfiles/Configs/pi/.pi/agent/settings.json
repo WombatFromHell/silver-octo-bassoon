@@ -1,15 +1,12 @@
 {
-  "subagents": {
-    "defaultModel": "llama-cpp/qwen3.8-27b"
-  },
   "lastChangelogVersion": "0.99.2",
   "packages": [
     "npm:@juicesharp/rpiv-ask-user-question",
-    "npm:pi-blackhole",
     "npm:pi-rtk-optimizer",
     "npm:pi-ketch",
-    "npm:pi-gauge",
-    "npm:pi-checklist"
+    "npm:pi-checklist",
+    "npm:pi-graft",
+    "git:github.com/NotSoSeriouss/BetterCompaction"
   ],
   "enableInstallTelemetry": false,
   "theme": "dark"
