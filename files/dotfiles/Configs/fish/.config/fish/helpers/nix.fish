@@ -1,4 +1,18 @@
 if command -q nix
+    set -x FLAKE_ROOT "$HOME/.config/flakeroot"
+    if command -q nh
+        set -x NH_FLAKE "$FLAKE_ROOT"
+    end
+
+    set -l NIX_DAEMON_FISH_SRC /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
+    if test -r "$NIX_DAEMON_FISH_SRC"
+        source "$NIX_DAEMON_FISH_SRC"
+    end
+    set -l NIX_SESSION_VARS $HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
+    if test -r "$NIX_SESSION_VARS"
+        fenv source "$NIX_SESSION_VARS"
+    end
+
     if command -q nix-fast-build
         set -g NIX_MAX_JOBS (nproc | awk '{ j = int($1 * 0.75); print (j > 1 ? j : 1) }')
 

@@ -15,7 +15,7 @@ if status is-interactive
     # fish_config theme choose catppuccin-mocha --color-theme=dark
 
     # functions that should be loaded before anything else
-    set FUNCS_FISH_SRC "$HOME/.config/fish/funcs.fish"
+    set FUNCS_FISH_SRC "$HOME/.config/fish/helpers/funcs.fish"
     if test -r "$FUNCS_FISH_SRC"
         source "$FUNCS_FISH_SRC"
     end
