@@ -184,11 +184,12 @@ if command -q nix
             set -l remote_target $argv[3]
 
             # Default SSH target if omitted or a flag was passed in its place
+            set -l _fdeploy_extra
             if test -z "$remote_target"; or string match -q -- "--*" "$remote_target"
                 set remote_target "deployer@$target_host"
-                set -l _fdeploy_extra $argv[3..-1]
+                set _fdeploy_extra $argv[3..-1]
             else
-                set -l _fdeploy_extra $argv[4..-1]
+                set _fdeploy_extra $argv[4..-1]
             end
 
             set -l attr "$flake_path#nixosConfigurations.\"$target_host\".config.system.build.toplevel"
@@ -207,6 +208,8 @@ if command -q nix
 
             echo "Pushing store closure to target ($remote_target)..."
             _nix_remote_deploy $build_out $remote_target $action
+            and echo "System closure available at: $build_out"
+            and echo "  Manual switch on target: ssh $remote_target sudo $build_out/bin/switch-to-configuration switch"
         end
         function nixos_deploy_nas
             nixos_fdeploy $HOME/Projects/nasty-config nasty homenas-deployer \
@@ -312,8 +315,8 @@ if command -q nix
             if test -f "$xilo_secrets"
                 set push_creds_mode agenix
             else if ls_creds | string match -q '*XILO_URL*' \
-                      and ls_creds | string match -q '*XILO_TOKEN*' \
-                      and ls_creds | string match -q '*XILO_CACHE*'
+                    and ls_creds | string match -q '*XILO_TOKEN*' \
+                    and ls_creds | string match -q '*XILO_CACHE*'
                 set push_creds_mode creds
             else
                 echo "Error: no xilo credentials found (checked $xilo_secrets and ls_creds)" >&2
