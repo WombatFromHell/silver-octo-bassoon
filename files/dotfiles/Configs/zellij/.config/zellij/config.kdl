@@ -3,7 +3,7 @@ keybinds clear-defaults=true {
     // autolock plugin handles TUI editors. Ctrl-Shift-G toggles locked mode.
     // everything behind Ctrl-s (tmux mode) except global navigation shortcuts.
     normal {
-        bind "Ctrl G" {
+        bind "Ctrl \\" {
             MessagePlugin "autolock" {
                 payload "toggle"
             }
@@ -13,7 +13,7 @@ keybinds clear-defaults=true {
         bind "Ctrl s" {
             Write 19
         }
-        bind "Ctrl G" {
+        bind "Ctrl \\" {
             MessagePlugin "autolock" {
                 payload "toggle"
             }
