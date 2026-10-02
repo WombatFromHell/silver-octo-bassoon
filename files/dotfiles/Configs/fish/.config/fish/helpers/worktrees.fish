@@ -28,22 +28,14 @@
 # -----------------------------------------------------------------------------
 
 function __gwt_list --description "List worktrees: path, commit, branch"
-    git worktree list 2>/dev/null | string match -r '.*' | while read -l line
-        if test -z "$line"
-            continue
-        end
-        # Parse: /path/to/worktree <sha> [branch]
-        set -l path (echo $line | awk '{print $1}')
-        set -l commit (echo $line | awk '{print $2}')
-        # Extract branch from brackets, or "(detached)" if none
-        set -l branch
-        if string match -q -- '*[*]*' "$line"
-            set branch (echo $line | awk '{print $3}' | string trim -c '[]')
-        else
-            set branch "(detached)"
-        end
-        printf '%s\t%s\t%s\n' "$path" "$commit" "$branch"
-    end
+    git worktree list 2>/dev/null | awk 'NF == 0 { next } {
+        path = $1; commit = $2; branch = "(detached)"
+        if (NF >= 3) {
+            if (substr($3, 1, 1) == "(") { branch = "(detached)" }
+            else { branch = $3; gsub(/[\[\]]/, "", branch) }
+        }
+        printf "%s\t%s\t%s\n", path, commit, branch
+    }'
 end
 
 function __gwt_resolve --description "Resolve a worktree name or path to a path"
@@ -96,29 +88,6 @@ function __gwt_get_branch --description "Get the branch name for a worktree path
         end
     end
     return 1
-end
-
-function __gwt_validate --description "Validate worktree exists and has no uncommitted changes"
-    if test (count $argv) -eq 0
-        echo "Error: No worktree specified" >&2
-        return 1
-    end
-    set -l target $argv[1]
-
-    if not test -d "$target"
-        echo "Error: Worktree '$target' does not exist" >&2
-        return 1
-    end
-
-    # Check for uncommitted changes
-    set -l git_status (git -C "$target" status --porcelain 2>/dev/null)
-    if test -n "$git_status"
-        echo "Error: Worktree '$target' has uncommitted changes" >&2
-        echo "  Stash or commit changes before removing" >&2
-        return 1
-    end
-
-    return 0
 end
 
 function __gwt_fzf_check --description "Check if fzf is available"
@@ -258,7 +227,17 @@ function gwtr --description "Remove a worktree: gwtr [-f] [-B] <name|path>"
     set -l wt_branch (__gwt_get_branch $path)
 
     if not set -q _flag_force
-        __gwt_validate $path; or return 1
+        if not test -d "$path"
+            echo "Error: Worktree '$path' does not exist" >&2
+            return 1
+        end
+        # Check for uncommitted changes
+        set -l git_status (git -C "$path" status --porcelain 2>/dev/null)
+        if test -n "$git_status"
+            echo "Error: Worktree '$path' has uncommitted changes" >&2
+            echo "  Stash or commit changes before removing" >&2
+            return 1
+        end
 
         # Confirm with fzf if available
         if __gwt_fzf_check
@@ -295,15 +274,10 @@ end
 # Merge Functions
 # -----------------------------------------------------------------------------
 
-function gwtm --description "Merge a worktree's branch into a target branch"
-    set -l worktree_name $argv[1]
-    if test -z "$worktree_name"
-        echo "Usage: gwtm <name|path> [target-branch]"
-        echo ""
-        echo "Merge the worktree's branch into target (default: main/master)"
-        return 1
-    end
-    set -l target_branch $argv[2]
+function __gwt_merge --description "Shared merge body: <regular|squash> <worktree> [target]"
+    set -l squash $argv[1]
+    set -l worktree_name $argv[2]
+    set -l target_branch $argv[3]
 
     # Find worktree
     set -l worktree_path (__gwt_resolve $worktree_name)
@@ -316,55 +290,78 @@ function gwtm --description "Merge a worktree's branch into a target branch"
         return 1
     end
 
-    # Determine target branch
+    # Determine target branch (regular merges prefer the current branch when it's a default)
     if test -z "$target_branch"
+        and test "$squash" != squash
         set -l current (git branch --show-current)
         if test "$current" = main -o "$current" = master -o "$current" = develop
             set target_branch $current
+        end
+    end
+    if test -z "$target_branch"
+        # Try main, then master
+        if git show-ref --verify --quiet refs/heads/main
+            set target_branch main
+        else if git show-ref --verify --quiet refs/heads/master
+            set target_branch master
         else
-            # Try main, then master
-            if git show-ref --verify --quiet refs/heads/main
-                set target_branch main
-            else if git show-ref --verify --quiet refs/heads/master
-                set target_branch master
-            else
-                echo "Error: No target branch specified and couldn't determine default"
-                echo "Usage: gwtm <name|path> <target-branch>"
-                return 1
-            end
+            echo "Error: No target branch specified and couldn't determine default"
+            return 1
         end
     end
 
-    # Check for uncommitted changes in worktree
-    set -l git_status (git -C "$worktree_path" status --porcelain 2>/dev/null)
-    if test -n "$git_status"
-        echo "Error: Worktree has uncommitted changes"
-        echo "  Commit or stash changes in '$worktree_path' before merging"
-        return 1
+    # Check for uncommitted changes in worktree (regular merges only)
+    if test "$squash" != squash
+        set -l git_status (git -C "$worktree_path" status --porcelain 2>/dev/null)
+        if test -n "$git_status"
+            echo "Error: Worktree has uncommitted changes"
+            echo "  Commit or stash changes in '$worktree_path' before merging"
+            return 1
+        end
     end
 
-    echo "Merging '$source_branch' (from $worktree_path) into '$target_branch'..."
+    if test "$squash" = squash
+        echo "Squash-merging '$source_branch' into '$target_branch'..."
+    else
+        echo "Merging '$source_branch' (from $worktree_path) into '$target_branch'..."
+    end
     echo ""
 
     # Switch to target branch
     git checkout "$target_branch" || return 1
 
     # Merge
-    git merge "$source_branch" -m "Merge branch '$source_branch' into '$target_branch'"
+    if test "$squash" = squash
+        git merge --squash "$source_branch" || return 1
+    else
+        git merge "$source_branch" -m "Merge branch '$source_branch' into '$target_branch'"
+        return $status
+    end
+end
 
-    if test $status -eq 0
+function gwtm --description "Merge a worktree's branch into a target branch"
+    set -l worktree_name $argv[1]
+    if test -z "$worktree_name"
+        echo "Usage: gwtm <name|path> [target-branch]"
         echo ""
-        echo (set_color green)"Merge successful!"(set_color normal)
+        echo "Merge the worktree's branch into target (default: main/master)"
+        return 1
+    end
 
-        # Offer to remove worktree
-        if __gwt_fzf_check
-            set -l cleanup (printf 'no\nyes' | fzf --prompt "Remove worktree '$worktree_path'? ")
-            if test "$cleanup" = yes
-                gwtr "$worktree_path"
-            end
-        else
-            echo "Tip: Run 'gwtr $worktree_path' to remove the worktree"
+    __gwt_merge regular $worktree_name $argv[2]
+    or return 1
+
+    echo ""
+    echo (set_color green)"Merge successful!"(set_color normal)
+
+    # Offer to remove worktree
+    if __gwt_fzf_check
+        set -l cleanup (printf 'no\nyes' | fzf --prompt "Remove worktree '$worktree_name'? ")
+        if test "$cleanup" = yes
+            gwtr "$worktree_name"
         end
+    else
+        echo "Tip: Run 'gwtr $worktree_name' to remove the worktree"
     end
 end
 
@@ -376,39 +373,9 @@ function gwtms --description "Squash-merge a worktree's branch into a target bra
         echo "Squash-merge the worktree's branch into target (default: main/master)"
         return 1
     end
-    set -l target_branch $argv[2]
 
-    # Find worktree
-    set -l worktree_path (__gwt_resolve $worktree_name)
+    __gwt_merge squash $worktree_name $argv[2]
     or return 1
-
-    # Get the worktree's branch
-    set -l source_branch (__gwt_get_branch $worktree_path)
-    if test -z "$source_branch" -o "$source_branch" = "(detached)"
-        echo "Error: Worktree is detached or branch unknown"
-        return 1
-    end
-
-    # Determine target branch
-    if test -z "$target_branch"
-        if git show-ref --verify --quiet refs/heads/main
-            set target_branch main
-        else if git show-ref --verify --quiet refs/heads/master
-            set target_branch master
-        else
-            echo "Error: No target branch specified and couldn't determine default"
-            return 1
-        end
-    end
-
-    echo "Squash-merging '$source_branch' into '$target_branch'..."
-    echo ""
-
-    # Switch to target branch
-    git checkout "$target_branch" || return 1
-
-    # Squash merge (no commit)
-    git merge --squash "$source_branch" || return 1
 
     echo ""
     echo (set_color yellow)"Squash merge staged. Review and commit manually."(set_color normal)

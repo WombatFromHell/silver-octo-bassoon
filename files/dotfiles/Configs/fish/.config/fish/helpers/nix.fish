@@ -37,6 +37,19 @@ if command -q nix
                 command $prog $NFB_COMMON_OPTS $args
             end
         end
+        function _nix_dry_run
+            # If --dry-run is in the extra args, evaluate via nix-eval-jobs and stop.
+            # Returns 1 when a dry-run was performed (or failed), 0 to continue.
+            # Usage: _nix_dry_run <attr> <name> [extra args...]
+            set -l args $argv[3..-1]
+            if not contains -- --dry-run $args
+                return 0
+            end
+            echo "Evaluating $argv[2] via nix-eval-jobs..."
+            nix_eval --flake $argv[1] (string match -v -- '--dry-run' $args)
+            or return 1
+            return 1
+        end
         function nix_build
             _nfb nix-fast-build $argv
         end
@@ -73,12 +86,8 @@ if command -q nix
             # Target attribute for HM closure
             set -l attr "$flake_path#homeConfigurations.\"$target\".activationPackage"
 
-            # Dry-Run (Parallel Evaluation Only via nix-eval-jobs)
-            if contains -- --dry-run $extra_args
-                set -l extra_args (string match -v -- '--dry-run' $extra_args)
-                echo "Evaluating $target via nix-eval-jobs..."
-                nix_eval --flake $attr $extra_args
-                or return 1
+            if _nix_dry_run $attr $target $extra_args
+                return 0
             end
 
             # Expand relative paths or environment variables safely
@@ -124,12 +133,8 @@ if command -q nix
 
             set -l attr "$flake_path#nixosConfigurations.\"$target_host\".config.system.build.toplevel"
 
-            # Dry-run: parallel evaluation only
-            if contains -- --dry-run $remaining
-                set -l extra_args (string match -v -- '--dry-run' $remaining)
-                echo "Evaluating $target_host via nix-eval-jobs..."
-                nix_eval --flake $attr $extra_args
-                or return 1
+            if _nix_dry_run $attr $target_host $remaining
+                return 0
             end
 
             # Parse action mode: 'switch' vs default 'build'
@@ -198,12 +203,7 @@ if command -q nix
 
             set -l attr "$flake_path#nixosConfigurations.\"$target_host\".config.system.build.toplevel"
 
-            # Dry-Run (Parallel Evaluation Only via nix-eval-jobs)
-            if contains -- --dry-run $_fdeploy_extra
-                set -l _fdeploy_extra (string match -v -- '--dry-run' $_fdeploy_extra)
-                echo "Evaluating $target_host via nix-eval-jobs..."
-                nix_eval --flake $attr $_fdeploy_extra
-                or return 1
+            if _nix_dry_run $attr $target_host $_fdeploy_extra
                 return 0
             end
 
@@ -327,13 +327,17 @@ if command -q nix
 
             if test -f "$xilo_secrets"
                 set push_creds_mode agenix
-            else if ls_creds | string match -q '*XILO_URL*' \
-                    and ls_creds | string match -q '*XILO_TOKEN*' \
-                    and ls_creds | string match -q '*XILO_CACHE*'
-                set push_creds_mode creds
             else
-                echo "Error: no xilo credentials found (checked $xilo_secrets and ls_creds)" >&2
-                return 1
+                set -l creds (ls_creds)
+                if test -n $creds \
+                        and string match -q '*XILO_URL*' $creds \
+                        and string match -q '*XILO_TOKEN*' $creds \
+                        and string match -q '*XILO_CACHE*' $creds
+                    set push_creds_mode creds
+                else
+                    echo "Error: no xilo credentials found (checked $xilo_secrets and ls_creds)" >&2
+                    return 1
+                end
             end
 
             set -l flake_target "$flake_path#$target"
@@ -395,8 +399,6 @@ if command -q nix
     #
     alias drb='sudo darwin-rebuild build --flake $FLAKE_ROOT'
     alias drs='sudo darwin-rebuild switch --flake $FLAKE_ROOT'
-    alias drls='sudo darwin-rebuild --list-generations'
-    alias drrm='sudo nix-env -p /nix/var/nix/profiles/system --delete-generations'
     #
     alias nhdb='nh darwin switch -n $FLAKE_ROOT'
     alias nhds='nh darwin switch $FLAKE_ROOT'

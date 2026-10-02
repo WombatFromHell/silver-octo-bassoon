@@ -24,9 +24,7 @@ function bootstrap_fisher
     return 0
 end
 
-function yz -d "Run yazi"
-    command yazi $argv
-end
+alias yz 'command yazi'
 alias ynz='env YAZI_NO_SESSION=1 yz'
 
 function yy -d "Yazi with cwd tracking on exit"
@@ -81,22 +79,15 @@ function snap_clean_full
 end
 
 function set_editor
-    if command -s edit.sh >/dev/null
-        set -gx EDITOR edit.sh
-        set -gx VISUAL edit.sh
-    else if command -s nvim >/dev/null
-        set -gx EDITOR nvim
-        set -gx VISUAL nvim
-    else if command -s hx >/dev/null
-        set -gx EDITOR hx
-        set -gx VISUAL hx
-    else if command -s nano >/dev/null
-        set -gx EDITOR nano
-        set -gx VISUAL nano
-    else
-        set --erase EDITOR >/dev/null
-        set --erase VISUAL >/dev/null
+    for e in edit.sh nvim hx nano
+        if command -s $e >/dev/null
+            set -gx EDITOR $e
+            set -gx VISUAL $e
+            return
+        end
     end
+    set --erase EDITOR >/dev/null
+    set --erase VISUAL >/dev/null
 end
 
 function setup_podman_sock
@@ -125,12 +116,8 @@ function ts_serve --description "Run a command while exposing a local service vi
         return 2
     end
 
-    # Stash for the cleanup handlers (functions don't close over locals)
-    set -g __ts_serve_port $_flag_port
-
     function _ts_serve_cleanup
         tailscale serve reset
-        set -e __ts_serve_port
         functions -e _ts_serve_cleanup _ts_serve_int _ts_serve_term
     end
 

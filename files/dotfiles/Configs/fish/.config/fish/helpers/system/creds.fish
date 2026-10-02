@@ -152,24 +152,9 @@ end
 #   and unlocks all of them in a single session.
 # ══════════════════════════════════════════════════════════════════
 function unlock_all_creds -d "Unlock all credentials found on disk"
-    set -l names
     # Parse first column from systemd-creds --user list, skip header.
     # Output includes .cred extension — strip it so unlock_creds can append it.
-    for line in (string split '\n' (systemd-creds --user list 2>/dev/null))
-        if string match -q 'NAME*' $line
-            continue
-        end
-        set -l name (string replace -r '\s+' ' ' $line | string split ' ')[1]
-        # Skip empty lines (e.g. trailing newline in output)
-        if test -z "$name"
-            continue
-        end
-        # Strip trailing .cred suffix
-        if string match -q '*.cred' $name
-            set name (string replace -r '\.cred$' '' $name)
-        end
-        set -a names $name
-    end
+    set -l names (systemd-creds --user list 2>/dev/null | awk 'NR > 1 && $1 != "" { sub(/\.cred$/, "", $1); print $1 }')
 
     if test (count $names) -eq 0
         echo "ℹ  No credentials found on disk" >&2

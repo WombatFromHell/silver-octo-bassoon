@@ -142,20 +142,14 @@ end
 # Key Bindings
 # =============================================================================
 
-function __systemd_fzf_sls_handler
+function __systemd_fzf_handler
     commandline -f execute
-    sls
+    $argv[1]
     commandline -f repaint
 end
 
-function __systemd_fzf_uls_handler
-    commandline -f execute
-    uls
-    commandline -f repaint
-end
-
-bind ctrl-alt-y __systemd_fzf_sls_handler
-bind ctrl-alt-u __systemd_fzf_uls_handler
+bind ctrl-alt-y '__systemd_fzf_handler sls'
+bind ctrl-alt-u '__systemd_fzf_handler uls'
 
 # =============================================================================
 # Completions (minimal - functions are self-documenting)

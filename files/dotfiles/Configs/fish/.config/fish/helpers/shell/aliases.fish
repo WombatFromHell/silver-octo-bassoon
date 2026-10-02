@@ -3,7 +3,6 @@ if command -q eza
     alias l="eza $EZA_STANDARD_OPTIONS"
     alias la="eza $EZA_STANDARD_OPTIONS --all"
     alias ll="eza $EZA_STANDARD_OPTIONS --long"
-    alias ls="eza $EZA_STANDARD_OPTIONS"
     alias lt="eza $EZA_STANDARD_OPTIONS --tree"
     alias llt="eza $EZA_STANDARD_OPTIONS --long --tree"
     alias treed="eza $EZA_STANDARD_OPTIONS -DTA"
@@ -17,7 +16,6 @@ if command -q rsync
     alias _rsyncd='_rsync --dry-run'
     alias rsud='_rsync --delete'
     alias rsud_d='_rsyncd --delete'
-    alias rsu='_rsync'
     alias rsu_d='_rsyncd'
     alias rsfd='_rsync --delete --exclude="*/"'
     alias rsfd_d='_rsyncd --delete --exclude="*/"'

@@ -4,9 +4,6 @@ function llm-rocm-env
     set -gx LLM_IMAGE "ghcr.io/stew675/llama-cpp-rdna-boosts:server-rocm-10.0"
     # set -gx LLM_IMAGE "localhost/llama.cpp:server-rocm"
 end
-function start-llm
-    /var/mnt/data1/vllm/llm.sh start
-end
 function _llm_unrocm
     set -e MODELS_PATH LLM_IMAGE
 end
@@ -19,14 +16,11 @@ function pull-llm
         /var/mnt/data1/vllm/llm.sh pull
     end
 end
-function stop-llm
-    /var/mnt/data1/vllm/llm.sh stop
-end
 function start-with-llm
-    start-llm
+    /var/mnt/data1/vllm/llm.sh start
     if set -q argv[1]
         $argv
-        stop-llm
+        /var/mnt/data1/vllm/llm.sh stop
     end
 end
 function llm-coder
@@ -51,7 +45,7 @@ function llm-coder
     test $mode = rocm; and llm-rocm-env
 
     if test $serve = 1
-        start-llm
+        /var/mnt/data1/vllm/llm.sh start
         test $mode = rocm; and _llm_unrocm
         return
     end
