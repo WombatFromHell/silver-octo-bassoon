@@ -8,10 +8,13 @@ if command -q nix
     if test -r "$NIX_DAEMON_FISH_SRC"
         source "$NIX_DAEMON_FISH_SRC"
     end
-    set -l NIX_SESSION_VARS $HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
-    if test -r "$NIX_SESSION_VARS"
-        fenv source "$NIX_SESSION_VARS"
+    function _nix_load_session_vars
+        set -l vars $HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
+        if test -r "$vars"
+            fenv source "$vars"
+        end
     end
+    _nix_load_session_vars
 
     if command -q nix-fast-build
         set -g NIX_MAX_JOBS (nproc | awk '{ j = int($1 * 0.75); print (j > 1 ? j : 1) }')
@@ -82,8 +85,15 @@ if command -q nix
             nix_build \
                 --flake $attr \
                 --out-link /tmp/hm-result $extra_args
-            # --option extra-substituters "https://xilo.nanogoblin.duckdns.org/c/default/xilopkgs"
             and /tmp/hm-result-/activate
+        end
+        function _nix_switch_bin
+            # Resolve a closure's switch binary (switch-to-configuration, fallback switch).
+            set -l bin "$argv[1]/bin/switch-to-configuration"
+            if not test -x "$bin"
+                set bin "$argv[1]/bin/switch"
+            end
+            echo $bin
         end
         function _nix_remote_deploy
             # Push a closure to a remote host and activate it.
@@ -92,10 +102,7 @@ if command -q nix
             set -l target $argv[2]
             set -l action $argv[3]
 
-            set -l switch_bin "$closure/bin/switch-to-configuration"
-            if not test -x "$switch_bin"
-                set switch_bin "$closure/bin/switch"
-            end
+            set -l switch_bin (_nix_switch_bin $closure)
 
             echo "Deploying to $target (action: $action)..."
             command nix copy --to "ssh://$target" $closure
@@ -162,10 +169,7 @@ if command -q nix
                 _nix_remote_deploy $build_out $remote_target switch
             else
                 echo "Switching local NixOS configuration..."
-                set -l switch_bin "$build_out/bin/switch-to-configuration"
-                if not test -x "$switch_bin"
-                    set switch_bin "$build_out/bin/switch"
-                end
+                set -l switch_bin (_nix_switch_bin $build_out)
                 command sudo nix-env --profile /nix/var/nix/profiles/system --set $build_out
                 and command sudo $switch_bin switch
             end
@@ -194,6 +198,15 @@ if command -q nix
 
             set -l attr "$flake_path#nixosConfigurations.\"$target_host\".config.system.build.toplevel"
 
+            # Dry-Run (Parallel Evaluation Only via nix-eval-jobs)
+            if contains -- --dry-run $_fdeploy_extra
+                set -l _fdeploy_extra (string match -v -- '--dry-run' $_fdeploy_extra)
+                echo "Evaluating $target_host via nix-eval-jobs..."
+                nix_eval --flake $attr $_fdeploy_extra
+                or return 1
+                return 0
+            end
+
             rm -rf /tmp/nixos-deploy-result
 
             echo "Building NixOS closure locally via nix-fast-build..."
@@ -212,10 +225,13 @@ if command -q nix
             and echo "  Manual switch on target: ssh $remote_target sudo $build_out/bin/switch-to-configuration switch"
         end
         function nixos_deploy_nas
-            nixos_fdeploy $HOME/Projects/nasty-config nasty homenas-deployer \
-                --option extra-substituters "https://nasty.cachix.org https://xilo.nanogoblin.duckdns.org/c/default/xilopkgs" \
-                --option extra-trusted-public-keys "nasty.cachix.org-1:s+X88yw6+asphCNphTId/RQZHfmDF4fQ0uyzEz5SxLc=" \
-                $argv
+            set -l args $argv
+            set args (string match -v -- --with-nasty $args)
+            set args $args \
+                --option extra-substituters "https://nasty.cachix.org" \
+                --option extra-trusted-public-keys "nasty.cachix.org-1:s+X88yw6+asphCNphTId/RQZHfmDF4fQ0uyzEz5SxLc="
+
+            nixos_fdeploy $HOME/Projects/nasty-config nasty homenas-deployer $args
         end
     end
 
@@ -248,10 +264,7 @@ if command -q nix
             nix run github:nix-community/home-manager -- init
             nix run github:nix-community/home-manager -- switch
         end
-        set -l NIX_SESSION_VARS $HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
-        if test -r "$NIX_SESSION_VARS"
-            fenv source "$NIX_SESSION_VARS"
-        end
+        _nix_load_session_vars
     end
 
     if command -q nh
@@ -392,7 +405,7 @@ if command -q nix
     #
     alias nix_hist='sudo -i nix profile history --profile /nix/var/nix/profiles/system'
     alias nix_rb='sudo -i nix profile rollback --profile /nix/var/nix/profile/system'
-    alias nix_act='sudo /nix/var/nix/profile/system/bin/switch-to-configuration switch'
+    alias nix_act='sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch'
     alias nix_roots='nix-store --gc --print-roots'
     alias nix_flake_paths='nix path-info --derivation --recursive'
     #
