@@ -5,11 +5,21 @@
 exec 9>/tmp/tmux-statusbar.lock
 flock -n 9 || exit 0
 while :; do
-  gpu=0; vram=0
+  # Liveness: exit (releasing the flock) when our server is gone, e.g. after
+  # a server restart, so the new server can spawn a fresh loop.
+  tmux show-options -g >/dev/null 2>&1 || exit 0
+
+  # Fast short-circuit: only fetch when a usable GPU tool exists; unusable
+  # output leaves the vars unset so the status bar hides its GPU block.
+  # Provider precedence: NVIDIA -> AMD -> Intel dGPU (xpu-smi) -> iGPU
+  # (intel_gpu_top).
+  gpu=; vram=
   if command -v nvidia-smi >/dev/null 2>&1; then
-    read -r util used total <<<"$(nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits | head -1)"
-    [[ $util =~ ^[0-9]+$ ]] && gpu=$util
-    [[ $total =~ ^[0-9]+$ ]] && (( total > 0 )) && vram=$(( used * 100 / total ))
+    IFS=', ' read -r util used total <<<"$(nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null | head -1)"
+    if [[ $util =~ ^[0-9]+$ ]] && [[ $used =~ ^[0-9]+$ ]] && [[ $total =~ ^[0-9]+$ ]] && (( total > 0 )); then
+      gpu=$util
+      vram=$(( used * 100 / total ))
+    fi
   elif command -v amd-smi >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
     # AMD: pick the largest-VRAM GPU (the dGPU) -> gfx_activity %, VRAM %
     out=$(amd-smi metric -u -m --json 2>/dev/null | jq -r '
@@ -21,8 +31,25 @@ while :; do
       | @csv' 2>/dev/null)
     gpu=${out%%,*}
     vram=${out##*,}
-    [[ $gpu =~ ^[0-9]+$ ]] || gpu=0
-    [[ $vram =~ ^[0-9]+$ ]] || vram=0
+    [[ $gpu =~ ^[0-9]+$ ]] && [[ $vram =~ ^[0-9]+$ ]] || { gpu=; vram=; }
+  elif command -v xpu-smi >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    # Intel discrete GPU (Arc). xpu-smi is the Intel 700-series successor
+    # to intel_gpu_top; metrics live in device_level[] keyed by
+    # metrics_type (key names verified against xpu-smi upstream source).
+    stats=$(xpu-smi stats -j 2>/dev/null | head -1)
+    gpu=$(printf '%s' "$stats" | jq -r \
+      '[.device_level[]? | select(.metrics_type == "XPUM_STATS_GPU_UTILIZATION") | (.value | floor)] | .[0] // empty' 2>/dev/null)
+    vram=$(printf '%s' "$stats" | jq -r \
+      '[.device_level[]? | select(.metrics_type == "XPUM_STATS_MEMORY_UTILIZATION") | (.value | floor)] | .[0] // empty' 2>/dev/null)
+    [[ $gpu =~ ^[0-9]+$ ]] || gpu=
+    [[ $vram =~ ^[0-9]+$ ]] || vram=
+  elif command -v intel_gpu_top >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    # Intel iGPU. -J = JSON, -n 1 = one iteration. Utilization is the max
+    # busy across all engines; iGPUs expose no discrete VRAM figure, so
+    # vram stays empty and the statusbar hides the VRAM sub-block.
+    gpu=$(intel_gpu_top -J -n 1 2>/dev/null \
+      | jq -s '([.[]? | .engines? // {} | .[]? | .busy?]) | (max // empty | floor)' 2>/dev/null)
+    [[ $gpu =~ ^[0-9]+$ ]] || gpu=
   fi
 
   read -r _ u1 n1 s1 i1 w1 _ < /proc/stat
@@ -37,8 +64,17 @@ while :; do
   ma=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)
   ram=$(( (mt - ma) * 100 / mt ))
 
-  tmux set-environment -g GPU_UTIL "$gpu"
-  tmux set-environment -g VRAM "$vram"
+  if [[ $gpu =~ ^[0-9]+$ ]]; then
+    tmux set-environment -g GPU_UTIL "$gpu"
+    if [[ $vram =~ ^[0-9]+$ ]]; then
+      tmux set-environment -g VRAM "$vram"
+    else
+      tmux set-environment -g -u VRAM
+    fi
+  else
+    tmux set-environment -g -u GPU_UTIL
+    tmux set-environment -g -u VRAM
+  fi
   tmux set-environment -g CPU "$cpu"
   tmux set-environment -g RAM "$ram"
   sleep 2
