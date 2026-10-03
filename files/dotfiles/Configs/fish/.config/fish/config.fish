@@ -22,8 +22,8 @@ if status is-interactive
     setup_podman_sock
 
     set -g TMUX_ENABLED true
+    set -g TMUX_AUTO_ATTACH true
     set -g ZELLIJ_ENABLED true
-    set -g ZELLIJ_AUTO_ATTACH true
     set -g HERDR_ENABLED true
 
     set -x XDG_DATA_HOME $HOME/.local/share

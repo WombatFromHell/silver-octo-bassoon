@@ -27,9 +27,10 @@ if command -q nix
             --option extra-experimental-features "nix-command flakes eval-cache"
 
         function _nfb
-            # Run a nix-fast-build program with common opts, honoring --sudo
+            # Run a nix-fast-build program with common opts, honoring --sudo.
+            # --with-xilo is a helper-level flag: stripped here, acted on by callers.
             set -l prog $argv[1]
-            set -l args $argv[2..-1]
+            set -l args (string match -v -- --with-xilo $argv[2..-1])
             if contains -- --sudo $args
                 set args (string match -v -- --sudo $args)
                 command sudo -i $prog $NFB_COMMON_OPTS $args
@@ -39,7 +40,8 @@ if command -q nix
         end
         function _nix_dry_run
             # If --dry-run is in the extra args, evaluate via nix-eval-jobs and stop.
-            # Returns 1 when a dry-run was performed (or failed), 0 to continue.
+            # Returns 0 to continue (no --dry-run). When a dry-run is requested,
+            # returns 1 on a successful evaluation and 2 on a failed one.
             # Usage: _nix_dry_run <attr> <name> [extra args...]
             set -l args $argv[3..-1]
             if not contains -- --dry-run $args
@@ -47,7 +49,7 @@ if command -q nix
             end
             echo "Evaluating $argv[2] via nix-eval-jobs..."
             nix_eval --flake $argv[1] (string match -v -- '--dry-run' $args)
-            or return 1
+            or return 2
             return 1
         end
         function nix_build
@@ -75,7 +77,7 @@ if command -q nix
         function hm_fswitch
             if test (count $argv) -lt 2
                 echo "Error: Missing required arguments."
-                echo "Usage: hm_fswitch <flake-path> <user@host> [extra nix-fast-build args]"
+                echo "Usage: hm_fswitch <flake-path> <user@host> [--with-xilo] [extra nix-fast-build args]"
                 return 1
             end
 
@@ -86,15 +88,19 @@ if command -q nix
             # Target attribute for HM closure
             set -l attr "$flake_path#homeConfigurations.\"$target\".activationPackage"
 
-            if _nix_dry_run $attr $target $extra_args
-                return 0
-            end
+            _nix_dry_run $attr $target $extra_args
+            or return (math $status - 1)
 
             # Expand relative paths or environment variables safely
             nix_build \
                 --flake $attr \
                 --out-link /tmp/hm-result $extra_args
+            or return $status
             and /tmp/hm-result-/activate
+            or return $status
+            if contains -- --with-xilo $extra_args
+                xilo-push-hm
+            end
         end
         function _nix_switch_bin
             # Resolve a closure's switch binary (switch-to-configuration, fallback switch).
@@ -133,9 +139,8 @@ if command -q nix
 
             set -l attr "$flake_path#nixosConfigurations.\"$target_host\".config.system.build.toplevel"
 
-            if _nix_dry_run $attr $target_host $remaining
-                return 0
-            end
+            _nix_dry_run $attr $target_host $remaining
+            or return (math $status - 1)
 
             # Parse action mode: 'switch' vs default 'build'
             set -l do_switch false
@@ -203,9 +208,8 @@ if command -q nix
 
             set -l attr "$flake_path#nixosConfigurations.\"$target_host\".config.system.build.toplevel"
 
-            if _nix_dry_run $attr $target_host $_fdeploy_extra
-                return 0
-            end
+            _nix_dry_run $attr $target_host $_fdeploy_extra
+            or return (math $status - 1)
 
             rm -rf /tmp/nixos-deploy-result
 
@@ -363,7 +367,8 @@ if command -q nix
             # Pushes the last hm_fswitch build (out-link: /tmp/hm-result)
             if test -r /tmp/hm-result-
                 unlock_creds XILO_TOKEN XILO_CACHE XILO_URL
-                xilo push /tmp/hm-result-
+                or return 1
+                xilo push $XILO_CACHE /tmp/hm-result-
             end
         end
     end

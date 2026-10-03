@@ -150,12 +150,20 @@ function lactd_uv
     flatpak run io.github.ilya_zlobintsev.LACT cli profile set UV
 end
 function fish_title
-    # Get the current working directory
-    set current_dir (prompt_pwd --dir-length 2 --full-length-dirs=1)
-    # Get the username and hostname
-    set user_host (whoami)@(hostname)
-    # Combine them to form the desired title
-    echo "$user_host:$current_dir"
+    set -l path (_abbr_path $PWD)
+    if test -n "$TMUX"
+        # Inside tmux: show the abbreviated path as the title.
+        # Apps that set their own title will override this.
+        # If @title_prefix is set, prepend 'user@host - '.
+        set -l prefix (tmux show-options -g -v @title_prefix 2>/dev/null | cut -d' ' -f2)
+        if test -n "$prefix" -a "$prefix" != ""
+            echo (whoami)@(hostname) - $path
+        else
+            echo $path
+        end
+    else
+        echo (whoami)@(hostname):$path
+    end
 end
 
 function clean_fish

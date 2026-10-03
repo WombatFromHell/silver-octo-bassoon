@@ -1,4 +1,4 @@
-function llm-rocm-env
+function llm_rocm_env
     # -gx: global+exported so child processes (llm.sh) see it from the caller's scope
     set -gx MODELS_PATH "/var/mnt/data1/vllm/models/models-rocm.ini"
     set -gx LLM_IMAGE "ghcr.io/stew675/llama-cpp-rdna-boosts:server-rocm-10.0"
@@ -7,20 +7,22 @@ end
 function _llm_unrocm
     set -e MODELS_PATH LLM_IMAGE
 end
-function pull-llm
+function pull_llm
     if contains -- --rocm $argv
-        llm-rocm-env
+        llm_rocm_env
         /var/mnt/data1/vllm/llm.sh pull
         _llm_unrocm
     else
         /var/mnt/data1/vllm/llm.sh pull
     end
 end
-function start-with-llm
-    /var/mnt/data1/vllm/llm.sh start
+alias start_llm="/var/mnt/data1/vllm/llm.sh start"
+alias stop_llm="/var/mnt/data1/vllm/llm.sh stop"
+function start_with_llm
+    start_llm
     if set -q argv[1]
         $argv
-        /var/mnt/data1/vllm/llm.sh stop
+        stop_llm
     end
 end
 function llm-coder
@@ -42,10 +44,10 @@ function llm-coder
         end
     end
 
-    test $mode = rocm; and llm-rocm-env
+    test $mode = rocm; and llm_rocm_env
 
     if test $serve = 1
-        /var/mnt/data1/vllm/llm.sh start
+        start_llm
         test $mode = rocm; and _llm_unrocm
         return
     end
@@ -53,10 +55,10 @@ function llm-coder
     set -l pi_path (command -s pi)
 
     if set -q rest[1]
-        start-with-llm $rest
+        start_with_llm $rest
     else if test -n "$pi_path" -a -x "$pi_path"
         test $do_update -eq 1; and command pi update --extensions
-        start-with-llm $pi_path
+        start_with_llm $pi_path
     end
     test $mode = rocm; and _llm_unrocm
 end
