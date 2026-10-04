@@ -242,7 +242,7 @@ mode_has_behavior() {
   shift
   local -a behavior_list=("$@")
   for m in "${behavior_list[@]}"; do
-    [[ "$m" == "$mode" ]] && return 0
+    [[ $m == "$mode" ]] && return 0
   done
   return 1
 }
@@ -255,9 +255,9 @@ apply_defaults() {
   fi
 
   # Auto-limit to current host (unless explicitly overridden)
-  if [[ "$LIMIT_EXPLICIT" == "false" ]] && mode_has_behavior "$MODE" "${MODES_AUTO_LIMIT[@]}"; then
+  if [[ $LIMIT_EXPLICIT == "false" ]] && mode_has_behavior "$MODE" "${MODES_AUTO_LIMIT[@]}"; then
     LIMIT_HOST=$(hostname)
-    if [[ "$MODE" == "deploy" ]]; then
+    if [[ $MODE == "deploy" ]]; then
       echo -e "${YELLOW}Auto-limiting to current host: $LIMIT_HOST${NC}"
       echo -e "${YELLOW}Use --all-hosts to run on all inventory hosts${NC}"
       echo ""
@@ -265,8 +265,8 @@ apply_defaults() {
   fi
 
   # Apply limit and verbosity
-  if [[ -n "$LIMIT_HOST" ]]; then ANSIBLE_ARGS+=("--limit" "$LIMIT_HOST"); fi
-  if [[ -n "$VERBOSE" ]]; then ANSIBLE_ARGS+=("-$VERBOSE"); fi
+  if [[ -n $LIMIT_HOST ]]; then ANSIBLE_ARGS+=("--limit" "$LIMIT_HOST"); fi
+  if [[ -n $VERBOSE ]]; then ANSIBLE_ARGS+=("-$VERBOSE"); fi
 }
 
 # ============================================================================
@@ -280,11 +280,11 @@ extract_all_tags() {
 
 classify_tag() {
   local tag="$1"
-  for t in "${CORE_TAGS[@]}"; do [[ "$t" == "$tag" ]] && {
+  for t in "${CORE_TAGS[@]}"; do [[ $t == "$tag" ]] && {
     echo "core"
     return
   }; done
-  for t in "${ROLE_TAGS[@]}"; do [[ "$t" == "$tag" ]] && {
+  for t in "${ROLE_TAGS[@]}"; do [[ $t == "$tag" ]] && {
     echo "role"
     return
   }; done
@@ -295,7 +295,7 @@ display_grouped_tags() {
   local all_tags
   all_tags=$(extract_all_tags)
 
-  if [[ -z "$all_tags" ]]; then
+  if [[ -z $all_tags ]]; then
     print_warning "No tags found"
     return
   fi
@@ -303,7 +303,7 @@ display_grouped_tags() {
   # Classify tags into arrays
   local core_tags=() role_tags=() other_tags=()
   while IFS= read -r tag; do
-    [[ -z "$tag" ]] && continue
+    [[ -z $tag ]] && continue
     case "$(classify_tag "$tag")" in
     core) core_tags+=("$tag") ;;
     role) role_tags+=("$tag") ;;
@@ -323,9 +323,9 @@ display_grouped_tags() {
 
 run_test() {
   local test_target="all"
-  [[ -n "$ROLE" ]] && test_target="$ROLE"
+  [[ -n $ROLE ]] && test_target="$ROLE"
 
-  print_header "$([[ "$test_target" == "all" ]] && echo "Running all tests" || echo "Testing role: $test_target")"
+  print_header "$([[ $test_target == "all" ]] && echo "Running all tests" || echo "Testing role: $test_target")"
   exec "$SCRIPT_DIR/test.sh" "$test_target" "${ANSIBLE_ARGS[@]}"
 }
 
@@ -342,7 +342,7 @@ run_preflight() { run_playbook "$PLAYS_DIR/preflight.yml"; }
 run_verify() { run_playbook "$PLAYS_DIR/verify.yml"; }
 
 run_role() {
-  [[ -z "$ROLE" ]] && {
+  [[ -z $ROLE ]] && {
     print_error "Role name required. Use --role NAME"
     exit 1
   }
@@ -350,7 +350,7 @@ run_role() {
   print_header "Running role: $ROLE"
 
   local role_play="$PLAYS_DIR/roles/${ROLE}-setup.yml"
-  if [[ -f "$role_play" ]]; then
+  if [[ -f $role_play ]]; then
     run_playbook "$role_play"
   else
     print_warning "No role-specific play found, running full site.yml with role tag"
@@ -377,10 +377,10 @@ run_list() {
   print_header "Available Roles"
   echo ""
 
-  if [[ -d "$ROLES_DIR" ]]; then
+  if [[ -d $ROLES_DIR ]]; then
     echo -e "${GREEN}Roles:${NC}"
     for role_dir in "$ROLES_DIR"/*/; do
-      [[ -d "$role_dir" ]] && print_bullet "$(basename "$role_dir")"
+      [[ -d $role_dir ]] && print_bullet "$(basename "$role_dir")"
     done
   else
     print_warning "No roles directory found at: $ROLES_DIR"
