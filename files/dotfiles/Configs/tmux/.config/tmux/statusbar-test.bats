@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# statusbar-test.bats — red/green suite for statusbar.sh + statusbar-lib.sh.
+# statusbar-test.bats — red/green suite for statusbar.sh + statusbar-lib.bash.
 #
 # Unit tier: sources the pure lib, feeds fixture GPU/proc inputs, asserts
 # parsed gpu/vram/cpu/ram. No tmux server, no sleeps.
@@ -15,22 +15,18 @@
 #     the loop spins fast and tests poll for state instead of sleeping
 #   * no fixed /tmp paths -> safe under `bats --jobs N`
 
+load test_helper
+
 setup() {
-  unset TMUX TMUX_PANE
-  DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)"
-  LIB="$DIR/statusbar-lib.sh"
-  REAL_SLEEP="$(type -P sleep)"
-  REAL_TMUX="$(type -P tmux)"
-  T=""
-  SOCK=""
+  DIR="$BATS_TEST_DIRNAME"
+  LIB="$DIR/statusbar-lib.bash"
+  REAL_SLEEP="$(type -P sleep)" # for the consumer's sleep shim
   SCRIPT_PID=""
 }
 
 teardown() {
   if [[ -n $SCRIPT_PID ]]; then kill_tree "$SCRIPT_PID" 2>/dev/null; fi
-  if [[ -n $SOCK ]]; then tmux kill-server 2>/dev/null; fi # scratch socket only
-  if [[ -n $T ]]; then rm -rf "$T"; fi
-  return 0
+  stop_scratch_server # also removes $T in the unit tier (no server)
 }
 
 kill_tree() {
@@ -42,17 +38,6 @@ kill_tree() {
 }
 
 # --- helpers -------------------------------------------------------------------
-
-ensure_tmp() { [[ -n $T ]] || T="$(mktemp -d /tmp/sbt-XXXXXX)"; }
-
-# The only door to tmux. Always the scratch socket, never the user's config.
-tmux() {
-  [[ -n $SOCK ]] || {
-    echo "refusing to run tmux: no scratch socket" >&2
-    return 99
-  }
-  "$REAL_TMUX" -f /dev/null -S "$SOCK" "$@"
-}
 
 # make_mock NAME CONTENT -> executable in $T/mock, alongside the few real
 # utilities the lib needs. Call start_server first if CONTENT references $T.
@@ -77,15 +62,6 @@ call_gpu() {
 }
 
 # Poll helpers: replace every fixed sleep.
-wait_until() { # seconds cmd [args...]
-  local n=$(($1 * 20)) i
-  shift
-  for ((i = 0; i < n; i++)); do
-    "$@" && return 0
-    "$REAL_SLEEP" 0.05
-  done
-  return 1
-}
 env_var() { tmux show-environment -g "$1" 2>/dev/null | sed -n "s/^$1=//p"; }
 env_is() { [[ "$(env_var "$1")" =~ $2 ]]; }
 wait_env() { wait_until 5 env_is "$@"; } # VAR REGEX
@@ -96,17 +72,13 @@ first_sleep_arg() { head -n1 "$T/sleep.log"; }
 
 # --- integration-tier server ---------------------------------------------------
 
+# Shared scratch server, plus the minimal PATH dir the consumer runs under.
 start_server() {
-  ensure_tmp
-  SOCK="$T/sock"
-  export TMUX_TMPDIR="$T" HOME="$T/home" XDG_CONFIG_HOME="$T/home/.config"
-  mkdir -p "$HOME" "$T/bin"
+  start_scratch_server
+  mkdir -p "$T/bin"
   ln -sf "$REAL_TMUX" "$T/bin/tmux"
   local b
-  for b in jq awk sleep head cat bash flock timeout; do
-    ln -sf "$(type -P "$b")" "$T/bin/$b"
-  done
-  tmux new-session -d -s base
+  for b in jq awk sleep head cat bash flock timeout; do ln -sf "$(type -P "$b")" "$T/bin/$b"; done
 }
 
 # start_consumer [ENV=VAL ...]
@@ -120,12 +92,6 @@ exec '$REAL_SLEEP' 0.05"
   SCRIPT_PID=$!
 }
 
-# Copy the real conf verbatim into the scratch dir (so #{d:current_file} and
-# ~ paths resolve to nothing), then source it on the scratch server.
-load_conf() {
-  cp "$DIR/tmux.conf" "$T/tmux.conf"
-  tmux source-file "$T/tmux.conf"
-}
 status_right() { tmux display -p -t base -F '#{T;=/60:status-right}'; }
 
 # ---------------------------------------------------------------------------

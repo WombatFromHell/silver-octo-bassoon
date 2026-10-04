@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # statusbar.sh — tmux-server consumer: refreshes GPU/CPU/RAM into global env
-# vars for the status bar. All parsing/computation lives in statusbar-lib.sh
+# vars for the status bar. All parsing/computation lives in statusbar-lib.bash
 # (unit-tested in isolation); this file only owns the flock, liveness, loop,
 # /proc reads, and the tmux set-environment writes.
 # Started from tmux.conf via `run -b`; flock-guarded so config reloads
@@ -9,7 +9,7 @@
 # STATUSBAR_REFRESH — seconds between updates (default 3), tunable via
 # env, e.g. `run -b 'STATUSBAR_REFRESH=5 bash ~/.config/tmux/statusbar.sh'`.
 # CPU% is the average over that window (delta between iterations).
-source "${BASH_SOURCE[0]%/*}/statusbar-lib.sh"
+source "${BASH_SOURCE[0]%/*}/statusbar-lib.bash"
 
 refresh_interval "${STATUSBAR_REFRESH:-3}"
 

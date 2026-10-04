@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# statusbar-lib.sh — pure parse/compute layer for the tmux status bar.
+# statusbar-lib.bash — pure parse/compute layer for the tmux status bar.
 # No tmux, no loop, no sleep, no /proc I/O: every function takes its input
 # (a tool's raw output or a proc snapshot) and fills the gpu/vram/cpu/ram
 # globals. Sourced by statusbar.sh (the consumer) and by the bats suite
