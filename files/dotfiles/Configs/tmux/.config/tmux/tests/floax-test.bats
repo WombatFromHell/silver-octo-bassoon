@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # floax-test.bats — tab-bar logic of the floax pseudo-floating popup
-# (section 5 of tmux.conf), on a throwaway server (see test_helper.bash).
+# (section 5, conf.d/05-floax.conf), on a throwaway server (see test_helper.bash).
 #
 # Each test starts from a fresh server + the real conf and builds its own
 # floax session. State is awaited with wait_until, never slept for.

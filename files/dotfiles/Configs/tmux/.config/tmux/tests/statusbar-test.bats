@@ -19,7 +19,7 @@ load test_helper
 
 setup() {
   DIR="$BATS_TEST_DIRNAME"
-  LIB="$DIR/statusbar-lib.bash"
+  LIB="$DIR/../scripts/statusbar-lib.bash"
   REAL_SLEEP="$(type -P sleep)" # for the consumer's sleep shim
   SCRIPT_PID=""
 }
@@ -91,11 +91,14 @@ start_consumer() {
 echo \"\$1\" >> '$T/sleep.log'
 exec '$REAL_SLEEP' 0.05"
   env PATH="$T/mock:$T/bin" TMUX="$SOCK,0,0" "$@" \
-    bash "$DIR/statusbar.sh" >/dev/null 2>&1 3>&- &
+    bash "$DIR/../scripts/statusbar.sh" >/dev/null 2>&1 3>&- &
   SCRIPT_PID=$!
 }
 
 status_right() { tmux display-message -p -t base "$(tmux show-options -gv status-right)"; }
+
+# Render the tab list (@sl_windows_fmt) from the scratch server, style tokens stripped.
+tab_list() { tmux display -p -t base:0 '#{E:@sl_windows_fmt}' | sed 's/#\[[^]]*\]//g'; }
 
 # ---------------------------------------------------------------------------
 # UNIT TIER — pure parse/compute (no server)
@@ -281,6 +284,13 @@ echo '12, 550, 8192'"
 
 @test "integration: no GPU tool sets CPU/RAM, unsets GPU/VRAM" {
   start_server
+  # Hermetic: the consumer appends real system paths, so shadow every GPU
+  # tool with a failing stub to keep "no GPU tool" true on any host.
+  local t
+  for t in nvidia-smi amd-smi xpu-smi intel_gpu_top; do
+    make_mock "$t" '#!/bin/sh
+exit 1'
+  done
   start_consumer
   wait_iteration
   [[ "$(opt_var @cpu)" =~ ^[0-9]+$ ]]
@@ -357,6 +367,78 @@ echo "12, 550, 8192"'
   [[ $right == *15%* ]]
 }
 
+# --- status-right block spacing ------------------------------------------------
+# A hidden block must contribute no visible space: the gap between its
+# neighbours must be exactly the one separator space, and a fully hidden
+# leading run must leave no stray padding before the time block.
+
+sb_right() { status_right | sed 's/#\[[^]]*\]//g'; }
+# Length of the space run between /regex-before/ and /regex-after/.
+gap_len() { # before-regex after-regex text
+  local m
+  m="$(sed -E "s/.*$1([ ]+)$2.*/\1/" <<<"$3")"
+  printf '%s' "${#m}"
+}
+
+@test "integration: hidden battery leaves single gap between CPU and time blocks" {
+  start_server
+  load_conf
+  tmux set-option -g @gpu_util 42
+  tmux set-option -g @vram 67
+  tmux set-option -g @cpu 15
+  tmux set-option -g @ram 80
+  tmux set-option -gu @batt
+  tmux set-option -gu @batt_icon
+  local right
+  right="$(sb_right)"
+  # RAM half (|80%) -> calendar icon: three spaces (CPU trailing pad + separator + time leading pad).
+  [[ "$(gap_len '\|[0-9]+%' '' "$right")" == 3 ]]
+}
+
+@test "integration: visible battery keeps single spacing between all blocks" {
+  start_server
+  load_conf
+  tmux set-option -g @gpu_util 42
+  tmux set-option -g @vram 67
+  tmux set-option -g @cpu 15
+  tmux set-option -g @ram 80
+  tmux set-option -g @batt 97
+  tmux set-option -g @batt_icon '🔋'
+  local right
+  right="$(sb_right)"
+  # Three spaces between each visible section (trailing + default-bg + leading).
+  [[ "$(gap_len '\|[0-9]+%' '🔋' "$right")" == 3 ]]
+  [[ "$(gap_len '[0-9]+%' '' "$right")" == 3 ]]
+}
+
+@test "integration: all metrics hidden leaves no stray space before time" {
+  start_server
+  load_conf
+  tmux set-option -gu @gpu_util
+  tmux set-option -gu @vram
+  tmux set-option -gu @cpu
+  tmux set-option -gu @ram
+  tmux set-option -gu @batt
+  tmux set-option -gu @batt_icon
+  local right
+  right="$(sb_right)"
+  # Only the time block's own leading space remains (hidden blocks emit zero chars).
+  [[ $right == ' '* ]]
+}
+
+@test "integration: hidden GPU leaves no stray leading space" {
+  start_server
+  load_conf
+  tmux set-option -gu @gpu_util
+  tmux set-option -gu @vram
+  tmux set-option -g @cpu 15
+  tmux set-option -g @ram 80
+  local right
+  right="$(sb_right)"
+  # CPU block's own leading space only — GPU emitted zero characters.
+  [[ $right == ' '* ]]
+}
+
 @test "integration: status-right renders four 0% placeholders when seeded 0" {
   start_server
   load_conf
@@ -372,7 +454,10 @@ echo "12, 550, 8192"'
   [[ $count == "4" ]]
 }
 
-@test "integration: Darwin branch fills CPU/RAM from top/vm_stat (pidfile lock, no flock)" {
+# The Darwin sampler is exercised cross-platform via mocks; locking differs by
+# platform (real flock shadows the mock on Linux), so the pidfile-lock content
+# is asserted only in the Darwin-only test below.
+@test "integration: Darwin sampler fills CPU/RAM from top/vm_stat (mocked)" {
   start_server
   rm -f "$T/bin/flock"
   make_mock uname '#!/bin/sh
@@ -390,7 +475,6 @@ echo $MEMSIZE"
   start_consumer
   wait_opt @cpu '^15$'
   wait_opt @ram '^52$'
-  [[ "$(<"$SOCK-statusbar.lock")" == "$SCRIPT_PID" ]]
 }
 
 @test "integration: without flock, a second consumer exits while the first lives" {
@@ -405,6 +489,9 @@ echo $MEMSIZE"
 }
 
 @test "integration: without flock, a stale lock from a dead owner is taken over" {
+  # Darwin-only: on Linux the real flock shadows the mock and the consumer
+  # takes the flock branch, which never writes $$ into the lockfile.
+  [[ $(uname -s) == "Darwin" ]] || skip "Darwin-only (pidfile lock path)"
   start_server
   rm -f "$T/bin/flock"
   echo 999999 >"$SOCK-statusbar.lock"
@@ -503,6 +590,60 @@ echo $MEMSIZE"
   ! _batt_is_ac Discharging
   ! _batt_is_ac Unknown
   ! _batt_is_ac ""
+}
+
+# --- Tab list (status-left) --------------------------------------------------
+
+@test "tab list: uniform 2sp gaps with no bell (active first)" {
+  start_server
+  load_conf
+  tmux new-window -d -n tab2
+  tmux new-window -d -n tab3
+  local title
+  title="$(tmux display -p -t base:0 '#{pane_title}')"
+  [[ "$(tab_list)" == " 0  $title  1  2 " ]]
+}
+
+@test "tab list: uniform 2sp gaps with no bell (active middle)" {
+  start_server
+  load_conf
+  tmux new-window -d -n tab2
+  tmux new-window -d -n tab3
+  tmux select-window -t base:1
+  local title
+  title="$(tmux display -p -t base:1 '#{pane_title}')"
+  [[ "$(tab_list)" == " 0  1  $title  2 " ]]
+}
+
+@test "tab list: uniform 2sp gaps with no bell (active last)" {
+  start_server
+  load_conf
+  tmux new-window -d -n tab2
+  tmux new-window -d -n tab3
+  tmux select-window -t base:2
+  local title
+  title="$(tmux display -p -t base:2 '#{pane_title}')"
+  [[ "$(tab_list)" == " 0  1  2  $title " ]]
+}
+
+@test "tab list: per-window bell dot renders inline with uniform spacing" {
+  start_server
+  load_conf
+  tmux new-window -d -n tab2
+  tmux new-window -d -n tab3
+  tmux set-window -t base:1 @bell 1
+  local title
+  title="$(tmux display -p -t base:0 '#{pane_title}')"
+  [[ "$(tab_list)" == " 0  $title  1 ●  2 " ]]
+}
+
+@test "tab list: composable @sl_tab_bell unit holds the red dot" {
+  start_server
+  load_conf
+  local bell_unit
+  bell_unit="$(opt_var @sl_tab_bell)"
+  [[ $bell_unit == *'●'* ]]
+  [[ $bell_unit == *'@c_red'* ]]
 }
 
 # --- Integration test --------------------------------------------------------

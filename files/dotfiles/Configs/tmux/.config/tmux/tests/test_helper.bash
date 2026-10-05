@@ -44,15 +44,17 @@ wait_until() { # seconds cmd [args...] — poll instead of sleeping
 }
 
 # Load the real tmux.conf into the scratch server. Copied into $T so ~ and
-# #{d:current_file} resolve there, never to the user's dotfiles.
+# #{d:current_file} resolve there, never to the user's dotfiles. The main
+# conf sources conf.d/*.conf from ~, so those must land in the scratch HOME too.
 load_conf() {
   ensure_tmp
 
-  mkdir -p "$HOME/.config/tmux"
-  printf '#!/bin/sh\nexit 0\n' >"$HOME/.config/tmux/statusbar.sh"
-  chmod +x "$HOME/.config/tmux/statusbar.sh"
+  mkdir -p "$HOME/.config/tmux/scripts"
+  printf '#!/bin/sh\nexit 0\n' >"$HOME/.config/tmux/scripts/statusbar.sh"
+  chmod +x "$HOME/.config/tmux/scripts/statusbar.sh"
 
-  cp "$BATS_TEST_DIRNAME/tmux.conf" "$T/tmux.conf" &&
+  cp "$BATS_TEST_DIRNAME/../tmux.conf" "$T/tmux.conf" &&
+    cp -r "$BATS_TEST_DIRNAME/../conf.d" "$HOME/.config/tmux/" &&
     tmux source-file "$T/tmux.conf"
 }
 
