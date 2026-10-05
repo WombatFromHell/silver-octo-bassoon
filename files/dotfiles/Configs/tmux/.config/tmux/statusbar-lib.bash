@@ -161,3 +161,64 @@ ram_darwin() {
   fi
   return 0
 }
+
+# ---------------------------------------------------------------------------
+# 5. Battery Parsers
+# ---------------------------------------------------------------------------
+
+_batt_icon() {
+  local pct=$1 status=${2:-}
+  if [[ $status =~ [Cc]harging|[Cc]harged|Full ]] && [[ ! $status =~ [Dd]ischarging|[Nn]ot[[:space:]]charging ]]; then
+    printf '󰂄'
+  elif ((pct < 10)); then
+    printf '󰂎'
+  elif ((pct < 20)); then
+    printf '󰁺'
+  elif ((pct < 30)); then
+    printf '󰁻'
+  elif ((pct < 40)); then
+    printf '󰁼'
+  elif ((pct < 50)); then
+    printf '󰁽'
+  elif ((pct < 60)); then
+    printf '󰁾'
+  elif ((pct < 70)); then
+    printf '󰁿'
+  elif ((pct < 80)); then
+    printf '󰂀'
+  elif ((pct < 90)); then
+    printf '󰂁'
+  elif ((pct < 100)); then
+    printf '󰂂'
+  else
+    printf '󰁹'
+  fi
+}
+
+batt_darwin() {
+  batt=
+  batt_icon=
+  local raw=$1
+  [[ $raw =~ ([0-9]+)% ]] || return 1
+  batt="${BASH_REMATCH[1]}"
+  batt_icon=$(_batt_icon "$batt" "$raw")
+  return 0
+}
+
+batt_linux() {
+  batt=
+  batt_icon=
+  local bat_dir cap status
+  for bat_dir in /sys/class/power_supply/BAT*; do
+    if [[ -r "$bat_dir/capacity" ]]; then
+      cap=$(cat "$bat_dir/capacity" 2>/dev/null)
+      status=$(cat "$bat_dir/status" 2>/dev/null)
+      if [[ $cap =~ ^[0-9]+$ ]]; then
+        batt=$cap
+        batt_icon=$(_batt_icon "$batt" "$status")
+        return 0
+      fi
+    fi
+  done
+  return 1
+}

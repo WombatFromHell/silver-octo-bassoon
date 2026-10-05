@@ -413,3 +413,54 @@ echo $MEMSIZE"
   wait_iteration
   [[ "$(<"$SOCK-statusbar.lock")" == "$SCRIPT_PID" ]]
 }
+
+# --- Battery unit tests -----------------------------------------------------
+
+@test "batt_darwin: parses percentage and maps discharging icon" {
+  source "$LIB"
+  batt_darwin "Now drawing from 'Battery Power'
+ -InternalBattery-0 (id=12345)	85%; discharging; 4:20 remaining present: true"
+  [[ $batt == "85" ]]
+  [[ $batt_icon == "󰂁" ]]
+}
+
+@test "batt_darwin: charging state uses charging icon" {
+  source "$LIB"
+  batt_darwin "Now drawing from 'AC Power'
+ -InternalBattery-0 (id=12345)	45%; charging; 1:12 remaining present: true"
+  [[ $batt == "45" ]]
+  [[ $batt_icon == "󰂄" ]]
+}
+
+@test "batt_darwin: low battery (<10%) maps outline icon" {
+  source "$LIB"
+  batt_darwin "Now drawing from 'Battery Power'
+ -InternalBattery-0 (id=12345)	5%; discharging; 0:15 remaining present: true"
+  [[ $batt == "5" ]]
+  [[ $batt_icon == "󰂎" ]]
+}
+
+@test "batt_darwin: no battery output returns failure" {
+  source "$LIB"
+  run batt_darwin "Now drawing from 'AC Power'"
+  [[ $status -ne 0 ]]
+  [[ -z $batt ]]
+}
+
+# --- Integration test --------------------------------------------------------
+
+@test "integration: status-right renders battery block when set and hides when unset" {
+  start_server
+  load_conf
+  tmux set-option -g @batt 85
+  tmux set-option -g @batt_icon "󰂁"
+  local right
+  right="$(status_right)"
+  [[ $right == *󰂁* ]]
+  [[ $right == *85%* ]]
+
+  tmux set-option -gu @batt
+  tmux set-option -gu @batt_icon
+  right="$(status_right)"
+  [[ $right != *85%* ]]
+}

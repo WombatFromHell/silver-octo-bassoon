@@ -29,7 +29,7 @@ else
 fi
 
 # Clear metric options on cold start so blocks remain hidden until first sample completes
-tmux set-option -gu @cpu \; set-option -gu @ram \; set-option -gu @gpu_util \; set-option -gu @vram 2>/dev/null || true
+tmux set-option -gu @cpu \; set-option -gu @ram \; set-option -gu @gpu_util \; set-option -gu @vram \; set-option -gu @batt \; set-option -gu @batt_icon 2>/dev/null || true
 
 platform=$(uname -s)
 
@@ -37,6 +37,7 @@ if [[ $platform == Darwin ]]; then
   sample() {
     cpu_darwin "$(LC_ALL=C top -l 2 -n 0 -s 1 2>/dev/null)"
     ram_darwin "$(vm_stat 2>/dev/null)" "$(sysctl -n hw.memsize 2>/dev/null)"
+    batt_darwin "$(pmset -g batt 2>/dev/null)"
   }
 else
   prev_total=0
@@ -51,6 +52,7 @@ else
     prev_idle=$idle
     read -r mt ma < <(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{print t, a}' /proc/meminfo)
     ram_pct "$mt" "$ma"
+    batt_linux
   }
 fi
 
@@ -61,6 +63,12 @@ while :; do
   sample
 
   args=(set-option -g @cpu "$cpu" \; set-option -g @ram "$ram")
+  if [[ -n $batt ]]; then
+    args+=(\; set-option -g @batt "$batt" \; set-option -g @batt_icon "$batt_icon")
+  else
+    args+=(\; set-option -gu @batt \; set-option -gu @batt_icon)
+  fi
+
   if [[ $gpu =~ ^[0-9]+$ ]]; then
     args+=(\; set-option -g @gpu_util "$gpu")
     if [[ $vram =~ ^[0-9]+$ ]]; then
@@ -76,7 +84,6 @@ while :; do
 
   tmux "${args[@]}"
 
-  # Offset sleep time on macOS to compensate for top's 1-second delay
   if [[ $platform == Darwin ]]; then
     sleep_time=$((refresh > 1 ? refresh - 1 : 1))
   else
