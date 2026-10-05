@@ -63,6 +63,7 @@ layout {
         // Teal dominant (top-right) with muted secondary accent (bottom-left)
         active-gradient from="#CBA6F7" to="#87CEC3" angle=45
     }
+    background-color "transparent"
 }
 output "Dell Inc. AW3426DW 4JSLXH4" {
     mode "3440x1440@279.962"
@@ -157,13 +158,12 @@ window-rule {
     }
     open-floating true
 }
-// Make the wallpaper stationary, rather than moving with workspaces.
+//
 layer-rule {
-    // This is for swaybg; change for other wallpaper tools.
-    // Find the right namespace by running niri msg layers.
-    match namespace="^wallpaper$"
-    place-within-backdrop true
+  match namespace="dms:blurwallpaper"
+  place-within-backdrop true
 }
+//
 window-rule {
     match app-id="^org\\.keepassxc\\.KeePassXC$"
     match app-id="^org\\.gnome\\.World\\.Secrets$"

@@ -1,4 +1,5 @@
 {
+  "displayNameMode": "model",
   "currentThemeName": "custom",
   "customThemeFile": "/home/josh/.config/DankMaterialShell/themes/catppuccin/theme.json",
   "registryThemeVariants": {
@@ -10,6 +11,7 @@
     }
   },
   "radiusStrength": 38,
+  "clockFormat": "24h",
   "useFahrenheit": true,
   "blurBorderOpacity": 1,
   "powerMenuActions": [
@@ -68,6 +70,10 @@
       "showTrash": false,
       "trashFileManager": "default",
       "trashCustomCommand": "",
+      "magnification": false,
+      "magnificationScale": 130,
+      "magnificationProfile": "parabolic",
+      "magnificationExpand": false,
       "order": [],
       "widgets": [
         {
@@ -89,10 +95,40 @@
     }
   ],
   "currentThemeCategory": "custom",
+  "dmsWindowsFloatingSeeded": [
+    "niri",
+    "niri"
+  ],
+  "showWeekNumber": true,
   "audioShowStreamDevices": true,
   "barElevationEnabled": false,
+  "blurredWallpaperLayer": true,
   "blurWallpaperOnOverview": true,
   "controlCenterWidgets": [
+    {
+      "id": "user",
+      "enabled": true,
+      "w": 5,
+      "h": 1
+    },
+    {
+      "id": "settings",
+      "enabled": true,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "lock",
+      "enabled": true,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "power",
+      "enabled": true,
+      "w": 1,
+      "h": 1
+    },
     {
       "id": "volumeSlider",
       "enabled": true,
@@ -140,6 +176,15 @@
       "enabled": true,
       "w": 4,
       "h": 1
+    },
+    {
+      "id": "edit",
+      "enabled": true,
+      "w": 1,
+      "h": 1,
+      "small": true,
+      "footer": true,
+      "footerEnd": true
     }
   ],
   "workspaceNameIcons": {
@@ -188,11 +233,11 @@
   ],
   "networkPreference": "wifi",
   "cursorSettings": {
-    "theme": "System Default",
-    "size": 24,
+    "theme": "Breeze_Light",
+    "size": 32,
     "niri": {
       "hideWhenTyping": true,
-      "hideAfterInactiveMs": 0
+      "hideAfterInactiveMs": 3000
     },
     "hyprland": {
       "hideOnKeyPress": false,
@@ -213,7 +258,6 @@
   "osdPowerProfileEnabled": true,
   "updaterIntervalSeconds": 1705032644,
   "updaterIncludeFlatpak": false,
-  "displayNameMode": "model",
   "displayProfiles": {
     "niri": {}
   },
@@ -276,7 +320,7 @@
         },
         {
           "id": "notificationButton",
-          "enabled": true
+          "enabled": false
         },
         {
           "id": "cpuUsage",
@@ -336,7 +380,38 @@
       "islandNotificationExpand": true,
       "followInterfaceStyle": true,
       "widgetStyle": "pills",
-      "barInsetPadding": -1
+      "barInsetPadding": -1,
+      "widgetFollowInterfaceStyle": false,
+      "islandHomeLayout": [
+        {
+          "id": "media",
+          "enabled": true
+        },
+        {
+          "id": "clock",
+          "enabled": true
+        },
+        {
+          "id": "weather",
+          "enabled": true
+        },
+        {
+          "id": "status",
+          "enabled": false
+        },
+        {
+          "id": "volume",
+          "enabled": true
+        },
+        {
+          "id": "brightness",
+          "enabled": false
+        },
+        {
+          "id": "notifications",
+          "enabled": true
+        }
+      ]
     }
   ],
   "builtInPluginSettings": {
@@ -353,5 +428,5 @@
       "trigger": "qrg"
     }
   },
-  "configVersion": 29
+  "configVersion": 38
 }
