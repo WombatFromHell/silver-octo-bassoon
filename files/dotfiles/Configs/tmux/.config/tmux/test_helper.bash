@@ -45,4 +45,24 @@ wait_until() { # seconds cmd [args...] — poll instead of sleeping
 
 # Load the real tmux.conf into the scratch server. Copied into $T so ~ and
 # #{d:current_file} resolve there, never to the user's dotfiles.
-load_conf() { cp "$BATS_TEST_DIRNAME/tmux.conf" "$T/tmux.conf" && tmux source-file "$T/tmux.conf"; }
+load_conf() {
+  ensure_tmp
+
+  mkdir -p "$HOME/.config/tmux"
+  printf '#!/bin/sh\nexit 0\n' >"$HOME/.config/tmux/statusbar.sh"
+  chmod +x "$HOME/.config/tmux/statusbar.sh"
+
+  cp "$BATS_TEST_DIRNAME/tmux.conf" "$T/tmux.conf" &&
+    tmux source-file "$T/tmux.conf"
+}
+
+# link_tools DIR tool... — symlink the real tools that exist; silently skip the
+# rest (jq/flock/timeout are absent on stock macOS). Tests that need a tool
+# call `needs TOOL`.
+link_tools() {
+  local dir=$1 t p
+  shift
+  for t in "$@"; do p="$(type -P "$t")" && ln -sf "$p" "$dir/$t"; done
+  return 0
+}
+needs() { command -v "$1" >/dev/null || skip "$1 not installed"; }
