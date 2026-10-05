@@ -447,6 +447,64 @@ echo $MEMSIZE"
   [[ -z $batt ]]
 }
 
+@test "batt_darwin: optimized charging on AC (not charging) uses charging icon" {
+  source "$LIB"
+  batt_darwin "Now drawing from 'AC Power'
+ -InternalBattery-0 (id=12345)	80%; not charging; 0:00 remaining present: true"
+  [[ $batt == "80" ]]
+  [[ $batt_icon == "󰂄" ]]
+}
+
+@test "batt_darwin: full battery on AC uses charging icon" {
+  source "$LIB"
+  batt_darwin "Now drawing from 'AC Power'
+ -InternalBattery-0 (id=12345)	100%; charged; 0:00 remaining present: true"
+  [[ $batt == "100" ]]
+  [[ $batt_icon == "󰂄" ]]
+}
+
+# --- Battery icon unit tests -------------------------------------------------
+
+@test "_batt_icon: every AC state yields the charging icon at any percentage" {
+  source "$LIB"
+  local s p
+  for s in Charging "Not charging" Full "charged" "charging" "Finished charging"; do
+    for p in 5 45 80 100; do
+      [[ $(_batt_icon "$p" "$s") == "󰂄" ]]
+    done
+  done
+}
+
+@test "_batt_icon: discharging states fall back to the level tiers" {
+  source "$LIB"
+  [[ $(_batt_icon 85 Discharging) == "󰂁" ]]
+  [[ $(_batt_icon 85 "discharging; 4:20 remaining") == "󰂁" ]]
+  [[ $(_batt_icon 5 "discharging; 0:15 remaining") == "󰂎" ]]
+}
+
+@test "_batt_icon: unknown status with no AC data falls back to the level tiers" {
+  source "$LIB"
+  [[ $(_batt_icon 45 Unknown) == "󰁽" ]]
+  [[ $(_batt_icon 45 "") == "󰁽" ]]
+}
+
+@test "_batt_icon: AC adapter online overrides an Unknown status" {
+  source "$LIB"
+  [[ $(_batt_icon 45 Unknown 1) == "󰂄" ]]
+  [[ $(_batt_icon 45 Unknown 0) == "󰁽" ]]
+}
+
+@test "_batt_is_ac: classifying states" {
+  source "$LIB"
+  _batt_is_ac Charging
+  _batt_is_ac "Not charging"
+  _batt_is_ac Full
+  _batt_is_ac "Unknown" 1
+  ! _batt_is_ac Discharging
+  ! _batt_is_ac Unknown
+  ! _batt_is_ac ""
+}
+
 # --- Integration test --------------------------------------------------------
 
 @test "integration: status-right renders battery block when set and hides when unset" {

@@ -166,9 +166,26 @@ ram_darwin() {
 # 5. Battery Parsers
 # ---------------------------------------------------------------------------
 
+# _batt_is_ac STATUS ONLINE -> success when the battery sits on AC power.
+# STATUS is the raw state string (pmset output, or /sys .../status) and ONLINE
+# is "1" when the AC adapter reads online (Linux only, else empty). "Not
+# charging" (charge limits / macOS optimized charging) still means AC; only an
+# explicit "discharging" is not, and it must be tested first because
+# "discharging" contains the substring "charging".
+_batt_is_ac() {
+  local status=${1:-} online=${2:-}
+  [[ $online == 1 ]] && return 0
+  [[ $status =~ [Dd]ischarging ]] && return 1
+  [[ $status =~ [Cc]harging|[Cc]harged|Full|[Ff]inished[[:space:]]charging ]] && return 0
+  return 1
+}
+
+# _batt_icon PCT STATUS [ONLINE] -> prints the glyph: the single charging icon
+# whenever the battery is on AC (at any percentage, including full/paused),
+# otherwise the tiered level icon for PCT.
 _batt_icon() {
-  local pct=$1 status=${2:-}
-  if [[ $status =~ [Cc]harging|[Cc]harged|Full ]] && [[ ! $status =~ [Dd]ischarging|[Nn]ot[[:space:]]charging ]]; then
+  local pct=$1 status=${2:-} online=${3:-}
+  if _batt_is_ac "$status" "$online"; then
     printf '󰂄'
   elif ((pct < 10)); then
     printf '󰂎'
@@ -205,17 +222,31 @@ batt_darwin() {
   return 0
 }
 
+# _ac_online -> success when any AC adapter is online. Drivers that report a
+# battery status of "Unknown" on AC give us no other signal, so this is what
+# keeps those laptops on the charging icon.
+_ac_online() {
+  local ac_dir online
+  for ac_dir in /sys/class/power_supply/AC*; do
+    [[ -r "$ac_dir/online" ]] || continue
+    online=$(cat "$ac_dir/online" 2>/dev/null)
+    [[ $online == 1 ]] && return 0
+  done
+  return 1
+}
+
 batt_linux() {
   batt=
   batt_icon=
-  local bat_dir cap status
+  local bat_dir cap status online=
+  _ac_online && online=1
   for bat_dir in /sys/class/power_supply/BAT*; do
     if [[ -r "$bat_dir/capacity" ]]; then
       cap=$(cat "$bat_dir/capacity" 2>/dev/null)
       status=$(cat "$bat_dir/status" 2>/dev/null)
       if [[ $cap =~ ^[0-9]+$ ]]; then
         batt=$cap
-        batt_icon=$(_batt_icon "$batt" "$status")
+        batt_icon=$(_batt_icon "$batt" "$status" "$online")
         return 0
       fi
     fi
