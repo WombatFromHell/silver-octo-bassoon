@@ -39,43 +39,49 @@ kill_tree() {
 
 # --- helpers -------------------------------------------------------------------
 
-# make_mock NAME CONTENT -> executable in $T/mock, alongside the few real
-# utilities the lib needs. Call start_server first if CONTENT references $T.
+# make_mock NAME CONTENT -> executable in $T/mock, without overwriting other mocks.
 make_mock() {
   ensure_tmp
   mkdir -p "$T/mock"
-  link_tools "$T/mock" jq head sleep timeout cat
   rm -f "$T/mock/$1" # never write through a symlink to a real binary
   printf '%s' "$2" >"$T/mock/$1"
   chmod +x "$T/mock/$1"
 }
 
-# Unit tier: gpu_read on a clean PATH (mockdir only, no real GPU tools).
+# Helper for unit tests to access system utilities (head, jq, etc.)
+init_unit_bin() {
+  ensure_tmp
+  mkdir -p "$T/bin"
+  link_tools "$T/bin" jq awk sleep head cat bash flock timeout uname rm grep sed tr cut wc sort tail ps sysctl vm_stat top
+}
+
+# Unit tier helper
 call_gpu() {
   (
-    export PATH="$T/mock"
+    init_unit_bin
+    export PATH="$T/mock:$T/bin"
     source "$LIB"
     gpu_read
     printf '%s %s' "$gpu" "$vram"
   )
 }
 
-# Poll helpers: replace every fixed sleep.
-env_var() { tmux show-environment -g "$1" 2>/dev/null | sed -n "s/^$1=//p"; }
-env_is() { [[ "$(env_var "$1")" =~ $2 ]]; }
-wait_env() { wait_until 5 env_is "$@"; } # VAR REGEX
+# Poll helpers: replace every fixed sleep (updated for tmux user options @var).
+opt_var() { tmux show-options -gv "$1" 2>/dev/null; }
+opt_is() { [[ "$(opt_var "$1")" =~ $2 ]]; }
+wait_opt() { wait_until 5 opt_is "$@"; } # VAR REGEX
 is_dead() { ! kill -0 "$1" 2>/dev/null; }
+
 # The shim logs once per loop iteration, so a non-empty log == iteration 1 done.
 wait_iteration() { wait_until 5 test -s "$T/sleep.log"; }
 first_sleep_arg() { head -n1 "$T/sleep.log"; }
 
 # --- integration-tier server ---------------------------------------------------
 
-# Shared scratch server, plus the minimal PATH dir the consumer runs under.
 start_server() {
   start_scratch_server
   mkdir -p "$T/bin"
-  link_tools "$T/bin" tmux jq awk sleep head cat bash flock timeout uname rm
+  link_tools "$T/bin" tmux jq awk sleep head cat bash flock timeout uname rm grep sed tr cut wc sort tail ps sysctl vm_stat top
 }
 
 # start_consumer [ENV=VAL ...]
@@ -251,10 +257,8 @@ MEMSIZE=17179869184
 # INTEGRATION TIER — real consumer against a throwaway server
 # ---------------------------------------------------------------------------
 
-@test "integration: cold start seeds 0 placeholders while first GPU fetch is in flight" {
+@test "integration: cold start hides GPU/CPU blocks while first fetch is in flight" {
   start_server
-  # Mock blocks until $T/release exists, then echoes. Bounded by a 5s cap
-  # so the test doesn't hang even without timeout(1).
   make_mock nvidia-smi "#!/bin/sh
 i=0
 while [ ! -e '$T/release' ] && [ \$i -lt 100 ]; do
@@ -262,23 +266,27 @@ while [ ! -e '$T/release' ] && [ \$i -lt 100 ]; do
 done
 echo '12, 550, 8192'"
   start_consumer
-  wait_env CPU '^0$'
-  wait_env RAM '^0$'
-  wait_env GPU_UTIL '^0$'
-  wait_env VRAM '^0$'
+
+  # Options should be unset (empty) on cold start before data is ready
+  [[ -z "$(opt_var @cpu)" ]]
+  [[ -z "$(opt_var @ram)" ]]
+  [[ -z "$(opt_var @gpu_util)" ]]
+  [[ -z "$(opt_var @vram)" ]]
+
+  # Release the slow GPU fetch and verify values update
   : >"$T/release"
-  wait_env GPU_UTIL '^12$'
-  wait_env VRAM '^6$'
+  wait_opt @gpu_util '^12$'
+  wait_opt @vram '^6$'
 }
 
 @test "integration: no GPU tool sets CPU/RAM, unsets GPU/VRAM" {
   start_server
   start_consumer
   wait_iteration
-  [[ "$(env_var CPU)" =~ ^[0-9]+$ ]]
-  [[ "$(env_var RAM)" =~ ^[0-9]+$ ]]
-  [[ -z "$(env_var GPU_UTIL)" ]]
-  [[ -z "$(env_var VRAM)" ]]
+  [[ "$(opt_var @cpu)" =~ ^[0-9]+$ ]]
+  [[ "$(opt_var @ram)" =~ ^[0-9]+$ ]]
+  [[ -z "$(opt_var @gpu_util)" ]]
+  [[ -z "$(opt_var @vram)" ]]
 }
 
 @test "integration: mock nvidia-smi sets GPU_UTIL and VRAM" {
@@ -286,9 +294,9 @@ echo '12, 550, 8192'"
   make_mock nvidia-smi '#!/bin/sh
 echo "12, 550, 8192"'
   start_consumer
-  wait_env GPU_UTIL '^12$'
-  wait_env VRAM '^6$'
-  [[ "$(env_var CPU)" =~ ^[0-9]+$ ]]
+  wait_opt @gpu_util '^12$'
+  wait_opt @vram '^6$'
+  [[ "$(opt_var @cpu)" =~ ^[0-9]+$ ]]
 }
 
 @test "integration: loop exits when the server is killed" {
@@ -303,23 +311,27 @@ echo "12, 550, 8192"'
   start_server
   start_consumer
   wait_iteration
-  [[ "$(first_sleep_arg)" == "3" ]]
+  local expected=3
+  [[ $(uname -s) == "Darwin" ]] && expected=2
+  [[ "$(first_sleep_arg)" == "$expected" ]]
 }
 
 @test "integration: STATUSBAR_REFRESH is honored" {
   start_server
   start_consumer STATUSBAR_REFRESH=2
   wait_iteration
-  [[ "$(first_sleep_arg)" == "2" ]]
+  local expected=2
+  [[ $(uname -s) == "Darwin" ]] && expected=1
+  [[ "$(first_sleep_arg)" == "$expected" ]]
 }
 
-@test "integration: status-right renders GPU/CPU blocks from env vars" {
+@test "integration: status-right renders GPU/CPU blocks from options" {
   start_server
   load_conf
-  tmux set-environment -g GPU_UTIL 42
-  tmux set-environment -g VRAM 67
-  tmux set-environment -g CPU 15
-  tmux set-environment -g RAM 80
+  tmux set-option -g @gpu_util 42
+  tmux set-option -g @vram 67
+  tmux set-option -g @cpu 15
+  tmux set-option -g @ram 80
   local right
   right="$(status_right)"
   [[ $right == *42%* ]]
@@ -328,18 +340,18 @@ echo "12, 550, 8192"'
   [[ $right == *80%* ]]
 }
 
-@test "integration: status-right hides GPU block when GPU_UTIL unset" {
+@test "integration: status-right hides GPU block when @gpu_util unset" {
   start_server
   load_conf
-  tmux set-environment -g GPU_UTIL 42
-  tmux set-environment -g CPU 15
-  tmux set-environment -g RAM 80
+  tmux set-option -g @gpu_util 42
+  tmux set-option -g @cpu 15
+  tmux set-option -g @ram 80
   local right
   right="$(status_right)"
   [[ $right == *42%* ]]
   [[ $right == *15%* ]]
-  tmux set-environment -g -u GPU_UTIL
-  tmux set-environment -g -u VRAM
+  tmux set-option -gu @gpu_util
+  tmux set-option -gu @vram
   right="$(status_right)"
   [[ $right != *42%* ]]
   [[ $right == *15%* ]]
@@ -348,15 +360,15 @@ echo "12, 550, 8192"'
 @test "integration: status-right renders four 0% placeholders when seeded 0" {
   start_server
   load_conf
-  tmux set-environment -g GPU_UTIL 0
-  tmux set-environment -g VRAM 0
-  tmux set-environment -g CPU 0
-  tmux set-environment -g RAM 0
+  tmux set-option -g @gpu_util 0
+  tmux set-option -g @vram 0
+  tmux set-option -g @cpu 0
+  tmux set-option -g @ram 0
 
   local right count
   right="$(status_right | sed -e 's/#\[[^]]*\]//g')"
 
-  count="$({ grep -o '0%' <<<"$right" || true; } | awk 'END { print NR }')"
+  count="$({ grep -o '0\%' <<<"$right" || true; } | awk 'END { print NR }')"
   [[ $count == "4" ]]
 }
 
@@ -376,9 +388,9 @@ X"
   make_mock sysctl "#!/bin/sh
 echo $MEMSIZE"
   start_consumer
-  wait_env CPU '^15$'
-  wait_env RAM '^52$'
-  [[ "$(<"$SOCK,0,0-statusbar.lock")" == "$SCRIPT_PID" ]]
+  wait_opt @cpu '^15$'
+  wait_opt @ram '^52$'
+  [[ "$(<"$SOCK-statusbar.lock")" == "$SCRIPT_PID" ]]
 }
 
 @test "integration: without flock, a second consumer exits while the first lives" {
@@ -395,9 +407,9 @@ echo $MEMSIZE"
 @test "integration: without flock, a stale lock from a dead owner is taken over" {
   start_server
   rm -f "$T/bin/flock"
-  echo 999999 >"$SOCK,0,0-statusbar.lock"
+  echo 999999 >"$SOCK-statusbar.lock"
   start_consumer
-  wait_env CPU '^[0-9]+$'
+  wait_opt @cpu '^[0-9]+$'
   wait_iteration
-  [[ "$(<"$SOCK,0,0-statusbar.lock")" == "$SCRIPT_PID" ]]
+  [[ "$(<"$SOCK-statusbar.lock")" == "$SCRIPT_PID" ]]
 }
