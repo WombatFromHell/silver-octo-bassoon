@@ -23,7 +23,7 @@ ignore_timeout = true
 
 [custom.bash]
 command = "echo 💲"
-when = '[ -n "$SHELL_INDICATOR" ]'
+when = '[ "$STARSHIP_SHELL" == "bash" ]'
 format = "[$output]($style)"
 ignore_timeout = true
 

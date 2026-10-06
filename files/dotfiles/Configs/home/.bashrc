@@ -58,14 +58,12 @@ tma() {
 if [[ $- == *i* ]]; then
   # Shell handoff: prefer fish, but never re-exec into it from inside fish,
   # tmux, or zellij (those already own the terminal / would loop).
-  if [ -z "$ZED_TERM" ] && [ -z "$TMUX" ] && [ -z "$ZELLIJ" ] && command -v fish &>/dev/null; then
+  if [ -z "$ZED_TERM" ] && [ -z "$TERM_PROGRAM" ]; then
     # ponytail: the `ps` call costs a fork+exec on every shell start. If startup
     # latency matters more than portability, set `shell fish` in kitty.conf
     # instead and delete this block entirely.
-    if [ "$(ps -p "$PPID" -o comm=)" != "fish" ]; then
+    if [ "$(ps -p "$PPID" -o comm=)" != "fish" ] && command -v fish &>/dev/null; then
       exec fish -l
-    else
-      export SHELL_INDICATOR="bash"
     fi
   fi
 
@@ -129,5 +127,4 @@ if [[ $- == *i* ]]; then
   alias nixosopt='sudo nix-store --gc && sudo nix-store --optimize'
   alias nixopt='nix-store --gc && nix-store --optimize'
   alias gpgfix='gpgconf -K all && gpgconf --launch gpg-agent'
-
 fi
