@@ -59,10 +59,11 @@ if [[ $- == *i* ]]; then
   # Shell handoff: prefer fish, but never re-exec into it from inside fish,
   # tmux, or zellij (those already own the terminal / would loop).
   if [ -z "$ZED_TERM" ] && [ -z "$TERM_PROGRAM" ]; then
-    # ponytail: the `ps` call costs a fork+exec on every shell start. If startup
-    # latency matters more than portability, set `shell fish` in kitty.conf
-    # instead and delete this block entirely.
-    if [ "$(ps -p "$PPID" -o comm=)" != "fish" ] && command -v fish &>/dev/null; then
+    # ponytail: reading /proc/$PPID/comm with the builtin `read` avoids the
+    # fork+exec of `$(ps ...)` on every shell start. If startup latency matters
+    # more than portability, set `shell fish` in kitty.conf and delete this block.
+    IFS= read -r pcomm </proc/$PPID/comm || pcomm=""
+    if [[ $pcomm != fish ]] && command -v fish &>/dev/null; then
       exec fish -l
     fi
   fi
