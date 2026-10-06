@@ -44,6 +44,8 @@ _icon() {
   batt_7) printf '󰂀' ;;
   batt_8) printf '󰂁' ;;
   batt_9) printf '󰂂' ;;
+  cal) printf '' ;;
+  clock) printf '' ;;
   esac
 }
 
@@ -247,7 +249,7 @@ batt_linux() {
 }
 
 # ---------------------------------------------------------------------------
-# 6. Compose — build the right-side metric blocks
+# 6. Compose — build the right-side metric blocks + time block
 # ---------------------------------------------------------------------------
 
 # Palette (mirrors @c_* in 04-statusbar.conf).
@@ -256,33 +258,44 @@ _sb_o2='#a6adc8'
 _sb_t1='#cdd6f4'
 _sb_m='#6c7086'
 
-# compose_blocks — reads the gpu/vram/cpu/ram/batt/batt_icon globals and
-# prints the composed right-side metric blocks. Hidden blocks (empty vars)
-# emit zero characters. The time block is NOT composed here — it lives in
-# status-right in the conf as a live format string (so @clock-format
-# toggles at runtime). `#()` output is inserted verbatim (no strftime), so
-# a single literal % is fine.
-compose_blocks() {
-  local out=
-  # GPU block: bg, icon, util, separator, vram, trailing space
-  if [[ -n $gpu ]]; then
-    out+="#[bg=$_sb_s0] #[fg=$_sb_t1]$(_icon gpu)#[fg=$_sb_o2] ${gpu}%"
-    if [[ -n $vram ]]; then
-      out+="#[fg=$_sb_m]|#[fg=$_sb_o2]${vram}%"
-    fi
-    out+=" #[default] "
+# _sb_clock_fmt VALUE -> print the strftime format for the @clock-format
+# value ('12' -> 12-hour with AM/PM, anything else -> 24-hour). Pure
+# mapper; the consumer reads the option and passes the value in.
+_sb_clock_fmt() {
+  if [[ ${1:-} == 12 ]]; then
+    printf '%s' '%I:%M %p'
+  else
+    printf '%s' '%H:%M'
   fi
-  # CPU block: same structure
-  if [[ -n $cpu ]]; then
-    out+="#[bg=$_sb_s0] #[fg=$_sb_t1]$(_icon cpu)#[fg=$_sb_o2] ${cpu}%"
-    if [[ -n $ram ]]; then
-      out+="#[fg=$_sb_m]|#[fg=$_sb_o2]${ram}%"
-    fi
-    out+=" #[default] "
+}
+
+# _sb_chip ICON VAL [VAL2] -> "icon VAL%|VAL2%" block; nothing when VAL is empty.
+_sb_chip() {
+  [[ -n $2 ]] || return 0
+  printf '#[bg=%s] #[fg=%s]%s#[fg=%s] %s%%' "$_sb_s0" "$_sb_t1" "$1" "$_sb_o2" "$2"
+  if [[ -n ${3:-} ]]; then
+    printf '#[fg=%s]|#[fg=%s]%s%%' "$_sb_m" "$_sb_o2" "$3"
   fi
-  # Battery block: bg, icon, pct, trailing space
-  if [[ -n $batt ]]; then
-    out+="#[bg=$_sb_s0] #[fg=$_sb_t1]${batt_icon} #[fg=$_sb_o2]${batt}% #[default] "
+  printf ' #[default] '
+}
+
+_sb_batt() {
+  [[ -n $batt ]] || return 0
+  printf '#[bg=%s] #[fg=%s]%s #[fg=%s]%s%% #[default] ' "$_sb_s0" "$_sb_t1" "$batt_icon" "$_sb_o2" "$batt"
+}
+
+# _sb_time READY -> bare muted clock pre-data, calendar+clock once ready.
+_sb_time() {
+  if [[ ${1:-} == 1 ]]; then
+    printf '%s' "#[bg=$_sb_s0] #[fg=$_sb_t1]$(_icon cal)#[fg=$_sb_o2] $date_str #[fg=$_sb_m]|#[default]#[bg=$_sb_s0] #[fg=$_sb_t1]$(_icon clock) #[fg=$_sb_o2]$clock #[default]"
+  else
+    printf '%s' "#[fg=$_sb_m]$clock #[default]"
   fi
-  printf '%s' "$out"
+}
+
+# compose_metrics — gpu/cpu/battery blocks; hidden ones emit nothing.
+compose_metrics() {
+  _sb_chip "$(_icon gpu)" "$gpu" "$vram"
+  _sb_chip "$(_icon cpu)" "$cpu" "$ram"
+  _sb_batt
 }

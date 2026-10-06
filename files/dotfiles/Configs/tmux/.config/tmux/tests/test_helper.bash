@@ -20,7 +20,6 @@ start_scratch_server() {
   unset TMUX TMUX_PANE
   REAL_TMUX="$(type -P tmux)"
   ensure_tmp
-  echo "START T=$T pid=$$ $(date +%H:%M:%S.%N)" >>/tmp/teardown.log
   export TMUX_TMPDIR="$T" HOME="$T/home" XDG_CONFIG_HOME="$T/home/.config"
   SOCK="$T/tmux-$(id -u)/default"
   mkdir -p -m 700 "${SOCK%/*}"
@@ -34,9 +33,13 @@ start_scratch_server() {
   ) </dev/null
 }
 
+# Server start for the integration/E2E tiers. (The old $T/bin link_tools line
+# is gone: no integration/E2E test puts $T/bin on PATH — only unit-tier
+# call_gpu does, via init_unit_bin in the unit test file.)
+start_server() { start_scratch_server; }
+
 stop_scratch_server() {
   # kill-server can fail (server already gone); never let that skip the rm.
-  echo "STOP T=${T:-} pid=$$ $(date +%H:%M:%S.%N)" >>/tmp/teardown.log
   if [[ -n ${SOCK:-} ]]; then tmux kill-server </dev/null 2>/dev/null || true; fi
   if [[ -n ${T:-} ]]; then
     # The dying fish shell can mkdir its cache dirs back into $T a few ms
@@ -73,6 +76,15 @@ load_conf() {
   cp "$BATS_TEST_DIRNAME/../tmux.conf" "$T/tmux.conf" &&
     cp -r "$BATS_TEST_DIRNAME/../conf.d" "$HOME/.config/tmux/" &&
     tmux source-file "$T/tmux.conf"
+}
+
+# make_mock NAME CONTENT -> executable in $T/mock, without overwriting other mocks.
+make_mock() {
+  ensure_tmp
+  mkdir -p "$T/mock"
+  rm -f "$T/mock/$1" # never write through a symlink to a real binary
+  printf '%s' "$2" >"$T/mock/$1"
+  chmod +x "$T/mock/$1"
 }
 
 # link_tools DIR tool... — symlink the real tools that exist; silently skip the
