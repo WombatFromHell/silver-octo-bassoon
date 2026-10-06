@@ -9,7 +9,7 @@ MOUNT_POINT="josh@192.168.1.153:/home/josh"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}"
 PID_FILE="$RUNTIME_DIR/nasmount-sshfs.pid"
 LOG_FILE="$RUNTIME_DIR/nasmount-sshfs.log"
-SSH_KEY="$HOME/.ssh/id_rsa"
+SSH_KEY="$HOME/.ssh/github_rsa"
 #
 LINK="$HOME/Backups"
 TARGET="$NAS_HOME/GDrive/Backups"
