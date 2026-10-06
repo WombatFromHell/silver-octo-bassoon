@@ -20,16 +20,33 @@ start_scratch_server() {
   unset TMUX TMUX_PANE
   REAL_TMUX="$(type -P tmux)"
   ensure_tmp
+  echo "START T=$T pid=$$ $(date +%H:%M:%S.%N)" >>/tmp/teardown.log
   export TMUX_TMPDIR="$T" HOME="$T/home" XDG_CONFIG_HOME="$T/home/.config"
   SOCK="$T/tmux-$(id -u)/default"
   mkdir -p -m 700 "${SOCK%/*}"
   mkdir -p "$HOME" # tmux rejects non-700 socket dirs
-  tmux new-session -d -s base
+  # Start the server in a subshell with extra FDs closed so the
+  # daemonized server does not inherit the bats pipes (which would
+  # keep the pipe open and deadlock bats in do_wait after the last test).
+  (
+    exec 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&- 2>/dev/null
+    tmux new-session -d -s base
+  ) </dev/null
 }
 
 stop_scratch_server() {
-  [[ -z ${SOCK:-} ]] || tmux kill-server 2>/dev/null
-  [[ -z ${T:-} ]] || rm -rf "$T"
+  # kill-server can fail (server already gone); never let that skip the rm.
+  echo "STOP T=${T:-} pid=$$ $(date +%H:%M:%S.%N)" >>/tmp/teardown.log
+  if [[ -n ${SOCK:-} ]]; then tmux kill-server </dev/null 2>/dev/null || true; fi
+  if [[ -n ${T:-} ]]; then
+    # The dying fish shell can mkdir its cache dirs back into $T a few ms
+    # after kill-server; retry briefly until the tree is actually gone.
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      rm -rf "$T" 2>/dev/null
+      [[ -e $T ]] || break
+      sleep 0.05
+    done
+  fi
   return 0
 }
 

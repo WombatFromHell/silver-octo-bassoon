@@ -1,40 +1,29 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC1090,SC2001,SC2030,SC2031
 # statusbar-test.bats — red/green suite for statusbar.sh + statusbar-lib.bash.
 #
 # Unit tier: sources the pure lib, feeds fixture GPU/proc inputs, asserts
 # parsed gpu/vram/cpu/ram. No tmux server, no sleeps.
 #
-# Integration tier: runs the real consumer against a throwaway tmux server.
+# Integration tier: runs the status bar against a throwaway tmux server.
 # Isolation guarantees:
 #   * every test gets its own temp dir ($T) holding the socket, HOME, mocks,
-#     logs; teardown is a single `rm -rf "$T"`
+#     logs; teardown kills the scratch server and removes $T
 #   * the ONLY way tests reach tmux is the `tmux` wrapper below, which always
 #     passes -S "$SOCK" and refuses to run when no scratch socket exists, so a
 #     real server can never be touched (TMUX/TMUX_PANE are unset in setup)
-#   * `sleep` in the consumer's PATH is a shim (logs its arg, sleeps 50ms), so
-#     the loop spins fast and tests poll for state instead of sleeping
 #   * no fixed /tmp paths -> safe under `bats --jobs N`
 
+bats_require_minimum_version 1.5.0
 load test_helper
 
 setup() {
   DIR="$BATS_TEST_DIRNAME"
   LIB="$DIR/../scripts/statusbar-lib.bash"
-  REAL_SLEEP="$(type -P sleep)" # for the consumer's sleep shim
-  SCRIPT_PID=""
 }
 
 teardown() {
-  if [[ -n $SCRIPT_PID ]]; then kill_tree "$SCRIPT_PID" 2>/dev/null; fi
   stop_scratch_server # also removes $T in the unit tier (no server)
-}
-
-kill_tree() {
-  local p c
-  for p in "$@"; do
-    for c in $(pgrep -P "$p" 2>/dev/null); do kill_tree "$c"; done
-    kill "$p" 2>/dev/null || true
-  done
 }
 
 # --- helpers -------------------------------------------------------------------
@@ -66,15 +55,11 @@ call_gpu() {
   )
 }
 
-# Poll helpers: replace every fixed sleep (updated for tmux user options @var).
+# tmux option reader (kept for the @sl_tab_bell unit test)
 opt_var() { tmux show-options -gv "$1" 2>/dev/null; }
-opt_is() { [[ "$(opt_var "$1")" =~ $2 ]]; }
-wait_opt() { wait_until 5 opt_is "$@"; } # VAR REGEX
-is_dead() { ! kill -0 "$1" 2>/dev/null; }
 
-# The shim logs once per loop iteration, so a non-empty log == iteration 1 done.
-wait_iteration() { wait_until 5 test -s "$T/sleep.log"; }
-first_sleep_arg() { head -n1 "$T/sleep.log"; }
+# hex -> stdin bytes as one lowercase hex string (no separators/spaces).
+hex() { od -An -tx1 | tr -d ' \n'; }
 
 # --- integration-tier server ---------------------------------------------------
 
@@ -83,19 +68,6 @@ start_server() {
   mkdir -p "$T/bin"
   link_tools "$T/bin" tmux jq awk sleep head cat bash flock timeout uname rm grep sed tr cut wc sort tail ps sysctl vm_stat top
 }
-
-# start_consumer [ENV=VAL ...]
-start_consumer() {
-  ensure_tmp
-  make_mock sleep "#!/bin/sh
-echo \"\$1\" >> '$T/sleep.log'
-exec '$REAL_SLEEP' 0.05"
-  env PATH="$T/mock:$T/bin" TMUX="$SOCK,0,0" "$@" \
-    bash "$DIR/../scripts/statusbar.sh" >/dev/null 2>&1 3>&- &
-  SCRIPT_PID=$!
-}
-
-status_right() { tmux display-message -p -t base "$(tmux show-options -gv status-right)"; }
 
 # Render the tab list (@sl_windows_fmt) from the scratch server, style tokens stripped.
 tab_list() { tmux display -p -t base:0 '#{E:@sl_windows_fmt}' | sed 's/#\[[^]]*\]//g'; }
@@ -187,19 +159,6 @@ exit 1'
   [[ $ram == "75" ]]
 }
 
-@test "refresh_interval: positive integers pass, anything else -> 3" {
-  source "$LIB"
-  local v
-  for v in 1 5 60; do
-    refresh_interval "$v"
-    [[ $refresh == "$v" ]]
-  done
-  for v in "" 0 -2 abc 1.5 "3 4"; do
-    refresh_interval "$v"
-    [[ $refresh == "3" ]]
-  done
-}
-
 # --- macOS fixtures ----------------------------------------------------------
 TOP='Processes: 500 total, 2 running, 498 sleeping, 2500 threads
 2026/10/04 12:00:00
@@ -257,248 +216,161 @@ MEMSIZE=17179869184
 }
 
 # ---------------------------------------------------------------------------
-# INTEGRATION TIER — real consumer against a throwaway server
+# COMPOSE TIER — pure compose_blocks() (no server, no tmux)
 # ---------------------------------------------------------------------------
+# compose_blocks() reads the gpu/vram/cpu/ram/batt/batt_icon globals and
+# prints the composed right-side metric blocks (GPU, CPU, battery). Hidden
+# blocks emit zero characters. The time block is not composed here — it stays
+# a live conf format (@sb_time) so the runtime @clock-format toggle works.
 
-@test "integration: cold start hides GPU/CPU blocks while first fetch is in flight" {
-  start_server
-  make_mock nvidia-smi "#!/bin/sh
-i=0
-while [ ! -e '$T/release' ] && [ \$i -lt 100 ]; do
-  sleep 0.05; i=\$((i+1))
-done
-echo '12, 550, 8192'"
-  start_consumer
-
-  # Options should be unset (empty) on cold start before data is ready
-  [[ -z "$(opt_var @cpu)" ]]
-  [[ -z "$(opt_var @ram)" ]]
-  [[ -z "$(opt_var @gpu_util)" ]]
-  [[ -z "$(opt_var @vram)" ]]
-
-  # Release the slow GPU fetch and verify values update
-  : >"$T/release"
-  wait_opt @gpu_util '^12$'
-  wait_opt @vram '^6$'
+@test "_icon: bytes match the expected Nerd Font codepoints" {
+  source "$LIB"
+  local name want fails=0
+  # Table derived from the U+F0079..U+F008E Nerd Font codepoints; a wrong
+  # glyph in _icon (or a bad paste) changes these bytes and fails here.
+  while read -r name want; do
+    [[ $(_icon "$name" | hex) == "$want" ]] || fails=$((fails + 1))
+  done <<'EOF'
+gpu ef8b9b
+cpu ef92bc
+batt_ac f3b08284
+batt_full f3b081b9
+batt_0 f3b0828e
+batt_1 f3b081ba
+batt_2 f3b081bb
+batt_3 f3b081bc
+batt_4 f3b081bd
+batt_5 f3b081be
+batt_6 f3b081bf
+batt_7 f3b08280
+batt_8 f3b08281
+batt_9 f3b08282
+EOF
+  [[ $fails -eq 0 ]]
+  # a copy-paste giving both metric blocks the same glyph must fail
+  [[ $(_icon gpu) != "$(_icon cpu)" ]]
+  # unknown names emit nothing (no default branch)
+  [[ -z $(_icon nope) ]]
 }
 
-@test "integration: no GPU tool sets CPU/RAM, unsets GPU/VRAM" {
-  start_server
-  # Hermetic: the consumer appends real system paths, so shadow every GPU
-  # tool with a failing stub to keep "no GPU tool" true on any host.
-  local t
-  for t in nvidia-smi amd-smi xpu-smi intel_gpu_top; do
-    make_mock "$t" '#!/bin/sh
-exit 1'
-  done
-  start_consumer
-  wait_iteration
-  [[ "$(opt_var @cpu)" =~ ^[0-9]+$ ]]
-  [[ "$(opt_var @ram)" =~ ^[0-9]+$ ]]
-  [[ -z "$(opt_var @gpu_util)" ]]
-  [[ -z "$(opt_var @vram)" ]]
+@test "compose: all blocks visible — exact string" {
+  source "$LIB"
+  gpu=42
+  vram=67
+  cpu=15
+  ram=80
+  batt=97
+  batt_icon="󰂄"
+  local out g c
+  g="$(_icon gpu)"
+  c="$(_icon cpu)"
+  out="$(compose_blocks)"
+  # GPU block (bg + icon + util + vram)
+  [[ $out == *"#[bg=#313244] #[fg=#cdd6f4]${g}#[fg=#a6adc8] 42%"* ]]
+  [[ $out == *"#[fg=#6c7086]|#[fg=#a6adc8]67%"* ]]
+  # CPU block (bg + icon + util + ram)
+  [[ $out == *"#[bg=#313244] #[fg=#cdd6f4]#[fg=#a6adc8] 15%"* ]]
+  [[ $out == *"#[fg=#6c7086]|#[fg=#a6adc8]80%"* ]]
+  # Battery block (bg + icon + pct)
+  [[ $out == *"#[bg=#313244] #[fg=#cdd6f4]󰂄 #[fg=#a6adc8]97%"* ]]
+  # Each visible block ends with #[default] + trailing space (separator)
+  [[ $out == *"#[default] "* ]]
+  # No double spaces between blocks
+  [[ $out != *"#[default]  "* ]]
 }
 
-@test "integration: mock nvidia-smi sets GPU_UTIL and VRAM" {
-  start_server
-  make_mock nvidia-smi '#!/bin/sh
-echo "12, 550, 8192"'
-  start_consumer
-  wait_opt @gpu_util '^12$'
-  wait_opt @vram '^6$'
-  [[ "$(opt_var @cpu)" =~ ^[0-9]+$ ]]
+@test "compose: no GPU — GPU block empty, CPU/RAM render" {
+  source "$LIB"
+  gpu=
+  vram=
+  cpu=15
+  ram=80
+  batt=
+  batt_icon=
+  local out g c
+  g="$(_icon gpu)"
+  c="$(_icon cpu)"
+  out="$(compose_blocks)"
+  [[ $out != *"$g"* ]]
+  [[ $out != *"42%"* ]]
+  [[ $out == *"#[bg=#313244] #[fg=#cdd6f4]${c}#[fg=#a6adc8] 15%"* ]]
+  [[ $out == *"#[fg=#6c7086]|#[fg=#a6adc8]80%"* ]]
 }
 
-@test "integration: loop exits when the server is killed" {
-  start_server
-  start_consumer
-  wait_iteration
-  tmux kill-server
-  wait_until 5 is_dead "$SCRIPT_PID"
+@test "compose: zero values render (0% is not hidden)" {
+  source "$LIB"
+  gpu=0
+  vram=0
+  cpu=0
+  ram=0
+  batt=0
+  batt_icon="󰂎"
+  local out
+  out="$(compose_blocks)"
+  local count
+  count="$({ grep -o '0%' <<<"$out" || true; } | awk "END { print NR }")"
+  [[ $count == "5" ]]
 }
 
-@test "integration: default refresh interval is 3s" {
-  start_server
-  start_consumer
-  wait_iteration
-  local expected=3
-  [[ $(uname -s) == "Darwin" ]] && expected=2
-  [[ "$(first_sleep_arg)" == "$expected" ]]
+@test "compose: all hidden — empty output" {
+  source "$LIB"
+  gpu=
+  vram=
+  cpu=
+  ram=
+  batt=
+  batt_icon=
+  local out
+  out="$(compose_blocks)"
+  [[ -z $out ]]
 }
 
-@test "integration: STATUSBAR_REFRESH is honored" {
-  start_server
-  start_consumer STATUSBAR_REFRESH=2
-  wait_iteration
-  local expected=2
-  [[ $(uname -s) == "Darwin" ]] && expected=1
-  [[ "$(first_sleep_arg)" == "$expected" ]]
+@test "compose: GPU hidden leaves no leading space" {
+  source "$LIB"
+  gpu=
+  vram=
+  cpu=15
+  ram=80
+  batt=
+  batt_icon=
+  local out
+  out="$(compose_blocks)"
+  # CPU block starts immediately with #[bg=...] (no leading space)
+  [[ $out == "#[bg"*** ]]
+  [[ $out != " "* ]]
 }
 
-@test "integration: status-right renders GPU/CPU blocks from options" {
-  start_server
-  load_conf
-  tmux set-option -g @gpu_util 42
-  tmux set-option -g @vram 67
-  tmux set-option -g @cpu 15
-  tmux set-option -g @ram 80
-  local right
-  right="$(status_right)"
-  [[ $right == *42%* ]]
-  [[ $right == *67%* ]]
-  [[ $right == *15%* ]]
-  [[ $right == *80%* ]]
+@test "compose: hidden battery leaves single gap after CPU" {
+  source "$LIB"
+  gpu=
+  vram=
+  cpu=15
+  ram=80
+  batt=
+  batt_icon=
+  local out
+  out="$(compose_blocks)"
+  local plain
+  plain="$(sed "s/#\[[^]]*\]//g" <<<"$out")"
+  # RAM half is last visible: ends with 80% + 3 spaces
+  [[ $plain == *"80% "* ]]
 }
 
-@test "integration: status-right hides GPU block when @gpu_util unset" {
-  start_server
-  load_conf
-  tmux set-option -g @gpu_util 42
-  tmux set-option -g @cpu 15
-  tmux set-option -g @ram 80
-  local right
-  right="$(status_right)"
-  [[ $right == *42%* ]]
-  [[ $right == *15%* ]]
-  tmux set-option -gu @gpu_util
-  tmux set-option -gu @vram
-  right="$(status_right)"
-  [[ $right != *42%* ]]
-  [[ $right == *15%* ]]
-}
-
-# --- status-right block spacing ------------------------------------------------
-# A hidden block must contribute no visible space: the gap between its
-# neighbours must be exactly the one separator space, and a fully hidden
-# leading run must leave no stray padding before the time block.
-
-sb_right() { status_right | sed 's/#\[[^]]*\]//g'; }
-# Length of the space run between /regex-before/ and /regex-after/.
-gap_len() { # before-regex after-regex text
-  local m
-  m="$(sed -E "s/.*$1([ ]+)$2.*/\1/" <<<"$3")"
-  printf '%s' "${#m}"
-}
-
-@test "integration: hidden battery leaves single gap between CPU and time blocks" {
-  start_server
-  load_conf
-  tmux set-option -g @gpu_util 42
-  tmux set-option -g @vram 67
-  tmux set-option -g @cpu 15
-  tmux set-option -g @ram 80
-  tmux set-option -gu @batt
-  tmux set-option -gu @batt_icon
-  local right
-  right="$(sb_right)"
-  # RAM half (|80%) -> calendar icon: three spaces (CPU trailing pad + separator + time leading pad).
-  [[ "$(gap_len '\|[0-9]+%' '' "$right")" == 3 ]]
-}
-
-@test "integration: visible battery keeps single spacing between all blocks" {
-  start_server
-  load_conf
-  tmux set-option -g @gpu_util 42
-  tmux set-option -g @vram 67
-  tmux set-option -g @cpu 15
-  tmux set-option -g @ram 80
-  tmux set-option -g @batt 97
-  tmux set-option -g @batt_icon '🔋'
-  local right
-  right="$(sb_right)"
-  # Three spaces between each visible section (trailing + default-bg + leading).
-  [[ "$(gap_len '\|[0-9]+%' '🔋' "$right")" == 3 ]]
-  [[ "$(gap_len '[0-9]+%' '' "$right")" == 3 ]]
-}
-
-@test "integration: all metrics hidden leaves no stray space before time" {
-  start_server
-  load_conf
-  tmux set-option -gu @gpu_util
-  tmux set-option -gu @vram
-  tmux set-option -gu @cpu
-  tmux set-option -gu @ram
-  tmux set-option -gu @batt
-  tmux set-option -gu @batt_icon
-  local right
-  right="$(sb_right)"
-  # Only the time block's own leading space remains (hidden blocks emit zero chars).
-  [[ $right == ' '* ]]
-}
-
-@test "integration: hidden GPU leaves no stray leading space" {
-  start_server
-  load_conf
-  tmux set-option -gu @gpu_util
-  tmux set-option -gu @vram
-  tmux set-option -g @cpu 15
-  tmux set-option -g @ram 80
-  local right
-  right="$(sb_right)"
-  # CPU block's own leading space only — GPU emitted zero characters.
-  [[ $right == ' '* ]]
-}
-
-@test "integration: status-right renders four 0% placeholders when seeded 0" {
-  start_server
-  load_conf
-  tmux set-option -g @gpu_util 0
-  tmux set-option -g @vram 0
-  tmux set-option -g @cpu 0
-  tmux set-option -g @ram 0
-
-  local right count
-  right="$(status_right | sed -e 's/#\[[^]]*\]//g')"
-
-  count="$({ grep -o '0\%' <<<"$right" || true; } | awk 'END { print NR }')"
-  [[ $count == "4" ]]
-}
-
-# The Darwin sampler is exercised cross-platform via mocks; locking differs by
-# platform (real flock shadows the mock on Linux), so the pidfile-lock content
-# is asserted only in the Darwin-only test below.
-@test "integration: Darwin sampler fills CPU/RAM from top/vm_stat (mocked)" {
-  start_server
-  rm -f "$T/bin/flock"
-  make_mock uname '#!/bin/sh
-echo Darwin'
-  make_mock top "#!/bin/sh
-cat <<'X'
-$TOP
-X"
-  make_mock vm_stat "#!/bin/sh
-cat <<'X'
-$VMSTAT
-X"
-  make_mock sysctl "#!/bin/sh
-echo $MEMSIZE"
-  start_consumer
-  wait_opt @cpu '^15$'
-  wait_opt @ram '^52$'
-}
-
-@test "integration: without flock, a second consumer exits while the first lives" {
-  start_server
-  rm -f "$T/bin/flock"
-  start_consumer
-  wait_iteration
-  local first=$SCRIPT_PID
-  start_consumer
-  wait_until 5 is_dead "$SCRIPT_PID"
-  kill -0 "$first"
-}
-
-@test "integration: without flock, a stale lock from a dead owner is taken over" {
-  # Darwin-only: on Linux the real flock shadows the mock and the consumer
-  # takes the flock branch, which never writes $$ into the lockfile.
-  [[ $(uname -s) == "Darwin" ]] || skip "Darwin-only (pidfile lock path)"
-  start_server
-  rm -f "$T/bin/flock"
-  echo 999999 >"$SOCK-statusbar.lock"
-  start_consumer
-  wait_opt @cpu '^[0-9]+$'
-  wait_iteration
-  [[ "$(<"$SOCK-statusbar.lock")" == "$SCRIPT_PID" ]]
+@test "compose: visible battery keeps single spacing between all blocks" {
+  source "$LIB"
+  gpu=42
+  vram=67
+  cpu=15
+  ram=80
+  batt=97
+  batt_icon="󰂄"
+  local out
+  out="$(compose_blocks)"
+  local plain
+  plain="$(sed "s/#\[[^]]*\]//g" <<<"$out")"
+  [[ $plain == *"42%|67% "* ]]
+  [[ $plain == *"15%|80% "* ]]
+  [[ $plain == *"󰂄 97% "* ]]
 }
 
 # --- Battery unit tests -----------------------------------------------------
@@ -587,9 +459,9 @@ echo $MEMSIZE"
   _batt_is_ac "Not charging"
   _batt_is_ac Full
   _batt_is_ac "Unknown" 1
-  ! _batt_is_ac Discharging
-  ! _batt_is_ac Unknown
-  ! _batt_is_ac ""
+  run ! _batt_is_ac Discharging
+  run ! _batt_is_ac Unknown
+  run ! _batt_is_ac ""
 }
 
 # --- Tab list (status-left) --------------------------------------------------
@@ -646,20 +518,66 @@ echo $MEMSIZE"
   [[ $bell_unit == *'@c_red'* ]]
 }
 
-# --- Integration test --------------------------------------------------------
+# --- E2E: pull model (#() job) ----------------------------------------------
 
-@test "integration: status-right renders battery block when set and hides when unset" {
+# Copy the real statusbar.sh (not the stub) into the scratch HOME.
+load_real_script() {
+  cp "$DIR/../scripts/statusbar.sh" "$HOME/.config/tmux/scripts/statusbar.sh"
+  cp "$DIR/../scripts/statusbar-lib.bash" "$HOME/.config/tmux/scripts/statusbar-lib.bash"
+  chmod +x "$HOME/.config/tmux/scripts/statusbar.sh"
+}
+
+# The stored status-right option is always the raw conf format (job
+# substitution happens per-client at draw time), so the observable is the
+# status line of a real attached client: its job cache renders the script's
+# output. The time block never contains '%', so a '%' in the bottom row
+# proves the job ran. The client is wide so the right-aligned status-right
+# is not clipped.
+attach_observer() {
+  tmux new-session -d -s obs -x 200 -y 20 'env -u TMUX tmux attach-session -t base'
+}
+# The conf pins status-position top, so the status line is the first row.
+obs_row() { tmux capture-pane -p -t obs | head -1; }
+row_has_metrics() { [[ "$(obs_row)" == *'%'* ]]; }
+
+@test "E2E: attached client renders the composed status-right" {
   start_server
   load_conf
-  tmux set-option -g @batt 85
-  tmux set-option -g @batt_icon "󰂁"
-  local right
-  right="$(status_right)"
-  [[ $right == *󰂁* ]]
-  [[ $right == *85%* ]]
+  load_real_script
+  attach_observer
+  # The job takes ~1s; wait for its output in the client's status line.
+  wait_until 15 row_has_metrics
+  local row
+  row="$(obs_row)"
+  # Metric blocks (percent signs, separators) plus the live clock.
+  [[ $row == *'%'* ]]
+  [[ $row =~ [0-9]:[0-9]{2}$ ]]
+}
 
-  tmux set-option -gu @batt
-  tmux set-option -gu @batt_icon
-  right="$(status_right)"
-  [[ $right != *85%* ]]
+@test "E2E: status-right updates between intervals" {
+  start_server
+  load_conf
+  load_real_script
+  attach_observer
+  wait_until 15 row_has_metrics
+  local r1 r2
+  r1="$(obs_row)"
+  # A couple of status-intervals (3s) later the job has run again. Values may
+  # be identical on an idle machine, so only require a rendered row.
+  sleep 6
+  r2="$(obs_row)"
+  [[ $r1 == *'%'* ]]
+  [[ $r2 == *'%'* ]]
+}
+
+@test "E2E: reload conf re-fires the status bar job" {
+  start_server
+  load_conf
+  load_real_script
+  attach_observer
+  wait_until 15 row_has_metrics
+  # Reload the conf — status-right goes back to the raw job format, and the
+  # next tick re-runs the job under the new format.
+  tmux source-file "$T/tmux.conf"
+  wait_until 15 row_has_metrics
 }

@@ -4,18 +4,11 @@
 # (a tool's raw output or a proc snapshot) and fills the gpu/vram/cpu/ram
 # globals. Sourced by statusbar.sh (the consumer) and by the bats suite
 # (the unit tier), so the same logic is tested with fixtures and in the
-# live loop.
+# one-shot `#()` job.
 
 # ---------------------------------------------------------------------------
 # 1. General Helpers
 # ---------------------------------------------------------------------------
-
-# refresh_interval VALUE -> sets refresh (positive integer seconds, else 3).
-refresh_interval() {
-  refresh=3
-  [[ $1 =~ ^[1-9][0-9]*$ ]] && refresh=$1
-  return 0
-}
 
 # _tout SECONDS CMD... -> run CMD with a timeout when timeout(1) or its
 # GNU-coreutils macOS alias gtimeout(1) exists; otherwise run it directly.
@@ -30,6 +23,28 @@ _tout() {
   else
     "$@"
   fi
+}
+
+# _icon NAME -> prints the Nerd Font glyph for one metric block. The
+# single table of every glyph the bar emits; the bats suite pins these
+# bytes (see "_icon: bytes match the expected Nerd Font codepoints").
+_icon() {
+  case $1 in
+  gpu) printf '' ;;
+  cpu) printf '' ;;
+  batt_ac) printf '󰂄' ;;
+  batt_full) printf '󰁹' ;;
+  batt_0) printf '󰂎' ;;
+  batt_1) printf '󰁺' ;;
+  batt_2) printf '󰁻' ;;
+  batt_3) printf '󰁼' ;;
+  batt_4) printf '󰁽' ;;
+  batt_5) printf '󰁾' ;;
+  batt_6) printf '󰁿' ;;
+  batt_7) printf '󰂀' ;;
+  batt_8) printf '󰂁' ;;
+  batt_9) printf '󰂂' ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -68,10 +83,10 @@ gpu_intel_dgpu() {
   local stats
   command -v xpu-smi >/dev/null && command -v jq >/dev/null || return 1
   stats=$(_tout 3 xpu-smi stats -j 2>/dev/null | head -1)
-  gpu=$(printf '%s' "$stats" | jq -r \
-    '[.device_level[]? | select(.metrics_type == "XPUM_STATS_GPU_UTILIZATION") | (.value | floor)] | .[0] // empty' 2>/dev/null)
-  vram=$(printf '%s' "$stats" | jq -r \
-    '[.device_level[]? | select(.metrics_type == "XPUM_STATS_MEMORY_UTILIZATION") | (.value | floor)] | .[0] // empty' 2>/dev/null)
+  IFS=$'\t' read -r gpu vram <<<"$(printf '%s' "$stats" | jq -r '
+    [ ([.device_level[]? | select(.metrics_type == "XPUM_STATS_GPU_UTILIZATION") | (.value | floor)] | .[0] // null),
+      ([.device_level[]? | select(.metrics_type == "XPUM_STATS_MEMORY_UTILIZATION") | (.value | floor)] | .[0] // null) ]
+    | @tsv' 2>/dev/null)"
   [[ $gpu =~ ^[0-9]+$ ]] || gpu=
   [[ $vram =~ ^[0-9]+$ ]] || vram=
   [[ -n $gpu ]]
@@ -150,11 +165,6 @@ ram_darwin() {
     END { print (n > 0 ? n : 0) }' <<<"$1")
 
   if [[ $page =~ ^[1-9][0-9]*$ && $2 =~ ^[1-9][0-9]*$ ]]; then
-    # Total physical memory is passed as $2 (bytes).
-    # Convert used pages to bytes, subtract from total to get available/free equivalent for ram_pct
-    # Note: ram_pct expects (Total, Available).
-    # Used Bytes = used_pages * page_size
-    # Free/Avail Bytes = Total Bytes - Used Bytes
     ram_pct "$2" $(($2 - used * page))
   else
     ram=0
@@ -184,32 +194,14 @@ _batt_is_ac() {
 # whenever the battery is on AC (at any percentage, including full/paused),
 # otherwise the tiered level icon for PCT.
 _batt_icon() {
-  local pct=$1 status=${2:-} online=${3:-}
+  local pct=$1 status=${2:-} online=${3:-} i
   if _batt_is_ac "$status" "$online"; then
-    printf '󰂄'
-  elif ((pct < 10)); then
-    printf '󰂎'
-  elif ((pct < 20)); then
-    printf '󰁺'
-  elif ((pct < 30)); then
-    printf '󰁻'
-  elif ((pct < 40)); then
-    printf '󰁼'
-  elif ((pct < 50)); then
-    printf '󰁽'
-  elif ((pct < 60)); then
-    printf '󰁾'
-  elif ((pct < 70)); then
-    printf '󰁿'
-  elif ((pct < 80)); then
-    printf '󰂀'
-  elif ((pct < 90)); then
-    printf '󰂁'
-  elif ((pct < 100)); then
-    printf '󰂂'
-  else
-    printf '󰁹'
+    _icon batt_ac
+    return
   fi
+  i=$((pct / 10))
+  ((i > 9)) && i=full # 100%+ -> full battery glyph
+  _icon "batt_$i"
 }
 
 batt_darwin() {
@@ -252,4 +244,45 @@ batt_linux() {
     fi
   done
   return 1
+}
+
+# ---------------------------------------------------------------------------
+# 6. Compose — build the right-side metric blocks
+# ---------------------------------------------------------------------------
+
+# Palette (mirrors @c_* in 04-statusbar.conf).
+_sb_s0='#313244'
+_sb_o2='#a6adc8'
+_sb_t1='#cdd6f4'
+_sb_m='#6c7086'
+
+# compose_blocks — reads the gpu/vram/cpu/ram/batt/batt_icon globals and
+# prints the composed right-side metric blocks. Hidden blocks (empty vars)
+# emit zero characters. The time block is NOT composed here — it lives in
+# status-right in the conf as a live format string (so @clock-format
+# toggles at runtime). `#()` output is inserted verbatim (no strftime), so
+# a single literal % is fine.
+compose_blocks() {
+  local out=
+  # GPU block: bg, icon, util, separator, vram, trailing space
+  if [[ -n $gpu ]]; then
+    out+="#[bg=$_sb_s0] #[fg=$_sb_t1]$(_icon gpu)#[fg=$_sb_o2] ${gpu}%"
+    if [[ -n $vram ]]; then
+      out+="#[fg=$_sb_m]|#[fg=$_sb_o2]${vram}%"
+    fi
+    out+=" #[default] "
+  fi
+  # CPU block: same structure
+  if [[ -n $cpu ]]; then
+    out+="#[bg=$_sb_s0] #[fg=$_sb_t1]$(_icon cpu)#[fg=$_sb_o2] ${cpu}%"
+    if [[ -n $ram ]]; then
+      out+="#[fg=$_sb_m]|#[fg=$_sb_o2]${ram}%"
+    fi
+    out+=" #[default] "
+  fi
+  # Battery block: bg, icon, pct, trailing space
+  if [[ -n $batt ]]; then
+    out+="#[bg=$_sb_s0] #[fg=$_sb_t1]${batt_icon} #[fg=$_sb_o2]${batt}% #[default] "
+  fi
+  printf '%s' "$out"
 }
