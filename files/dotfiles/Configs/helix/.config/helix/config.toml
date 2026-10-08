@@ -22,6 +22,12 @@ select = "underline"
 display-inlay-hints = true
 auto-signature-help = true
 
+[keys.insert]
+C-c = "normal_mode"
+j = { k = "normal_mode" }
+[keys.select]
+C-c = "exit_select_mode"
+
 [keys.normal]
 # Toggle hidden files visibility
 C-h = ":toggle file-picker.hidden"
