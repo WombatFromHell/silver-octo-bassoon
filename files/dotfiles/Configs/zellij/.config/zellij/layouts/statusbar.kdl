@@ -1,0 +1,41 @@
+// statusbar.kdl — one bar at the top of every tab, drawn entirely by
+// zellij-statusbar.wasm (mode · session · command · tabs · metrics).
+//
+// Install:  make install
+// Use:      zellij -l statusbar      (or set `default_layout "statusbar"`)
+//
+// The plugin is the whole bar, so it lives alone in a one-row borderless pane
+// pinned above `children`. It asks for RunCommands + ReadApplicationState on
+// first load and must be granted, or the metrics stay empty.
+//
+// Sections and palette are defined here, in the plugin block:
+//   left/right  — ordered, whitespace-separated section tokens. Known tokens:
+//                 mode session command tabs  |  gpu cpu battery time
+//                 Unknown tokens are silently skipped. Drop a token to hide it
+//                 (e.g. remove "tabs" from left for no tab chips).
+//   color_*     — hex palette, Catppuccin Mocha defaults; any key omitted
+//                 keeps its default.
+layout {
+    default_tab_template {
+        pane size=1 borderless=true {
+            plugin location="file:~/.config/zellij/plugins/beryl-status.wasm" {
+                left  "mode session command tabs"
+                right "gpu cpu battery time"
+
+                color_bg      "1e1e2e"  // bar background
+                color_chip_bg "313244"  // metric chips, inactive tab chips
+                color_cmd_bg  "45475a"  // foreground-command chip
+                color_value   "a6adc8"  // numbers / values
+                color_icon    "cdd6f4"  // icons
+                color_muted   "6c7086"  // separators
+                color_accent  "94e2d5"  // selected state: mode, session, active tab
+
+                // Seconds between metric poll requests (amd/nvidia/intel)
+                poll_interval "3.0"
+                // "24" or "12", mirroring tmux's @clock-format.
+                clock_format "24"
+            }
+        }
+        children
+    }
+}

@@ -80,6 +80,10 @@ keybinds clear-defaults=true {
             BreakPane
             SwitchToMode "normal"
         }
+        bind "W" {
+            NewPane { floating true; }
+            SwitchToMode "normal"
+        }
         bind "H" {
             GoToPreviousTab
             SwitchToMode "normal"
@@ -503,7 +507,7 @@ theme "catppuccin-macchiato"
 default_mode "normal"
 default_shell "fish.sh"
 // default_layout "compact"
-default_layout "zjstatus"
+default_layout "statusbar"
 simplified_ui true
 stacked_resize true
 mouse_mode true
@@ -515,3 +519,4 @@ copy_on_select true
 session_serialization false
 pane_frame_serialization false
 show_startup_tips false
+visual_bell true
