@@ -206,8 +206,8 @@ binds {
         spawn "dms" "ipc" "call" "spotlight" "toggle"
     }
     Mod+Alt+T hotkey-overlay-title="Open a Terminal" {
-        // spawn "ghostty"
-        spawn "kitty"
+        spawn "ghostty"
+        // spawn "kitty"
     }
     Mod+Alt+B hotkey-overlay-title="Open Browser" {
         spawn "spawn-browser.sh"

@@ -1,4 +1,9 @@
-"/home/josh/.config/zellij/plugins/beryl-status.wasm" {
+"/Users/josh/.config/zellij/plugins/zellij-autolock.wasm" {
+    ReadApplicationState
+    ChangeApplicationState
+}
+"/Users/josh/.config/zellij/plugins/zjstatus.wasm" {
+    ChangeApplicationState
     RunCommands
     ReadApplicationState
 }
@@ -6,21 +11,16 @@
     ReadApplicationState
     RunCommands
 }
-"/Users/josh/.config/zellij/plugins/zellij-autolock.wasm" {
-    ChangeApplicationState
+"/home/josh/.config/zellij/plugins/zellij-autolock.wasm" {
     ReadApplicationState
+    ChangeApplicationState
 }
-"/Users/josh/.config/zellij/plugins/zjstatus.wasm" {
-    ChangeApplicationState
-    ReadApplicationState
+"/home/josh/.config/zellij/plugins/beryl-status.wasm" {
     RunCommands
+    ReadApplicationState
 }
 "/home/josh/.config/zellij/plugins/zjstatus.wasm" {
     ChangeApplicationState
     RunCommands
     ReadApplicationState
-}
-"/home/josh/.config/zellij/plugins/zellij-autolock.wasm" {
-    ReadApplicationState
-    ChangeApplicationState
 }
