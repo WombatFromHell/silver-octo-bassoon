@@ -510,7 +510,6 @@ default_shell "fish.sh"
 default_layout "statusbar"
 simplified_ui true
 stacked_resize true
-mouse_mode true
 pane_frames false
 on_force_close "detach"
 scroll_buffer_size 10000
