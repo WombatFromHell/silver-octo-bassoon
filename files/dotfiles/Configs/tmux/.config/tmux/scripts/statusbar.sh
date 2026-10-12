@@ -37,7 +37,7 @@ _sb_interval() {
 
 # _sb_read_state -> SB_LAST (claim ts) / SB_CACHE (last composed output).
 _sb_read_state() {
-  SB_LAST= SB_CACHE=
+  SB_LAST='' SB_CACHE=''
   {
     IFS= read -r SB_LAST
     IFS= read -r SB_CACHE
@@ -52,6 +52,8 @@ _sb_clock_format() {
 }
 
 # _sb_stamp -> date_str / clock for the time block (cheap, always rendered).
+# date_str/clock are consumed by the lib's _sb_time (cross-file globals).
+# shellcheck disable=SC2034
 _sb_stamp() {
   date_str=$(date +%m.%d)
   clock=$(date +"$(_sb_clock_fmt "$(_sb_clock_format)")")

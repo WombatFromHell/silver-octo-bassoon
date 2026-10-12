@@ -145,21 +145,21 @@ exit 1'
 
 @test "compose: bare clock pre-data (no metrics)" {
   source "$LIB"
-  gpu= vram= cpu= ram= batt= batt_icon= date_str= clock=07:19
+  gpu='' vram='' cpu='' ram='' batt='' batt_icon='' date_str='' clock=07:19
   out=$(compose_metrics)$(_sb_time)
   [[ $out == "#[fg=#6c7086]07:19 #[default]" ]]
 }
 
 @test "compose: decorated calendar+clock ready (exact)" {
   source "$LIB"
-  gpu= vram= cpu= ram= batt= batt_icon= date_str=07.06 clock=07:19
+  gpu='' vram='' cpu='' ram='' batt='' batt_icon='' date_str=07.06 clock=07:19
   out=$(compose_metrics)$(_sb_time 1)
   [[ $out == "#[bg=#313244] #[fg=#cdd6f4]$(_icon cal)#[fg=#a6adc8] 07.06 #[fg=#6c7086]|#[default]#[bg=#313244] #[fg=#cdd6f4]$(_icon clock) #[fg=#a6adc8]07:19 #[default]" ]]
 }
 
 @test "compose: time block present even with all metrics hidden" {
   source "$LIB"
-  gpu= vram= cpu= ram= batt= batt_icon= date_str=07.06 clock=07:19
+  gpu='' vram='' cpu='' ram='' batt='' batt_icon='' date_str=07.06 clock=07:19
   out=$(compose_metrics)$(_sb_time 1)
   [[ $out == *"07.06"* ]]
   [[ $out == *"07:19"* ]]
@@ -344,6 +344,8 @@ EOF
   [[ $count == "5" ]]
 }
 
+# date_str/clock are consumed by the lib's _sb_time (cross-file globals).
+# shellcheck disable=SC2034
 @test "compose: all hidden — only time block" {
   source "$LIB"
   gpu=

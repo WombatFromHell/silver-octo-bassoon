@@ -285,6 +285,8 @@ _sb_batt() {
 }
 
 # _sb_time READY -> bare muted clock pre-data, calendar+clock once ready.
+# date_str/clock are caller-set globals (set in statusbar.sh _sb_stamp).
+# shellcheck disable=SC2154
 _sb_time() {
   if [[ ${1:-} == 1 ]]; then
     printf '%s' "#[bg=$_sb_s0] #[fg=$_sb_t1]$(_icon cal)#[fg=$_sb_o2] $date_str #[fg=$_sb_m]|#[default]#[bg=$_sb_s0] #[fg=$_sb_t1]$(_icon clock) #[fg=$_sb_o2]$clock #[default]"

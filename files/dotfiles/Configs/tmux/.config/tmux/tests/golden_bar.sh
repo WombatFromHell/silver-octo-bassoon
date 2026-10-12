@@ -27,7 +27,10 @@ trap cleanup EXIT
 T -f "$CONF" new-session -d -s golden -x 200 -y 20 'bash --norc --noprofile'
 
 # Safety check: confirm we're talking to the throwaway server.
-[[ $(T display -p '#{socket_path}') == "$SOCK" ]] || { echo "wrong server" >&2; exit 1; }
+[[ $(T display -p '#{socket_path}') == "$SOCK" ]] || {
+  echo "wrong server" >&2
+  exit 1
+}
 
 # tabs ACTIVE_IDX "title:bell" ...  -> rebuild windows 1..N with titles/bells
 tabs() {

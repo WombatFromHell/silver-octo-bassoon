@@ -122,6 +122,8 @@ state_has_metrics() { [[ "$(sed -n 2p "$T/sb-state" 2>/dev/null)" == *%* ]]; }
   start_server
   load_conf
   load_real_script
+  # sourced via runtime $DIR; not followable by shellcheck
+  # shellcheck disable=SC1091
   source "$DIR/../scripts/statusbar-lib.bash"
   local out1 out2 t0 t1
   rm -f "$T/sb-state"
@@ -129,15 +131,15 @@ state_has_metrics() { [[ "$(sed -n 2p "$T/sb-state" 2>/dev/null)" == *%* ]]; }
   out1="$(TMUX="$SOCK" bash "$HOME/.config/tmux/scripts/statusbar.sh")" # $() also proves the fetch is detached
   t1=$EPOCHREALTIME
   awk -v a="$t0" -v b="$t1" 'BEGIN { exit !(b - a < 1) }'
-  [[ $out1 =~ [0-9]{1,2}:[0-9]{2} ]]   # clock present
-  [[ $out1 != *'%'* ]]                 # no metrics yet
-  [[ $out1 != *"$(_icon cal)"* ]]      # no calendar icon
-  [[ $out1 != *.* ]]                   # no date (MM.DD)
+  [[ $out1 =~ [0-9]{1,2}:[0-9]{2} ]] # clock present
+  [[ $out1 != *'%'* ]]               # no metrics yet
+  [[ $out1 != *"$(_icon cal)"* ]]    # no calendar icon
+  [[ $out1 != *.* ]]                 # no date (MM.DD)
   wait_until 15 state_has_metrics
   out2="$(TMUX="$SOCK" bash "$HOME/.config/tmux/scripts/statusbar.sh")"
-  [[ $out2 == *'%'* ]]                 # metrics filled in
-  [[ $out2 == *"$(_icon cal)"* ]]      # calendar icon
-  [[ $out2 == *.* ]]                   # date (MM.DD)
+  [[ $out2 == *'%'* ]]            # metrics filled in
+  [[ $out2 == *"$(_icon cal)"* ]] # calendar icon
+  [[ $out2 == *.* ]]              # date (MM.DD)
 }
 
 @test "E2E: in-flight job returns cache in under 1s (no not-ready text)" {
@@ -173,4 +175,28 @@ state_has_metrics() { [[ "$(sed -n 2p "$T/sb-state" 2>/dev/null)" == *%* ]]; }
   # clock was present in both the ready branch and at top level,
   # rendering `16:0416:04`.
   [[ ! $row =~ [0-9]{1,2}:[0-9]{2}[0-9]{1,2}:[0-9]{2} ]]
+}
+
+@test "E2E: floax bell dot renders in the session chip (not blank padding)" {
+  start_server
+  load_conf
+  load_real_script
+  attach_observer
+  wait_until 15 row_nonempty
+  local row
+  row="$(obs_row)"
+  # Baseline: no dot anywhere in the bar.
+  [[ $row != *'●'* ]]
+  # The bell hook (scripts/bell.sh) sets @floax_bell; the chip's
+  # conditional then shows the tab bell unit (red ●) after the
+  # session name.
+  tmux set -g @floax_bell 1
+  tmux refresh-client -S
+  row="$(obs_row)"
+  [[ $row == *'base ●'* ]]
+  # Clearing it removes the dot again.
+  tmux set -gu @floax_bell
+  tmux refresh-client -S
+  row="$(obs_row)"
+  [[ $row != *'●'* ]]
 }
