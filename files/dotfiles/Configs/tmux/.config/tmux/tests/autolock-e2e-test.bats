@@ -128,7 +128,11 @@ _lc() { TMUX="$SOCK" bash "$HOME/.config/tmux/scripts/lockchip.sh"; }
   # Expected: leading space + styled glyph + trailing space (1-col separators).
   # The glyph is the nf-cod-lock U+EA75 (bytes ee a9 b5).
   local want
-  want=$(printf ' #[fg=#1e1e2e]\uea75 ')
+  # lockchip.sh colours the glyph with @c_lock (a dark red). This unconf test
+  # server has no @c_lock, so it falls back to #d20f39 (the script's own
+  # default). Pin the real emitted bytes: leading space + styled glyph +
+  # trailing space.
+  want=$(printf ' #[fg=#d20f39]\uea75 ')
   [[ $out == "$want" ]]
 }
 

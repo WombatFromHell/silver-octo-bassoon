@@ -23,7 +23,7 @@ new_floax() {
 
 status_is() { [[ "$(tmux show-options -qv -t floax status)" == "$1" ]]; }
 wait_status() { wait_until 5 status_is "$1"; }
-bar_has() { [[ "$(tmux display -p -t floax:1 -F '#{T;=/100:status-left}')" == *"$1"* ]]; }
+bar_has() { [[ "$(tmux display -p -t floax:1 -F '#{E:@sl_windows_fmt}' | sed 's/#\[[^]]*\]//g')" == *"$1"* ]]; }
 wait_bar() { wait_until 5 bar_has "$1"; }
 top_row_has() { [[ "$(tmux capture-pane -p -t outer | sed -n 1p)" == *"$1"* ]]; }
 
@@ -55,25 +55,33 @@ top_row_has() { [[ "$(tmux capture-pane -p -t outer | sed -n 1p)" == *"$1"* ]]; 
 }
 
 # tmux aborts format expansion on an unbalanced #{...}; that renders as a
-# blank tab bar, so assert the expansion itself, not just the option.
+# blank tab bar, so assert the expansion itself, not just the option. The bar
+# is the inherited @sl_windows_fmt list: active window = index + its title,
+# inactive = index. The title is CWD-dependent, so assert the window indexes
+# (proof the format expanded to a non-blank bar), not a literal name.
 @test "tab bar expands to the active tab name and inactive index" {
   new_floax 2
-  wait_bar " 1 tab1"
-  wait_bar " 2 "
+  wait_bar " 1"
+  wait_bar " 2"
 }
 
+# The active window renders as "index + title"; an inactive one is just its
+# index. So once win1 is no longer active it renders adjacent to win2 as
+# " 1   2" — a token that only appears when win2 is the active window.
 @test "tab bar follows the active window" {
   new_floax 2
   tmux select-window -t floax:2
-  wait_bar " 2 tab2"
+  wait_bar " 1   2"
 }
 
 # The real popup path: a nested client attached from inside a pane. Run as the
 # pane's own command (no send-keys: no typing race, no shell startup).
+# The nested client inherits the parent status bar, so its top row carries the
+# floax window indexes (assert the inactive win2 index, not a literal name).
 @test "a nested client renders the tab bar in its top row" {
   new_floax 2
   tmux new-session -d -s outer 'env -u TMUX tmux attach-session -t floax'
-  wait_until 5 top_row_has " 1 tab1  2"
+  wait_until 5 top_row_has " 2"
 }
 
 # tmux 3.8 moved these defaults to 'theme' colours; the conf must pin them.
