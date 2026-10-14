@@ -149,22 +149,6 @@ end
 function lactd_uv
     flatpak run io.github.ilya_zlobintsev.LACT cli profile set UV
 end
-function fish_title
-    set -l path (_abbr_path $PWD)
-    if test -n "$TMUX"
-        # Inside tmux: show the abbreviated path as the title.
-        # Apps that set their own title will override this.
-        # If @title_prefix is set, prepend 'user@host - '.
-        set -l prefix (tmux show-options -g -v @title_prefix 2>/dev/null | cut -d' ' -f2)
-        if test -n "$prefix" -a "$prefix" != ""
-            echo (whoami)@(hostname) - $path
-        else
-            echo $path
-        end
-    else
-        echo (whoami)@(hostname):$path
-    end
-end
 
 function clean_fish
     set -l FISH_HOME "$HOME/.config/fish"
@@ -172,7 +156,7 @@ function clean_fish
     # Nuke only what fisher/fish regenerate. Critical files
     # (config.fish, fish_plugins, helpers/) are untouched.
     rm -rf "$FISH_HOME"/{completions,conf.d,functions,themes} \
-           "$FISH_HOME"/fish_variables
+        "$FISH_HOME"/fish_variables
 
     # bootstrap_fisher handles the offline check and downloads fisher.fish
     # into conf.d/, which a fresh (non-interactive) fish shell loads

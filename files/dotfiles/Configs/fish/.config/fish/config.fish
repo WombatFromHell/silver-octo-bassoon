@@ -24,6 +24,7 @@ if status is-interactive
     set -g TMUX_ENABLED true
     set -g TMUX_AUTO_ATTACH true
     set -g ZELLIJ_ENABLED true
+    # set -g ZELLIJ_AUTO_ATTACH true
     set -g HERDR_ENABLED true
 
     set -x XDG_DATA_HOME $HOME/.local/share
@@ -69,3 +70,10 @@ if status is-interactive
         update_gpg_env
     end
 end
+
+# pnpm
+set -gx PNPM_HOME '/home/josh/.local/share/pnpm'
+if test "$PATH[1]" != "$PNPM_HOME/bin"
+    set -gx PATH "$PNPM_HOME/bin" $PATH
+end
+# pnpm end

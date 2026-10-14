@@ -1,81 +1,69 @@
-# Prints an abbreviated version of the given path to stdout.
-# Home dir -> ~, long paths -> /v/h/j/.a/... (last @abbrev_keep components full).
-# Used by fish_title for the terminal title inside tmux.
+# Title = user@host:<abbreviated pwd>, fitted to a column budget.
+#   Path:  stdlib prompt_pwd (~ for home, /v/h/j/.a/... with the last
+#          @abbrev_keep tmux option components kept full, default 2).
+#   Fit:   keep head + tail, ellipsis the middle; the tail is the informative part.
+# Width model: 1 column/char (fish counts chars, not display columns);
+# ponytail: CJK/wide-char parity deferred — swap `string length` for `string length -V` /
+# wcwidth-aware logic if it ever matters.
 
-function _abbr_path
-    set -l raw $argv[1]
-    set -l home (realpath ~)
+# Budget in columns; override in config.fish: set -g TITLE_TRUNC_WIDTH 80
+set -q TITLE_TRUNC_WIDTH; or set -g TITLE_TRUNC_WIDTH 64
 
-    # Read @abbrev_keep from tmux (default 2)
-    set -l keep (tmux show-options -g -v @abbrev_keep 2>/dev/null | string split ' ' | string sub -s 2)
-    if not string match -q '[0-9]+' -- "$keep"
-        set keep 2
-    end
+# title_truncate <title> [width] — budget: arg > $TITLE_TRUNC_WIDTH, clamped to $COLUMNS.
+function title_truncate
+    set -l s $argv[1]
+    set -l w $TITLE_TRUNC_WIDTH
+    set -q argv[2]; and set w $argv[2]
+    set -q COLUMNS; and test $COLUMNS -lt $w; and set w $COLUMNS
 
-    # Fast path: direct match against resolved home
-    if test "$raw" = "$home"
-        echo "~"
-        return
-    end
-    if string replace -q "$home/" "" -- "$raw"
-        set -l rest (string replace -- "$home/" "" "$raw")
-        _abbr_parts "$rest" "~/" $keep
-        return
-    end
-
-    # Slow path: path might reach home via a symlink (e.g. /home/josh -> /var/home/josh)
-    if test -n $HOME
-        set -l resolved (realpath "$raw" 2>/dev/null)
-        if test "$resolved" = "$home"
-            echo "~"
-            return
-        end
-        if string replace -q "$home/" "" -- "$resolved"
-            set -l rest (string replace -- "$home/" "" "$resolved")
-            _abbr_parts "$rest" "~/" $keep
-            return
-        end
-    end
-
-    # Non-home absolute path
-    if test (string sub -l 1 -- "$raw") = "/"
-        set -l rest (string sub -s 2 -- "$raw")
-        _abbr_parts "$rest" "/" $keep
+    # Fits as-is -> untouched, host head included.
+    if test (string length -- $s) -le $w
+        echo $s
         return
     end
 
-    echo "$raw"
+    # Only when truncating: drop the redundant 'user@host:' / 'user@host - ' head.
+    set s (string replace -r '^[^/]*@[^/:]+( - |:)' '' -- $s)
+    if test (string length -- $s) -le $w
+        echo $s
+        return
+    end
+
+    # Last two path components whole, if they fit: '…a/b'.
+    set -l tail (string match -r '[^/]+/[^/]+$' -- $s)
+    if test -n "$tail"; and test (string length -- $tail) -lt $w
+        echo …$tail
+        return
+    end
+
+    # Otherwise head + '…' + tail of the whole string.
+    set -l half (math "max(1, floor(($w - 1) / 2))")
+    echo (string sub -l $half -- $s)…(string sub -s -$half -- $s)
 end
 
-# _abbr_parts <rest> <prefix> <keep>
-# Splits rest on /, abbreviates all but the last $keep components.
-function _abbr_parts
-    set -l rest $argv[1]
-    set -l prefix $argv[2]
-    set -l keep $argv[3]
-
-    set -l parts (string split / -- "$rest")
-    set -l n (count $parts)
-
-    if test $n -le $keep
-        echo "$prefix$rest"
-        return
+function fish_title
+    # ponytail: no realpath/symlinked-$HOME fallback; fish's $PWD is already logical.
+    # Add it back only if a title shows /var/home/... instead of ~.
+    set -l keep 2
+    if set -q TMUX
+        set -l k (tmux show-options -gqv @abbrev_keep 2>/dev/null)
+        string match -qr '^\d+$' -- $k; and set keep $k
     end
+    title_truncate $USER@(hostname):(prompt_pwd -d 1 -D $keep)
+end
 
-    set -l out "$prefix"
-    for i in (seq 1 (math $n - $keep))
-        set -l p $parts[$i]
-        if string match -q '.*' -- $p
-            set out (printf "%s%s/" "$out" (string sub -l 2 -- $p))
-        else
-            set out (printf "%s%s/" "$out" (string sub -l 1 -- $p))
+# Self-check: `fish truncate.fish --test` (asserts, no framework).
+if contains -- --test $argv
+    function _eq
+        test "$argv[1]" = "$argv[2]"; or begin
+            echo "FAIL: got '$argv[1]' want '$argv[2]'"
+            exit 1
         end
     end
-    for i in (math $n - $keep + 1) $n
-        set out (printf "%s%s" "$out" $parts[$i])
-        if test $i -lt $n
-            set out (printf "%s/" "$out")
-        end
-    end
-    echo $out
+    _eq (title_truncate short 10) short
+    _eq (title_truncate me@h:~/a/b/c/d 7) …c/d
+    _eq (title_truncate me@h:/aaaaaaaaaaaaaaaaaaaaaaaa 9) /aaa…aaaa
+    _eq (title_truncate me@h:/aaaaaaaaaaaaaaaaaaaaaaaa 1) /…a
+    _eq (string length (title_truncate me@h:/x/yyyyyyyyyyyy/zzzzzzzzzzzz 12)) 11
+    echo ok
 end
