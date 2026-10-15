@@ -1,5 +1,0 @@
----
-# Default values for arpcbridge role
-
-# Feature toggle
-install_arpc_fix: false

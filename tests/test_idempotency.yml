@@ -45,7 +45,6 @@
     - mounts
     - flatpak
     - vfio
-    - arpcbridge
     - nix
     - btrfs
 
@@ -92,7 +91,6 @@
     - mounts
     - flatpak
     - vfio
-    - arpcbridge
     - nix
     - btrfs
 
