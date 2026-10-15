@@ -1,13 +1,25 @@
 {
-  "lastChangelogVersion": "1.0.0",
+  "lastChangelogVersion": "1.1.0",
   "packages": [
-    "npm:@juicesharp/rpiv-ask-user-question",
-    "npm:pi-rtk-optimizer",
     "npm:pi-ketch",
-    "npm:pi-checklist",
-    "npm:pi-graft",
-    "npm:@sting8k/pi-vcc"
+    "npm:@sting8k/pi-vcc",
+    "npm:pi-rtk-optimizer",
+    "npm:context-mode",
+    "npm:@rmrdeveloper/sideroom-pi",
+    "npm:pi-matt-subagent"
   ],
   "enableInstallTelemetry": false,
-  "theme": "dark"
+  "theme": "dark",
+  "defaultProvider": "strata",
+  "defaultModel": "strata-coder-iq1_m",
+  "piBolt": {
+    "packages": [
+      "npm:pi-ketch",
+      "npm:@sting8k/pi-vcc",
+      "npm:pi-rtk-optimizer",
+      "npm:context-mode",
+      "npm:@rmrdeveloper/sideroom-pi",
+      "npm:pi-matt-subagent"
+    ]
+  }
 }

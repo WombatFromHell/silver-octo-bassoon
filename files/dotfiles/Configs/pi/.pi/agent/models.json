@@ -1,15 +1,24 @@
 {
   "providers": {
-    "llama-cpp": {
-      "baseUrl": "http:/127.0.0.1:9931",
+    "strata": {
+      "baseUrl": "http://127.0.0.1:9932/v1",
       "api": "openai-completions",
-      "apiKey": "local",
-      "compat": {
-        "sendSessionAffinityHeaders": true
-      },
+      "apiKey": "strata",
       "models": [
         {
-          "id": "llama-cpp-discover"
+          "id": "strata-coder-iq1_m",
+          "name": "Strata Local",
+          "input": [
+            "text"
+          ],
+          "contextWindow": 131072,
+          "maxTokens": 16384,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          }
         }
       ]
     }
