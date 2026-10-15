@@ -71,8 +71,9 @@ function llm-coder
         end
     end
 end
-alias coder='llm-coder'
-alias rcoder='llm-coder --rocm'
+# alias coder='llm-coder'
+alias coder='/var/mnt/data0/strata/run-coder-iq1_m.sh'
+# alias rcoder='llm-coder --rocm'
 function wcoder
     ts_serve -u http://localhost:8787 start-with-llm env \
         PI_WEB_HOST=0.0.0.0 \
