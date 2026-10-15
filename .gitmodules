@@ -1,0 +1,4 @@
+[submodule "files/dotfiles/Configs/tmux/.config/tmux"]
+	path = files/dotfiles/Configs/tmux/.config/tmux
+	url = https://github.com/WombatFromHell/tmux-beryl-statusbar.git
+	branch = main
