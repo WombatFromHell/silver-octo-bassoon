@@ -131,7 +131,7 @@ main() {
 	fi
 	local cmd=()
 	if [[ $vkd3d == false && $dxvk == false ]]; then
-		local cfg="vsync=3,fps_limit_method=early,fps_limit=$fps"
+		local cfg="vsync=3,fps_limit_method=late,fps_limit=$fps"
 		[[ -n ${MANGOHUD_CONFIG:-} ]] && cfg="${MANGOHUD_CONFIG},${cfg}" || cfg="read_cfg,${cfg}"
 		env_args+=("MANGOHUD=1" "MANGOHUD_CONFIG=$cfg")
 		cmd=(mangohud)
