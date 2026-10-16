@@ -38,6 +38,26 @@ if command -q nix
                 command $prog $NFB_COMMON_OPTS $args
             end
         end
+        function _nix_opts_config
+            # Turn "--option name value" pairs in $argv into NIX_CONFIG lines.
+            # nix-fast-build forwards --option to its own nix calls, but children
+            # we spawn ourselves (activate, nix-env) only read NIX_CONFIG.
+            set -l kv
+            set -l i 1
+            while test $i -le (count $argv)
+                if test "$argv[$i]" = --option
+                    set -l name $argv[(math $i + 1)]
+                    set -l val $argv[(math $i + 2)]
+                    if test -n "$val"
+                        set -a kv "$name = $val"
+                    end
+                    set i (math $i + 3)
+                else
+                    set i (math $i + 1)
+                end
+            end
+            string join \n $kv
+        end
         function _nix_dry_run
             # If --dry-run is in the extra args, evaluate via nix-eval-jobs and stop.
             # Returns 0 to continue (no --dry-run). When a dry-run is requested,
@@ -84,6 +104,10 @@ if command -q nix
             set -l flake_path $argv[1]
             set -l target $argv[2]
             set -l extra_args $argv[3..-1]
+
+            # Export any --option args to every nix child of this function, so the
+            # activation step (nix-env, nix store) sees them too.
+            set -lx NIX_CONFIG (_nix_opts_config $extra_args)
 
             # Target attribute for HM closure
             set -l attr "$flake_path#homeConfigurations.\"$target\".activationPackage"
