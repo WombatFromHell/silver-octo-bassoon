@@ -27,3 +27,9 @@ clipboard-read = allow
 clipboard-write = allow
 #
 command = ~/.local/bin/scripts/fish.sh
+#
+# don't interfere with tmux bindings for pane resize
+keybind = alt+shift+h=text:\x1bH
+keybind = alt+shift+j=text:\x1bJ
+keybind = alt+shift+k=text:\x1bK
+keybind = alt+shift+l=text:\x1bL
