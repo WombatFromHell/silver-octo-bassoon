@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared GPU detection helpers. Sourced by chromium-wrapper.sh and
-# bazzified-steam.sh so both use one sysfs-based hybrid-graphics check.
+# beryl-steam.sh so both use one sysfs-based hybrid-graphics check.
 # DRM_SYS_PATH is overridable (tests set it before sourcing).
 readonly DRM_SYS_PATH="${DRM_SYS_PATH:-/sys/class/drm}"
 
