@@ -1,35 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ── Steam Shutdown Logic ─────────────────────────────────────────────────────
+# Stop a running Steam client when the session selector runs. The teardown
+# itself lives in steam-shutdown.sh, shared with the Steam launchers.
+if command -v realpath &>/dev/null; then
+  scripts_dir="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
+else
+  scripts_dir="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+fi
+# shellcheck source=./steam-shutdown.sh disable=SC1091
+source "$scripts_dir/steam-shutdown.sh"
 
-wait_for_steam_exit() {
-  local timeout=15 # wait a max of 15s
-  local elapsed=0
-  while pgrep -xc steam >/dev/null 2>&1; do
-    if ((elapsed >= timeout)); then
-      # notify the user before force-killing
-      notify-send "Steam unresponsive" "Force-closing Steam after ${timeout}s timeout" 2>/dev/null || true
-      # then we go nuclear on 'steam'
-      pkill --signal 9 -x steam 2>/dev/null || true
-      return 0
-    fi
-    sleep 1
-    ((elapsed++))
-  done
-}
+log_info() { echo "[steamos-session-select] $*" >&2; }
+log_error() { echo "[steamos-session-select] ERROR: $*" >&2; }
 
-shutdown_steam_if_running() {
-  if pgrep -x steam >/dev/null 2>&1; then
-    steam -shutdown || true
-    wait_for_steam_exit
-  fi
-}
-
-# ── Main Execution ───────────────────────────────────────────────────────────
-
-main() {
-  shutdown_steam_if_running
-}
-
-main
+shutdown_steam_if_running
