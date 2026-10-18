@@ -44,59 +44,28 @@ check_dependencies() {
 
 list_archive() {
   local input="$1"
-  local input_abs
-  input_abs="$(realpath "$input")"
+  resolve_checksum_pair "$input"
+  require_existing_archive "$ARCHIVE_ABS" || exit 1
 
-  local archive_abs
-  archive_abs="${input_abs%.sha256}"
-
-  if [[ ! -f $archive_abs ]]; then
-    log error "Archive file not found: '$archive_abs'"
-    exit 1
-  fi
-
-  log info "Listing contents of '$(basename "$archive_abs")'..."
-  unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}" -d "" -llc "$archive_abs"
+  log info "Listing contents of '$(basename "$ARCHIVE_ABS")'..."
+  unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}" -d "" -llc "$ARCHIVE_ABS"
 }
 
 #######################################
 # EXTRACTION OPERATIONS
 #######################################
 
-extract_with_yad() {
-  local target="$1"
-  run_with_dialog \
-    unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}" -percentage -d "$target" "$INPUT_FILE" -- \
-    yad --progress \
-    --title="SquashFS Extraction" \
-    --text="Extracting to ${target}..." \
-    --percentage=0 \
-    --auto-close \
-    --center \
-    --width=450 \
-    --borders=15 \
-    --bar-style=normal
-}
-
-extract_with_zenity() {
-  local target="$1"
-  run_with_dialog \
-    unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}" -percentage -d "$target" "$INPUT_FILE" -- \
-    zenity --progress \
-    --title="SquashFS Extraction" \
-    --text="Extracting to ${target}..." \
-    --percentage=0 \
-    --auto-close
-}
-
-extract_cli() {
-  local target="$1"
-  unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}" -d "$target" "$INPUT_FILE"
-}
-
-extract_pipe() {
-  local target="$1"
-  pipe_progress unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}" -percentage -d "$target" "$INPUT_FILE"
+# Usage: extract_backend_args
+# Sets BACKEND_ARGS to the unsquashfs argv for this RENDERER. Only the
+# percentage flag differs per renderer, and it has to precede -d and the
+# archive: unsquashfs reads its positional arguments after the archive as
+# files to extract.
+extract_backend_args() {
+  BACKEND_ARGS=(unsquashfs "${BASE_UNSQUASHFS_ARGS[@]}")
+  if [[ $RENDERER != cli ]]; then
+    BACKEND_ARGS+=(-percentage)
+  fi
+  BACKEND_ARGS+=(-d "$OUTPUT_DIR" "$INPUT_FILE")
 }
 
 #######################################
@@ -135,6 +104,7 @@ determine_output_dir() {
 
 parse_arguments() {
   pre_scan_pipe_mode "$@"
+  resolve_renderer
 
   local action="" action_arg=""
 
@@ -148,17 +118,16 @@ parse_arguments() {
       shift
       ;;
     -o | --output)
-      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+      if is_option_value "${2:-}"; then
         OUTPUT_DIR="$2"
         shift 2
       else
-        log error "Argument for $1 is missing or invalid."
-        exit 1
+        missing_option_value "$1"
       fi
       ;;
     --check)
       action="check"
-      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+      if is_option_value "${2:-}"; then
         action_arg="$2"
         shift 2
       else
@@ -166,12 +135,11 @@ parse_arguments() {
       fi
       ;;
     --list | --ls)
-      if [[ -n ${2:-} && ! $2 =~ ^- ]]; then
+      if is_option_value "${2:-}"; then
         list_archive "$2"
         exit 0
       else
-        log error "Argument for $1 is missing or invalid."
-        exit 1
+        missing_option_value "$1"
       fi
       ;;
     -h | --help)
@@ -205,8 +173,7 @@ parse_arguments() {
       action_arg="$INPUT_FILE"
     fi
     if [[ -z $action_arg ]]; then
-      log error "Argument for '--check' is missing or invalid."
-      exit 1
+      missing_option_value "--check"
     fi
     run_check "$action_arg" "SquashFS Extraction"
   fi
@@ -219,10 +186,7 @@ parse_arguments() {
     exit 1
   fi
 
-  if [[ ! -f $INPUT_FILE ]]; then
-    log error "Archive file not found: '$INPUT_FILE'"
-    exit 1
-  fi
+  require_existing_archive "$INPUT_FILE" || exit 1
 }
 
 #######################################
@@ -234,28 +198,21 @@ main() {
   check_dependencies
   determine_output_dir
 
-  if ! check_archive "$INPUT_FILE" "SquashFS Extraction"; then
+  local exit_code=0 check_rc=0
+  check_archive "$INPUT_FILE" "SquashFS Extraction" || check_rc=$?
+  if [[ $check_rc -ne 0 ]]; then
     if [[ $IGNORE_CHECKSUM -eq 1 ]]; then
-      log info "Checksum verification failed but -y was passed; continuing anyway."
+      log info "Checksum verification did not pass but -y was passed; continuing anyway."
     else
-      exit 1
+      exit $check_rc
     fi
   fi
 
-  local exit_code=0
-
-  if [[ $PIPE_MODE -eq 1 ]]; then
-    extract_pipe "$OUTPUT_DIR" || exit_code=$?
-  elif command -v yad &>/dev/null; then
-    log info "Starting extraction with YAD UI..."
-    extract_with_yad "$OUTPUT_DIR" || exit_code=$?
-  elif command -v zenity &>/dev/null; then
-    log info "Starting extraction with Zenity UI..."
-    extract_with_zenity "$OUTPUT_DIR" || exit_code=$?
-  else
-    log info "No GUI available. Falling back to CLI output..."
-    extract_cli "$OUTPUT_DIR" || exit_code=$?
+  extract_backend_args
+  if [[ $RENDERER != pipe ]]; then
+    log info "Rendering extraction with '$RENDERER'..."
   fi
+  show_progress "SquashFS Extraction" "Extracting to ${OUTPUT_DIR}..." || exit_code=$?
 
   if [[ $exit_code -ne 0 ]]; then
     log error "Extraction failed or was cancelled (exit code: $exit_code)."
