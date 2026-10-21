@@ -349,7 +349,7 @@ run_plain() {
   shutdown_if_allowed "plain"
   # ponytail: route through build_steam_command so plain + session modes share
   # one launch path; extra args become the final steam arguments.
-  STEAM_ARGS=("$@")
+  STEAM_ARGS=("-steamos3" "$@")
   with_steam_env
   build_steam_command
   exec "${STEAM_CMD[@]}"

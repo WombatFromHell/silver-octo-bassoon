@@ -5,7 +5,12 @@ set -euo pipefail
 # Executes commands with standardized Steam environment variables
 
 # Base Steam environment variables (no exports, just for env command)
-STEAM_BASE_ENV_VARS=()
+STEAM_BASE_ENV_VARS=(
+  PROTON_ENABLE_WAYLAND=1
+  PROTON_DXVK_LOWLATENCY=1
+  PROTON_VKD3D_LOWLATENCY=1
+  PROTON_FSR4_UPGRADE=1
+)
 
 # Execute the provided command with Steam environment
 if [[ $# -gt 0 ]]; then
