@@ -72,7 +72,7 @@ function llm-coder
     end
 end
 # alias coder='llm-coder'
-alias coder='/var/mnt/data0/strata/run-coder-iq1_m.sh'
+alias coder='/var/mnt/data0/strata/run-gyro-gyro-s.sh'
 # alias rcoder='llm-coder --rocm'
 function wcoder
     ts_serve -u http://localhost:8787 start-with-llm env \

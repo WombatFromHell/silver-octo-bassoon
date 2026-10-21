@@ -6,10 +6,11 @@
       "apiKey": "strata",
       "models": [
         {
-          "id": "strata-coder-iq1_m",
+          "id": "strata",
           "name": "Strata Local",
           "input": [
-            "text"
+            "text",
+            "image"
           ],
           "contextWindow": 131072,
           "maxTokens": 16384,
