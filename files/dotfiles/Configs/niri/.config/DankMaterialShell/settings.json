@@ -183,8 +183,8 @@
       "w": 1,
       "h": 1,
       "small": true,
-      "footer": true,
-      "footerEnd": true
+      "col": 7,
+      "row": 5
     }
   ],
   "workspaceNameIcons": {
@@ -428,5 +428,5 @@
       "trigger": "qrg"
     }
   },
-  "configVersion": 38
+  "configVersion": 42
 }
