@@ -96,51 +96,44 @@ function setup_podman_sock
     end
 end
 
-function ts_serve --description "Run a command while exposing a local service via tailscale serve"
-    argparse -s 'u/url=' 'p/port=' -- $argv
-    or return
+function __ts_cleanup
+    tailscale serve reset
+    functions -e __ts_cleanup __ts_int __ts_term
+end
 
-    # URL is required
-    if not set -q _flag_url
-        echo "ts-serve: missing required option -u/--url" >&2
-        echo "usage: ts-serve -u URL [-p PORT] command [args...]" >&2
+function __ts_int --on-signal INT
+    __ts_cleanup
+    exit 130
+end
+function __ts_term --on-signal TERM
+    __ts_cleanup
+    exit 143
+end
+
+function ts_serve --description "Run a command wrapped in a temporary tailscale serve mapping"
+    argparse -s 'u/url=' 'p/port=' 's/path=' -- $argv; or return 2
+    set -q _flag_url; or begin
+        echo "usage: ts_serve -u URL [-p PORT] [-s PATH] command [args...]" >&2
         return 2
     end
-
-    # Port defaults to 443
+    test (count $argv) -gt 0; or begin
+        echo "ts_serve: no command given" >&2
+        return 2
+    end
     set -q _flag_port; or set _flag_port 443
 
-    # A command to wrap is required too
-    if test (count $argv) -eq 0
-        echo "ts-serve: no command given" >&2
-        return 2
+    set -l serve_args --https=$_flag_port
+    if set -q _flag_path
+        set -a serve_args --set-path=(string replace -r '^/?' '/' -- $_flag_path)
     end
 
-    function _ts_serve_cleanup
-        tailscale serve reset
-        functions -e _ts_serve_cleanup _ts_serve_int _ts_serve_term
-    end
-
-    function _ts_serve_int --on-signal INT
-        _ts_serve_cleanup
-        exit 130
-    end
-
-    function _ts_serve_term --on-signal TERM
-        _ts_serve_cleanup
-        exit 143
-    end
-
-    tailscale serve --bg --https=$_flag_port $_flag_url
-    or begin
-        _ts_serve_cleanup
-        return 1
-    end
+    tailscale serve --bg $serve_args $_flag_url; or return 1
 
     $argv
-    set -l cmd_status $status
-    _ts_serve_cleanup
-    return $cmd_status
+    set -l exit_code $status
+
+    tailscale serve $serve_args off
+    return $exit_code
 end
 
 function lactd_reset
@@ -257,4 +250,33 @@ end
 
 function sedit
     sudoe $EDITOR $argv
+end
+
+function fview --description "Walk paths/globs with fd/find and feed to bat/cat"
+    set -l viewer cat
+    if type -q bat
+        set viewer bat -P
+    end
+
+    for arg in $argv
+        if test -f "$arg"
+            echo "$arg"
+        else if test -d "$arg"
+            if type -q fd
+                fd --type f . "$arg"
+            else if type -q fdfind
+                fdfind --type f . "$arg"
+            else
+                find "$arg" -type f 2>/dev/null
+            end
+        else
+            if type -q fd
+                fd --type f -g "$arg"
+            else if type -q fdfind
+                fdfind --type f -g "$arg"
+            else
+                find . -name "$arg" -type f 2>/dev/null
+            end
+        end
+    end | xargs -r $viewer
 end

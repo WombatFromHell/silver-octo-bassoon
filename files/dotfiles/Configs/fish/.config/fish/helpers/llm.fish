@@ -74,9 +74,13 @@ end
 # alias coder='llm-coder'
 alias coder='/var/mnt/data0/strata/run-gyro-gyro-s.sh'
 # alias rcoder='llm-coder --rocm'
-function wcoder
-    ts_serve -u http://localhost:8787 start-with-llm env \
-        PI_WEB_HOST=0.0.0.0 \
-        PI_WEB_TOKEN=wcoder \
-        pi-web-ui --no-browser
+function serve_dsh
+    set -l PUBLIC_HOST (tailscale status --json | jq -r '.Self.DNSName' | string trim -c .)
+    set -l LOCAL_HOST "127.0.0.1"
+    set -l LOCAL_PORT 3080
+
+    ts_serve -u http://$LOCAL_HOST:$LOCAL_PORT -s /dsh \
+        env ENABLE_VRR=0 gamemode -- dsh --profile web \
+        --public-url "https://$PUBLIC_HOST/dsh" --trusted-host $PUBLIC_HOST \
+        --no-open
 end

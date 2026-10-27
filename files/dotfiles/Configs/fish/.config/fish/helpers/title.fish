@@ -45,7 +45,7 @@ function fish_title
     # ponytail: no realpath/symlinked-$HOME fallback; fish's $PWD is already logical.
     # Add it back only if a title shows /var/home/... instead of ~.
     set -l keep 2
-    if set -q TMUX
+    if set -q TMUX && command -q tmux
         set -l k (tmux show-options -gqv @abbrev_keep 2>/dev/null)
         string match -qr '^\d+$' -- $k; and set keep $k
     end
