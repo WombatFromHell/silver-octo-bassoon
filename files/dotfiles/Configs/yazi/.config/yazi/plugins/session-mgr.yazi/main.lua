@@ -92,6 +92,14 @@ local _apply_tab_prefs = ya.sync(function(_state, tab)
 	ya.emit("hidden", { tab.show_hidden and "show" or "hide" })
 end)
 
+-- Land the extra tab at the end: tab_create inserts after the active tab, so switch to
+-- the last restored tab first. The index comes from the session, not cx.tabs, because
+-- setup queues these emits before the restore has run.
+local function _append_tab(cwd, last_index)
+	ya.emit("tab_switch", { last_index })
+	ya.emit("tab_create", { cwd })
+end
+
 local _close_all_tabs = ya.sync(function(_state)
 	for i = #cx.tabs, 1, -1 do
 		ya.emit("tab_switch", { 0 })
@@ -130,16 +138,30 @@ local _restore_session = ya.sync(function(_state, session, from_setup)
 	_restore_tabs(session)
 end)
 
-function M:_canonical(path)
+local function _resolved(path)
 	local pipe = io.popen("readlink -f " .. ya.quote(path) .. " 2>/dev/null")
-	if pipe then
-		local resolved = pipe:read("*l")
-		pipe:close()
-		if resolved and resolved ~= "" then
-			return resolved
+	if not pipe then
+		return nil
+	end
+	local out = pipe:read("*l")
+	pipe:close()
+	if not out or out == "" then
+		return nil
+	end
+	return out
+end
+
+function M:_canonical(path)
+	return _resolved(path) or path
+end
+
+local function _has_tab_for(session, canonical)
+	for _, tab in ipairs(session.tabs) do
+		if M:_canonical(tab.cwd) == canonical then
+			return true
 		end
 	end
-	return path
+	return false
 end
 
 function M:_normalize(path)
@@ -467,18 +489,78 @@ function M:chooser()
 	end
 end
 
+-- yazi's startup tab is its CLI argument, which setup cannot read: cx is nil there and
+-- fs.cwd() is the shell cwd. shortcut: reads our own argv (Linux only, and a non-directory
+-- argument is treated as absent); upgrade if yazi ever exposes the startup cwd to setup.
+local function _startup_dir()
+	local file = io.open("/proc/self/cmdline", "rb")
+	if not file then
+		return nil
+	end
+	-- cmdline is NUL-separated and Lua patterns cannot contain NUL, so scan bytes.
+	local raw = file:read("*a")
+	file:close()
+	local argv = {}
+	local start = 1
+	for i = 1, #raw do
+		if raw:byte(i) == 0 then
+			if i > start then
+				argv[#argv + 1] = raw:sub(start, i - 1)
+			end
+			start = i + 1
+		end
+	end
+	if start < #raw then
+		argv[#argv + 1] = raw:sub(start)
+	end
+
+	-- First positional argument, skipping flags (yy passes --cwd-file= before the dir).
+	local arg
+	for i = 2, #argv do
+		if not argv[i]:match("^%-") then
+			arg = argv[i]
+			break
+		end
+	end
+	if not arg then
+		return nil
+	end
+
+	local resolved = _resolved(arg)
+	if not resolved then
+		return nil
+	end
+	-- A file argument opens its parent dir in yazi, so only a directory is worth a tab.
+	local check = io.popen("test -d " .. ya.quote(resolved) .. " && echo dir")
+	local is_dir = check and check:read("*l") == "dir"
+	if check then
+		check:close()
+	end
+	return is_dir and resolved or nil
+end
+
 function M.setup(_state, opts)
 	opts = opts or {}
 	_session_dir_str(opts.data_home)
 
-	local cwd = tostring(fs.cwd())
-	local canonical = M:_canonical(cwd)
+	local canonical = M:_canonical(tostring(fs.cwd()))
 	local path = M:_find_session(canonical)
-	if path then
-		local session = M:_load_session(path)
-		if session then
-			_restore_session(session, true)
-		end
+	if not path then
+		return
+	end
+
+	local session = M:_load_session(path)
+	if not session or not session.tabs or not session.tabs[1] then
+		return
+	end
+
+	_restore_session(session, true)
+	-- Sessions are keyed by the active tab's cwd, which is usually not tab 1, so the
+	-- `cd` above replaces yazi's startup tab with some other directory. Re-open the
+	-- startup directory as its own tab (it becomes active) and keep the saved tabs.
+	local startup = _startup_dir() or canonical
+	if not _has_tab_for(session, startup) then
+		_append_tab(startup, #session.tabs - 1)
 	end
 end
 
