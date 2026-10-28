@@ -1,7 +1,8 @@
 # General Rules
-- Whenever we change code we should apply our ponytail skill and aggressively apply our YAGNI/KISS/DRY/SoC/composability/reusability/maintainability rules to keep code quality high and changed code minimal and targetted.
-- When the user requests a 'code review' we should apply an adversarial ponytail code review that aggressively applies our YAGNI/KISS/DRY/SoC/composability/reusability/maintainability rules to keep code quality high and changed code minimal and targetted.
-- Always plan and explicitly request approval before committing to changing existing files unless the user explicitly states otherwise.
-- When possible use TDD (test driven development - red/green gated) leveraging ponytail rules when planning changes.
-- Our standard workflow should use a 'PLAN.md' gate system, unless a 'quick' review/plan is called for in which we skip the file gate, where progress is kept up to date on task boundries, and these files should be kept under the '.pi/' directory of a project.
-- Bash commands must always be used with a timeout (max 5 minutes, or 300 seconds, for any given command).
+- Use pi's `codemode` tool instead of separate tool calls whenever it is available and enabled: batch independent calls with `Promise.allSettled`, chain steps, and filter large output inside the script (nested `tools.bash` still needs a timeout).
+- Prefer `codemode` over a chain of `bash` calls when it is available: run shell work through `tools.bash` inside one script when it needs more than one command, chaining, or filtered output. A single `git`/`rg`/build command stays a direct `bash` call — scripts have no file system.
+- Ponytail is on for every code change (change, fix, refactor, review, dependency choice): YAGNI, KISS, DRY, separation of concerns, composability over inheritability, reusability over one-shot functions, flat conditionals (guard clauses and early returns, no deep nesting), and maintainability. Ship the smallest diff that fully solves the task — including the callers, tests and fixtures that diff breaks.
+- On a 'code review' or 'code simplification' request, run an adversarial ponytail pass: read the code connected to the change, not only the diff, and rank the findings.
+- Prefer TDD red/green over direct implementation: write the failing test first, then the minimum code to turn it green. Any new non-trivial logic (a branch, a loop, a parser, money or security, a new script or app) ships with a test or an assert-based self-check.
+- Plan before changing existing files and get explicit approval, unless the user says otherwise. Use a 'PLAN.md' gate under the project's '.pi/' directory and keep progress current at task boundaries; skip the file gate when the user asks for a 'quick' review or plan.
+- Bash commands must always carry a timeout (max 300 seconds).
