@@ -24,8 +24,8 @@ function bootstrap_fisher
     return 0
 end
 
-alias yz 'command yazi'
-alias ynz='env YAZI_NO_SESSION=1 yz'
+alias yazi='env YAZI_NO_SESSION=1 command yazi'
+alias yz='yazi'
 
 function yy -d "Yazi with cwd tracking on exit"
     set -l tmp (mktemp -t "yazi-cwd.XXXXXX")
