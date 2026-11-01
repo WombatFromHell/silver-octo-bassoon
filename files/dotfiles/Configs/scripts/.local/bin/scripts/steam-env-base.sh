@@ -7,9 +7,10 @@ set -euo pipefail
 # Base Steam environment variables (no exports, just for env command)
 STEAM_BASE_ENV_VARS=(
   PROTON_ENABLE_WAYLAND=1
+  PROTON_FSR4_UPGRADE=1
   PROTON_DXVK_LOWLATENCY=1
   PROTON_VKD3D_LOWLATENCY=1
-  PROTON_FSR4_UPGRADE=1
+  DXVK_FRAME_PACE="low-latency-vrr"
 )
 
 # Execute the provided command with Steam environment
