@@ -442,4 +442,8 @@ if command -q nix
     #
     alias nixopt='nix_collect_garbage'
     alias nixopts='nix_collect_garbage --sudo'
+else
+    if test -x $HOME/.nix-profile/bin/nix
+        fish_add_path $HOME/.nix-profile/bin
+    end
 end

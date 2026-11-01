@@ -96,46 +96,6 @@ function setup_podman_sock
     end
 end
 
-function __ts_cleanup
-    tailscale serve reset
-    functions -e __ts_cleanup __ts_int __ts_term
-end
-
-function __ts_int --on-signal INT
-    __ts_cleanup
-    exit 130
-end
-function __ts_term --on-signal TERM
-    __ts_cleanup
-    exit 143
-end
-
-function ts_serve --description "Run a command wrapped in a temporary tailscale serve mapping"
-    argparse -s 'u/url=' 'p/port=' 's/path=' -- $argv; or return 2
-    set -q _flag_url; or begin
-        echo "usage: ts_serve -u URL [-p PORT] [-s PATH] command [args...]" >&2
-        return 2
-    end
-    test (count $argv) -gt 0; or begin
-        echo "ts_serve: no command given" >&2
-        return 2
-    end
-    set -q _flag_port; or set _flag_port 443
-
-    set -l serve_args --https=$_flag_port
-    if set -q _flag_path
-        set -a serve_args --set-path=(string replace -r '^/?' '/' -- $_flag_path)
-    end
-
-    tailscale serve --bg $serve_args $_flag_url; or return 1
-
-    $argv
-    set -l exit_code $status
-
-    tailscale serve $serve_args off
-    return $exit_code
-end
-
 function lactd_reset
     flatpak run io.github.ilya_zlobintsev.LACT cli profile set Default
 end
