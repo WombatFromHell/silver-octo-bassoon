@@ -82,14 +82,8 @@ function llm-coder
         $cmd
     end
 end
-alias coder='/var/mnt/data0/strata/run-gyro-gyro-s.sh'
-function serve_dsh
-    set -l PUBLIC_HOST (tailscale status --json | jq -r '.Self.DNSName' | string trim -c .)
-    ts_serve -u http://127.0.0.1:3080 -s /dsh \
-        env ENABLE_VRR=0 gamemode -- dsh --profile web \
-        --public-url "https://$PUBLIC_HOST/dsh" --trusted-host $PUBLIC_HOST \
-        --no-open
-end
+# alias coder='/var/mnt/data0/strata/run-gyro-gyro-s.sh'
+alias coder='/var/mnt/data0/strata/run-coder-iq1_m.sh'
 
 # The pi binary to run: pi-bolt when installed, else pi.
 function _pi_cmd
