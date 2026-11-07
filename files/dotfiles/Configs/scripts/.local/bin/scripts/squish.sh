@@ -14,9 +14,10 @@ declare -r VERSION="dev"
 SCRIPT_NAME="$(basename "$0")"
 readonly SCRIPT_NAME
 
+# Everything but the compression level, which is a knob (-c <num>) parsed later
+# and appended when the argv is built.
 declare -ra BASE_MKSQUASHFS_ARGS=(
   -comp zstd
-  -Xcompression-level 19
   -b 1M
   -keep-as-directory
   -no-xattrs
@@ -27,6 +28,10 @@ declare -ra BASE_MKSQUASHFS_ARGS=(
 #######################################
 
 declare -i SKIP_VERIFY=0
+declare -i ASK_BUILD=0
+# Kept as text, not an int: a leading-zero level must reach mksquashfs verbatim
+# instead of being read as octal.
+declare COMPRESSION_LEVEL=19
 declare -i PIPE_MODE=0
 declare -i FORCE=0
 declare -i KIO_MODE=0
@@ -399,9 +404,11 @@ unmount_archive() {
 # Usage: compress_backend_args
 # Sets BACKEND_ARGS to the mksquashfs argv for this RENDERER. The flag set is
 # what differs per renderer: -info suppresses the bare percentage lines a gauge
-# reads, -percentage alone is what --pipe prints.
+# reads, -percentage alone is what --pipe prints. The level is appended here
+# because parsing has already set COMPRESSION_LEVEL by then.
 compress_backend_args() {
-  BACKEND_ARGS=(mksquashfs "${SOURCES[@]}" "$OUTPUT_FILE" "${BASE_MKSQUASHFS_ARGS[@]}")
+  BACKEND_ARGS=(mksquashfs "${SOURCES[@]}" "$OUTPUT_FILE" "${BASE_MKSQUASHFS_ARGS[@]}"
+    -Xcompression-level "$COMPRESSION_LEVEL")
   case "$RENDERER" in
   pipe)
     BACKEND_ARGS+=(-percentage)
@@ -454,6 +461,57 @@ determine_output_filename() {
 }
 
 #######################################
+# INTERACTIVE BUILD PROMPT
+#######################################
+
+# Usage: ask_build_options
+# Asks for the two build knobs before anything is built: the archive name, where
+# a blank answer leaves determine_output_filename to infer it, and the
+# compression level. Exits when the renderer has no form to ask with, or when
+# the user closes the dialog.
+ask_build_options() {
+  local -a form=()
+  case "$RENDERER" in
+  yad)
+    form=(yad --form --title="Squish archive" --text="Create the archive:" --separator=$'\n'
+      --center --width=450 --field="Archive name (blank = inferred)" ''
+      --field="Compression level" "$COMPRESSION_LEVEL")
+    ;;
+  zenity)
+    # No per-field default in zenity, so a blank level keeps the current one.
+    form=(zenity --forms --title="Squish archive" --text="Create the archive:"
+      --separator=$'\n' --add-entry="Archive name (blank = inferred)"
+      --add-entry="Compression level")
+    ;;
+  *)
+    log error "Renderer '$RENDERER' cannot prompt for the archive name and level."
+    exit 1
+    ;;
+  esac
+
+  local reply="" rc=0
+  reply="$("${form[@]}")" || rc=$?
+  if [[ $rc -ne 0 ]]; then
+    log warn "Build cancelled."
+    exit 1
+  fi
+
+  # One field per line, in the order the fields were declared.
+  local -a fields=()
+  mapfile -t fields <<<"$reply"
+  if [[ -n ${fields[0]:-} ]]; then
+    # A name typed without the suffix is still the archive we are about to write,
+    # so give it one; determine_output_filename then resolves and de-duplicates.
+    OUTPUT_FILE="${fields[0]}"
+    [[ $OUTPUT_FILE == *.sqsh ]] || OUTPUT_FILE+=".sqsh"
+  fi
+  if [[ -n ${fields[1]:-} ]]; then
+    [[ ${fields[1]} =~ ^[0-9]+$ ]] || missing_option_value "-c"
+    COMPRESSION_LEVEL="${fields[1]}"
+  fi
+}
+
+#######################################
 # ARGUMENT PARSING
 #######################################
 
@@ -473,6 +531,18 @@ parse_arguments() {
       else
         missing_option_value "$1"
       fi
+      ;;
+    -c | --compression-level)
+      if is_option_value "${2:-}" && [[ $2 =~ ^[0-9]+$ ]]; then
+        COMPRESSION_LEVEL="$2"
+        shift 2
+      else
+        missing_option_value "$1"
+      fi
+      ;;
+    --prompt)
+      ASK_BUILD=1
+      shift
       ;;
     --check)
       action="check"
@@ -532,7 +602,7 @@ parse_arguments() {
       echo "SquashFS Archiver (squish) v${VERSION}"
       echo ""
       echo "Usage:"
-      echo " $SCRIPT_NAME <source1> [source2...] [-o output.sqsh] Create a new archive"
+      echo " $SCRIPT_NAME <source1> [source2...] [-o output.sqsh] [-c <n>] [--prompt] Create a new archive"
       echo " $SCRIPT_NAME --check <archive_file> Verify archive integrity"
       echo " $SCRIPT_NAME -m <archive_file> [-y] [--force] [--open] Mount archive to managed directory"
       echo " $SCRIPT_NAME -u <archive_file | mountpoint> [--force] Unmount archive and cleanup"
@@ -540,6 +610,8 @@ parse_arguments() {
       echo ""
       echo "Options:"
       echo " -o, --output <file> Specify output filename (default: <first_source>.sqsh)"
+      echo " -c, --compression-level <n> zstd compression level handed to mksquashfs (default: 19)"
+      echo " --prompt          Build only: ask for the archive name and level in a dialog first"
       echo " -y, --skip-verify Skip SHA-256 verification before mounting"
       echo " -f, --force     Remove stale trackers / tolerate missing ones on mount & unmount"
       echo " -k, --kio       KIO service-menu mode: args are file:// URIs; multi-source output uses 'archive-*' naming"
@@ -618,6 +690,9 @@ parse_arguments() {
 main() {
   parse_arguments "$@"
   check_dependencies
+  if [[ $ASK_BUILD -eq 1 ]]; then
+    ask_build_options
+  fi
   determine_output_filename
 
   local exit_code=0
