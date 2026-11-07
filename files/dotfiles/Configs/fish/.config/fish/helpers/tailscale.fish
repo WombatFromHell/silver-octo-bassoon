@@ -25,25 +25,29 @@ function ts_serve --description "Run a command behind a tailscale serve mapping 
         set -a serve_args --set-path=$mapped_path
     end
 
-    # Map only if this path on this HTTPS port doesn't already proxy to our URL.
-    # Config, not live routing: the probe below still verifies it actually works.
-    set -l mapped (tailscale serve status --json | jq -r \
-        --arg p $mapped_path --arg port ":$_flag_port" --arg u $_flag_url \
-        '[(.Web // {}) | to_entries[] | select(.key | endswith($port)) | .value.Handlers[$p].Proxy] | any(. == $u)')
-    test "$mapped" = true; or tailscale serve --bg $serve_args $_flag_url; or return 1
+    # Re-applying an identical mapping is a no-op (measured), so no pre-flight
+    # dedup query here; only the probe below matters, because `serve status` is
+    # persistent config rather than live routing.
+    tailscale serve --bg $serve_args $_flag_url; or return 1
 
-    # Janitor: own session (Ctrl+C never reaches it), no traps. Waits for the
-    # target to come up, then go away, then unmaps. Always spawned, even when the
-    # route pre-existed, since that route may be a stale leak with no watcher.
-    # ponytail: 60s startup grace, 1s poll; raise the grace for slow-starting apps.
-    # Upgrade path if you need exact ownership: a flock-based refcount.
-    setsid -f bash -c '
-        host=$1 port=$2; shift 2
-        alive() { (exec 3<>/dev/tcp/$host/$port) 2>/dev/null; }
-        for _ in $(seq 60); do alive && break; sleep 1; done
-        while alive; do sleep 1; done
-        tailscale serve "$@" off
-    ' ts_serve $host $tport $serve_args >/dev/null 2>&1 </dev/null
+    # Janitor: own session (setsid -f), no signal traps. Waits for the target to
+    # come up, then for it to go away, then unmaps.
+    # ponytail: 60s startup grace, 1s poll, and the janitor keys on host:port rather
+    # than on this run, so it cannot tell our old mapping from a newer one on the
+    # same path: a second run whose target boots later than the grace would get its
+    # route torn down by the first run's janitor. Exact ownership needs a per-run
+    # token (a state file per path plus an owner check in both teardown paths).
+    if not command -q setsid bash
+        echo "ts_serve: no setsid/bash, so an aborted run leaks $mapped_path" >&2
+    else
+        setsid -f bash -c '
+            host=$1 port=$2; shift 2
+            alive() { (exec 3<>/dev/tcp/$host/$port) 2>/dev/null; }
+            for _ in $(seq 60); do alive && break; sleep 1; done
+            while alive; do sleep 1; done
+            tailscale serve "$@" off
+        ' ts_serve $host $tport $serve_args >/dev/null 2>&1 </dev/null
+    end
 
     # Unmapped => Serve's own "404 page not found" (19 bytes); a dead target is 502.
     set -l probe_root (string replace -r '/+$' '' -- $mapped_path)
@@ -52,16 +56,40 @@ function ts_serve --description "Run a command behind a tailscale serve mapping 
     test -n "$probe"; or echo "ts_serve: routing of $probe_root not verified (curl failed)" >&2
     if test "$probe" = '404 19'
         echo "ts_serve: tailscale serve is not routing $probe_root, aborting" >&2
-        tailscale serve $serve_args off
+        tailscale serve $serve_args off; or begin
+            echo "ts_serve: abort cleanup failed; $mapped_path may still proxy $_flag_url" >&2
+        end
         return 1
     end
 
     $argv
+    set -l exit_code $status
+
+    # Clean-path teardown, keyed on the target's own liveness — the same TCP test the
+    # janitor uses, so the two paths cannot disagree about one target (curl would
+    # misread a non-HTTP target as dead). serve_dsh wraps env+gamemode, which can
+    # return while the app still serves, so an answering target stays owned by its
+    # janitor rather than being unmapped here.
+    if not command -q bash
+        echo "ts_serve: no bash; $mapped_path left to its janitor" >&2
+    else if bash -c '(exec 3<>/dev/tcp/"$1"/"$2") 2>/dev/null' x "$host" "$tport"
+        echo "ts_serve: $_flag_url still answering; $mapped_path left to its janitor" >&2
+    else
+        # The janitor may have unmapped first, and `off` on an unmapped path exits
+        # 1 ("handler does not exist", measured) — check, do not treat that as a leak.
+        set -l handler (tailscale serve status --json | jq -r --arg p $mapped_path \
+            '.Web // {} | to_entries[] | .value.Handlers // {} | .[$p] // empty')
+        test -n "$handler"; or return $exit_code
+        tailscale serve $serve_args off; or begin
+            echo "ts_serve: teardown failed; $mapped_path may still proxy $_flag_url" >&2
+        end
+    end
+    return $exit_code
 end
 
 function serve_dsh
     set -l PUBLIC_HOST (ts_host)
     ts_serve -u http://127.0.0.1:3080 -s /dsh \
         env ENABLE_VRR=0 gamemode -- dsh --profile web \
-        --public-url "https://$PUBLIC_HOST/dsh" --trusted-host $PUBLIC_HOST
+        --public-url "https://$PUBLIC_HOST/dsh" --trusted-host $PUBLIC_HOST $argv
 end
