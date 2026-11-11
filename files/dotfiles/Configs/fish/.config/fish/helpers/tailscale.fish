@@ -80,8 +80,14 @@ function ts_serve --description "Run a command behind a tailscale serve mapping 
         set -l handler (tailscale serve status --json | jq -r --arg p $mapped_path \
             '.Web // {} | to_entries[] | .value.Handlers // {} | .[$p] // empty')
         test -n "$handler"; or return $exit_code
-        tailscale serve $serve_args off; or begin
-            echo "ts_serve: teardown failed; $mapped_path may still proxy $_flag_url" >&2
+        tailscale serve $serve_args off
+        test $status = 0; or begin
+            # The janitor can win the race between our status check and `off` (1s poll
+            # vs. a ~100ms window); only a handler still present is a real leak.
+            set -l still (tailscale serve status --json | jq -r --arg p $mapped_path \
+                '.Web // {} | to_entries[] | .value.Handlers // {} | .[$p] // empty')
+            test -n "$still"; and \
+                echo "ts_serve: teardown failed; $mapped_path may still proxy $_flag_url" >&2
         end
     end
     return $exit_code
