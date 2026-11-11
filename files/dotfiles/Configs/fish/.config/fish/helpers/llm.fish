@@ -82,8 +82,18 @@ function llm-coder
         $cmd
     end
 end
-# alias coder='/var/mnt/data0/strata/run-gyro-gyro-s.sh'
-alias coder='/var/mnt/data0/strata/run-coder-iq1_m.sh'
+alias coder='/var/mnt/data0/strata/run-gyro-gyro-s.sh'
+# alias coder='/var/mnt/data0/strata/run-coder-iq1_m.sh'
+
+function _set_lact_profile
+    flatpak run --command=lact io.github.ilya_zlobintsev.LACT cli profile set $argv[1]
+end
+function _list_lact_profile
+    flatpak run --command=lact io.github.ilya_zlobintsev.LACT cli profile list
+end
+function _get_lact_profile
+    flatpak run --command=lact io.github.ilya_zlobintsev.LACT cli profile get
+end
 
 # The pi binary to run: pi-bolt when installed, else pi.
 function _pi_cmd
@@ -125,5 +135,27 @@ function pi
         printf 'pi: neither pi-bolt nor pi is installed\n' >&2
         return 1
     end
-    command $cmd $argv
+
+    _set_lact_profile LLM
+    command env ENABLE_VRR=0 gamemode -- $cmd $argv
+    _set_lact_profile UV
+end
+
+# Run the dsh binary under gamemode with VRR off, LACT profile switched for the
+# run. Separate from dsh so a wrapper (ts_serve) can put it behind a route.
+function _dsh_run
+    _set_lact_profile LLM
+    command env ENABLE_VRR=0 gamemode -- dsh $argv
+    set -l rc $status
+    _set_lact_profile UV
+    return $rc
+end
+
+function dsh
+    if contains -- --update $argv
+        command pnpm i -g @deepseek-ai/dsh
+        command dsh plugin --profile web update $argv
+        return
+    end
+    _dsh_run --profile web $argv
 end

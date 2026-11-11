@@ -67,7 +67,7 @@ function ts_serve --description "Run a command behind a tailscale serve mapping 
 
     # Clean-path teardown, keyed on the target's own liveness — the same TCP test the
     # janitor uses, so the two paths cannot disagree about one target (curl would
-    # misread a non-HTTP target as dead). serve_dsh wraps env+gamemode, which can
+    # misread a non-HTTP target as dead). dsh wraps env+gamemode, which can
     # return while the app still serves, so an answering target stays owned by its
     # janitor rather than being unmapped here.
     if not command -q bash
@@ -88,8 +88,15 @@ function ts_serve --description "Run a command behind a tailscale serve mapping 
 end
 
 function serve_dsh
+    # dsh intercepts --update; behind a live route that would install packages.
+    contains -- --update $argv
+    and begin
+        echo "serve_dsh: --update updates the local install; run plain dsh for that" >&2
+        return 2
+    end
     set -l PUBLIC_HOST (ts_host)
+    # dsh is the target command itself: fish resolves the function before the
+    # binary, so gamemode/VRR/LACT stay in one place. --profile web is dsh's.
     ts_serve -u http://127.0.0.1:3080 -s /dsh \
-        env ENABLE_VRR=0 gamemode -- dsh --profile web \
-        --public-url "https://$PUBLIC_HOST/dsh" --trusted-host $PUBLIC_HOST $argv
+        dsh --public-url "https://$PUBLIC_HOST/dsh" --trusted-host $PUBLIC_HOST $argv
 end
