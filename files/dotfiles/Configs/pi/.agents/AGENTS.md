@@ -1,8 +1,8 @@
 # General Rules
-- Use pi's `codemode` tool instead of separate tool calls whenever it is available and enabled: batch independent calls with `Promise.allSettled`, chain steps, and filter large output inside the script (nested `tools.bash` still needs a timeout).
-- Prefer `codemode` over a chain of `bash` calls when it is available: run shell work through `tools.bash` inside one script when it needs more than one command, chaining, or filtered output. A single `git`/`rg`/build command stays a direct `bash` call — scripts have no file system.
 - Ponytail is on for every code change (change, fix, refactor, review, dependency choice): YAGNI, KISS, DRY, separation of concerns, composability over inheritability, reusability over one-shot functions, flat conditionals (guard clauses and early returns, no deep nesting), and maintainability. Ship the smallest diff that fully solves the task — including the callers, tests and fixtures that diff breaks.
+- We have access to codemode for parallel tool-calls, use it.
+- Bash commands must always carry a timeout (max 300 seconds).
 - On a 'code review' or 'code simplification' request, run an adversarial ponytail pass: read the code connected to the change, not only the diff, and rank the findings.
 - Prefer TDD red/green over direct implementation: write the failing test first, then the minimum code to turn it green. Any new non-trivial logic (a branch, a loop, a parser, money or security, a new script or app) ships with a test or an assert-based self-check.
-- Plan before changing existing files and get explicit approval, unless the user says otherwise. Use a 'PLAN.md' gate under the project's '.pi/' directory and keep progress current at task boundaries; skip the file gate when the user asks for a 'quick' review or plan.
-- Bash commands must always carry a timeout (max 300 seconds).
+- Use a gated planning step before changing or writing code and get explicit approval, unless the user says otherwise. Use a 'PLAN.md' gate under the project's '.pi/' directory and keep progress current at task boundaries; skip the file gate when the user asks for a 'quick' review or plan.
+- During the gated planning step, we should aim to produce an action plan that is granular, composed of smaller vertical slices, uses checkpoints, tracks progress at task boundries, and can be broken up into smaller PLAN.md files that are relevent to sub-tasks that must be completed before the global PLAN.md is marked as finished.

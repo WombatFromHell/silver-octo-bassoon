@@ -3,17 +3,22 @@
     "strata": {
       "baseUrl": "http://127.0.0.1:9932/v1",
       "api": "openai-completions",
-      "apiKey": "strata",
+      "apiKey": "local",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": true
+      },
       "models": [
         {
           "id": "strata",
-          "name": "Strata Local",
+          "name": "strata",
+          "reasoning": true,
           "input": [
             "text",
             "image"
           ],
           "contextWindow": 131072,
-          "maxTokens": 16384,
+          "maxTokens": 32768,
           "cost": {
             "input": 0,
             "output": 0,
