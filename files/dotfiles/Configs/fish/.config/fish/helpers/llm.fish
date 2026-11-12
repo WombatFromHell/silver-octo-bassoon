@@ -1,125 +1,127 @@
-# Path of the first installed command in $argv; empty with a non-zero status
-# if none is installed (command -s ignores functions, so a wrapper can never
-# resolve itself). Callers check the value, not the status number.
+# Path of the first installed command in $argv, else complain on stderr and
+# print nothing. command -s ignores functions, so a wrapper never resolves itself.
 function _first_cmd
-    for cmd in $argv
-        command -s $cmd
-        and return
+    command -s $argv | read -l p
+    or begin
+        echo "none of ($argv) is installed" >&2
+        return 1
     end
+    echo $p
 end
 
+# Run $argv under gamemode with VRR off and the LACT "LLM" profile; restore "UV".
+function _gamemode_run
+    _lact profile set LLM
+    command env ENABLE_VRR=0 gamemode -- $argv
+    set -l rc $status
+    _lact profile set UV
+    return $rc
+end
+
+function _lact
+    flatpak run --command=lact io.github.ilya_zlobintsev.LACT cli $argv
+end
+
+# Both dispatchers forward argv verbatim: llm.sh / run.sh own their vocabulary and
+# refuse words they do not understand, so a typo never reaches them as a runner name.
 function _llm_sh
     /var/mnt/data1/vllm/llm.sh $argv
 end
-function start_llm
-    _llm_sh start $argv
+
+# Serve (start/pull) with ROCm: -r/--rocm passes through, and $ENABLE_ROCM=1
+# (config.fish) appends it. llm.sh pairs the image with the matching models.ini.
+function _llm_serve_sh
+    test "$ENABLE_ROCM" = 1
+    and set argv $argv --rocm
+    _llm_sh $argv
 end
-function stop_llm
+
+function llm_start
+    _llm_serve_sh start $argv
+end
+function llm_pull
+    _llm_serve_sh pull $argv
+end # note: llm.sh pull = pull image AND start server
+function llm_stop
     _llm_sh stop
 end
-# Run $argv with the rocm env exported (llm.sh reads it), then clear it.
-function _llm_rocm
-    set -gx MODELS_PATH "/var/mnt/data1/vllm/models/models-rocm.ini"
-    set -gx LLM_IMAGE "ghcr.io/stew675/llama-cpp-rdna-boosts:rocm-10.1"
-    # set -gx LLM_IMAGE "localhost/llama.cpp:server-rocm"
-    $argv
-    set -l rc $status
-    set -e MODELS_PATH LLM_IMAGE
-    return $rc
+function llm_logs
+    _llm_sh logs
 end
-function pull_llm # note: llm.sh pull = pull image AND start server
-    argparse -s r/rocm -- $argv
-    or return
-    set -l cmd _llm_sh pull $argv
-    if set -q _flag_r
-        _llm_rocm $cmd
-    else
-        $cmd
-    end
-end
-# start_with_llm [-f] cmd [args...] — start server, run cmd, stop server.
-# No cmd: just start (-f blocks).
+alias lcoder='llm_start --fg'
+
+# start_with_llm [-f/--fg] [-r] [-p] [-u] [-R runner] [cmd [args...]] — start the
+# server, run cmd, stop the server. No cmd: just serve. -f/--fg blocks the container.
+# -r: ROCm (else $ENABLE_ROCM=1 decides). -p: pull the image first. -u: update
+# pi-bolt + extensions first. -R: runner config name (llm.sh workspace/*.sh).
 function start_with_llm
-    argparse -s f/foreground -- $argv
+    argparse -s f/fg r/rocm p/pull u/update R/runner= -- $argv
     or return
-    set -l flags
-    set -q _flag_f; and set -a flags -f
+    if set -q _flag_u
+        _pi_update
+        or return
+    end
+    set -l serve start
+    set -q _flag_p; and set serve pull
+    set -q _flag_f; and set serve $serve --fg
+    set -q _flag_r; and set serve $serve -r
+    set -q _flag_runner; and set serve $serve $_flag_runner
     if set -q argv[1]
         # podman blocks in foreground; background it so cmd runs concurrently
-        start_llm $flags &
+        _llm_serve_sh $serve &
         $argv
-        stop_llm
-    else
-        start_llm $flags
+        set -l rc $status
+        llm_stop
+        return $rc
     end
+    _llm_serve_sh $serve
 end
-# llm-coder [--rocm] [--serve] [--update] [-f] [cmd [args...]]
-# No cmd: serve if --serve, else run pi (--update runs `pi update --extensions` first).
+
+# llm-coder [-s/--serve] [start_with_llm flags] [cmd [args...]] — start_with_llm,
+# but with no cmd it runs pi; --serve restores plain "just serve".
 function llm-coder
-    argparse -s r/rocm s/serve u/update f/foreground -- $argv
+    argparse -s f/fg r/rocm p/pull u/update s/serve R/runner= -- $argv
     or return
-    set -l flags
-    set -q _flag_f; and set -a flags -f
-
-    set -l cmd
-    if set -q _flag_s
-        set cmd start_with_llm $flags
-    else if set -q argv[1]
-        set cmd start_with_llm $flags $argv
-    else
-        # Resolve once; nothing to run means don't start the server.
-        set -l pi_cmd (_pi_cmd)
-        if test -z "$pi_cmd"
-            return 1
-        end
-        set -q _flag_u; and $pi_cmd update --extensions
-        set cmd start_with_llm $flags $pi_cmd
+    if not set -q _flag_s; and not set -q argv[1]
+        # no pi, no point starting the server (-u may install it first)
+        set -q _flag_u; or _pi_cmd >/dev/null; or return
+        set argv pi
     end
+    set -q _flag_runner; and set argv -R $_flag_runner $argv
+    start_with_llm $_flag_f $_flag_r $_flag_p $_flag_u $argv
+end
 
-    if set -q _flag_r
-        _llm_rocm $cmd
-    else
-        $cmd
-    end
+# The strata dispatcher, reusable by any caller (route wrappers etc.). run.sh
+# defaults to "start", so strata_start forwards argv untouched — an explicit
+# "start" next to a caller's own action word would trip its "only one action" rule.
+function _strata_sh
+    /var/mnt/data0/strata/run.sh $argv
 end
-alias coder='/var/mnt/data0/strata/run-gyro-gyro-s.sh'
-# alias coder='/var/mnt/data0/strata/run-coder-iq1_m.sh'
-
-function _set_lact_profile
-    flatpak run --command=lact io.github.ilya_zlobintsev.LACT cli profile set $argv[1]
+function strata_start
+    _strata_sh $argv
 end
-function _list_lact_profile
-    flatpak run --command=lact io.github.ilya_zlobintsev.LACT cli profile list
+function strata_stop
+    _strata_sh stop
 end
-function _get_lact_profile
-    flatpak run --command=lact io.github.ilya_zlobintsev.LACT cli profile get
+function strata_logs
+    _strata_sh logs
 end
+alias scoder='strata_start --fg'
 
 # The pi binary to run: pi-bolt when installed, else pi.
 function _pi_cmd
     _first_cmd pi-bolt pi
 end
 
-# Install pi-bolt globally, pnpm preferred, npm fallback.
-function _pi_install
-    set -l pm (_first_cmd pnpm npm)
-    if test -z "$pm"
-        printf 'pi --update: neither pnpm nor npm is available\n' >&2
-        return 1
-    end
-    command $pm i -g pi-bolt@latest
-end
-
-# Upgrade pi-bolt, then refresh its extensions on whatever binary ended up
-# installed (resolved after the install, so a first-time install counts).
+# Upgrade pi-bolt (pnpm preferred, else npm), then refresh its extensions on
+# whatever binary ended up installed (resolved after, so a first install counts).
 function _pi_update
-    _pi_install
+    set -l pm (_first_cmd pnpm npm)
+    or return
+    $pm i -g pi-bolt@latest
     or return
     set -l cmd (_pi_cmd)
-    if test -z "$cmd"
-        printf 'pi --update: nothing installed, cannot update extensions\n' >&2
-        return 1
-    end
+    or return
     $cmd update --extensions
 end
 
@@ -131,31 +133,27 @@ function pi
         return
     end
     set -l cmd (_pi_cmd)
-    if test -z "$cmd"
-        printf 'pi: neither pi-bolt nor pi is installed\n' >&2
-        return 1
-    end
-
-    _set_lact_profile LLM
-    command env ENABLE_VRR=0 gamemode -- $cmd $argv
-    _set_lact_profile UV
+    or return
+    _gamemode_run $cmd $argv
 end
 
-# Run the dsh binary under gamemode with VRR off, LACT profile switched for the
-# run. Separate from dsh so a wrapper (ts_serve) can put it behind a route.
+# Separate from dsh so a wrapper (ts_serve) can put it behind a route.
 function _dsh_run
-    _set_lact_profile LLM
-    command env ENABLE_VRR=0 gamemode -- dsh $argv
-    set -l rc $status
-    _set_lact_profile UV
-    return $rc
+    _gamemode_run dsh $argv
 end
 
+# dsh [--update] [args...] — run dsh with the web profile. --update installs dsh
+# and refreshes that plugin, without launching it. $argv is not passed to the
+# plugin update: the extra words belong to dsh, not to the plugin.
 function dsh
-    if contains -- --update $argv
-        command pnpm i -g @deepseek-ai/dsh
-        command dsh plugin --profile web update $argv
+    contains -- --update $argv
+    or begin
+        _dsh_run --profile web $argv
         return
     end
-    _dsh_run --profile web $argv
+    set -l pm (_first_cmd pnpm npm)
+    or return
+    $pm i -g @deepseek-ai/dsh
+    or return
+    command dsh plugin --profile web update
 end

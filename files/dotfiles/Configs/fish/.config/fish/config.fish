@@ -44,6 +44,7 @@ if status is-interactive
     set -x LMS_BIN $HOME/.lmstudio/bin
 
     set -x LLAMA_API_KEY llama-cpp
+    set -gx ENABLE_ROCM 1
     set -gx CREDENTIALS_DIRECTORY "$HOME/.local/share/credentials"
 
     set --erase fish_user_paths

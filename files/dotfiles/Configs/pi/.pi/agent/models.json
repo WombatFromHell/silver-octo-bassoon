@@ -3,7 +3,7 @@
     "strata": {
       "baseUrl": "http://127.0.0.1:9932/v1",
       "api": "openai-completions",
-      "apiKey": "local",
+      "apiKey": "strata",
       "compat": {
         "supportsDeveloperRole": false,
         "supportsReasoningEffort": true
