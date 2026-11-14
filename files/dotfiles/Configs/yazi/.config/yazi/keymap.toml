@@ -106,6 +106,20 @@ on = ["n", "X"]
 run = "plugin squish -- extract-pick"
 desc = "Squash Extract (pick path)"
 
+# Cancel runs as a shell action with --orphan: yazi queues plugin and shell jobs behind
+# a running one, so without --orphan the cancel only fires after the build ends. Bare
+# --cancel stops the run this user holds, and refuses with every archive named if
+# several are running.
+[[mgr.prepend_keymap]]
+on = ["n", "c"]
+run = 'shell "$HOME/.local/bin/unsquish --cancel" --orphan'
+desc = "Squash Cancel the run in flight"
+
+[[mgr.prepend_keymap]]
+on = ["n", "v"]
+run = "plugin squish -- verify"
+desc = "Squash Verify checksum"
+
 [[mgr.prepend_keymap]]
 on = ["n", "m"]
 run = "plugin squish -- mount"

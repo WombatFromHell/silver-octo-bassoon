@@ -11,6 +11,8 @@ local NOTIFY_IDS = {
 	EXTRACT = "squish-extract",
 	MOUNT = "squish-mount",
 	UNMOUNT = "squish-unmount",
+	CANCEL = "squish-cancel",
+	VERIFY = "squish-verify",
 }
 
 local MESSAGES = {
@@ -28,6 +30,14 @@ local MESSAGES = {
 	UNMOUNT_SUCCESS = "Unmounted successfully",
 	UNMOUNT_ERROR = "Unmount failed",
 	START_UNMOUNT = "Attempting to unmount...",
+	START_VERIFY = "Verifying checksum...",
+	VERIFY_SUCCESS = "Checksum verified",
+	VERIFY_ERROR = "Checksum mismatch",
+	START_CANCEL = "Cancelling...",
+	CANCEL_SUCCESS = "Cancellation requested",
+	CANCEL_ERROR = "Nothing to cancel",
+	-- exit code 2 from squish/unsquish means the run was stopped, not broken
+	CANCELLED = "Cancelled",
 	NO_SELECTION = "No item selected",
 	NEED_SQSH = "Select a .sqsh file",
 	FILE_NOT_FOUND = function(url)
@@ -36,7 +46,7 @@ local MESSAGES = {
 	UNKNOWN_ACTION = function(a)
 		return "Unknown action: " .. a
 	end,
-	USAGE = "Usage: squish -- <build|extract|extract-pick|mount|unmount>",
+	USAGE = "Usage: squish -- <build|extract|extract-pick|verify|mount|unmount|unmount-tracked|jump|cancel>",
 	CMD_FAILED = "Failed to execute command",
 }
 
@@ -91,6 +101,20 @@ local function notify(content, level, id, timeout)
 		timeout = timeout or CONFIG.timeout,
 		id = id,
 	})
+end
+
+-- ponytail: yazi keeps at most three notifications alive and drops the rest, which
+-- would swallow the result of a run. Progress lines therefore live for a second and
+-- at most one is sent per second, leaving room for the final message.
+local NOTICE_TIMEOUT = 1
+local last_notice = 0
+local function notice(content, id)
+	local now = os.time()
+	if now == last_notice then
+		return
+	end
+	last_notice = now
+	notify(content, "info", id, NOTICE_TIMEOUT)
 end
 
 local function is_sqsh_file(path)
@@ -186,11 +210,25 @@ local function build_unsquish_cmd(file_url, extract_path)
 end
 
 local function build_mount_cmd(file_url)
-	return string.format("%s -m %s", CONFIG.squish_cmd, ya.quote(file_url))
+	return string.format("%s --pipe -m %s", CONFIG.squish_cmd, ya.quote(file_url))
 end
 
 local function build_unmount_cmd(file_url)
 	return string.format("%s -u %s", CONFIG.squish_cmd, ya.quote(file_url))
+end
+
+local function build_verify_cmd(file_url)
+	-- --pipe so the hash phase and the hash-file phases reach this plugin as progress.
+	return string.format("%s --pipe --check %s", CONFIG.squish_cmd, ya.quote(file_url))
+end
+
+local function build_cancel_cmd(file_url)
+	if file_url then
+		return string.format("%s --cancel %s", CONFIG.unsquish_cmd, ya.quote(file_url))
+	end
+	-- No archive named: the CLI's lock root answers who is running, which is the only
+	-- honest question when a build's dated output does not exist yet.
+	return string.format("%s --cancel", CONFIG.unsquish_cmd)
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -212,6 +250,15 @@ local function err_detail(lines)
 	return table.concat(out, " | ")
 end
 
+-- ponytail: squish/unsquish mark each progress phase with a `phase <name>` line
+-- on stdout. Bare percentages alone cannot say which phase they belong to, and
+-- a second phase would be suppressed by the first phase's last_pct.
+local PHASE_LABELS = {
+	hash = "Hashing:",
+	["hashfile-read"] = "Reading hash file...",
+	["hashfile-write"] = "Writing hash file...",
+}
+
 local function run_with_pipe_progress(cmd_str, notify_id, title_start)
 	local child, err = Command("sh"):arg({ "-c", cmd_str }):stdout(Command.PIPED):stderr(Command.PIPED):spawn()
 	if not child then
@@ -219,6 +266,7 @@ local function run_with_pipe_progress(cmd_str, notify_id, title_start)
 	end
 
 	local last_pct = -1
+	local label = title_start
 	local err_lines = {}
 
 	while true do
@@ -231,17 +279,25 @@ local function run_with_pipe_progress(cmd_str, notify_id, title_start)
 				err_lines[#err_lines + 1] = msg
 			end
 		else
-			local pct = tonumber(line)
-			if pct and pct >= 0 and pct <= 100 then
-				local display_pct = math.floor(pct / 20) * 20
-				if (display_pct > last_pct and display_pct > 0) or pct == 100 then
-					notify(
-						string.format("%s %d%%", title_start, pct == 100 and 100 or display_pct),
-						"info",
-						notify_id,
-						2
-					)
-					last_pct = display_pct
+			-- yazi keeps the trailing newline, so neither `phase` nor a percentage
+			-- matches unless the line is trimmed first.
+			local msg = line and line:match("^%s*(.-)%s*$")
+			local phase = msg and msg:match("^phase (%S+)$")
+			if phase then
+				label = PHASE_LABELS[phase] or title_start
+				last_pct = -1
+				-- A phase that streams nothing (the hash file) is still a step the user
+				-- is waiting on: say it once, under its own id, and never hold it back
+				-- behind the percentage throttle.
+				notify(label, "info", notify_id .. ":" .. phase, NOTICE_TIMEOUT)
+			else
+				local pct = tonumber(msg)
+				if pct and pct >= 0 and pct <= 100 then
+					local display_pct = math.floor(pct / 20) * 20
+					if (display_pct > last_pct and display_pct > 0) or pct == 100 then
+						notice(string.format("%s %d%%", label, pct == 100 and 100 or display_pct), notify_id)
+						last_pct = display_pct
+					end
 				end
 			end
 		end
@@ -253,7 +309,7 @@ local function run_with_pipe_progress(cmd_str, notify_id, title_start)
 	if not success then
 		detail = err_detail(err_lines) or (err and tostring(err)) or "no output"
 	end
-	return success, detail
+	return success, detail, status and status.code
 end
 
 -- ponytail: do_refresh emits a yazi refresh on success — used uniformly by
@@ -261,7 +317,7 @@ end
 -- reload. build/extract use run_progress_op which always refreshes.
 local function run_simple_command(cmd_str, notify_id, start_msg, success_msg, error_msg, do_refresh)
 	notify(start_msg, "info", notify_id)
-	local child, err = Command("sh"):arg({ "-c", cmd_str }):stdout(Command.PIPED):stderr(Command.PIPED):spawn()
+	local child = Command("sh"):arg({ "-c", cmd_str }):stdout(Command.PIPED):stderr(Command.PIPED):spawn()
 	if not child then
 		notify(error_msg, "error", notify_id)
 		return false
@@ -290,10 +346,17 @@ end
 -- ponytail: build and extract share the same notify/run/refresh/error shape;
 -- this collapses the tail so the two operations only differ by their messages.
 local function run_progress_op(cmd, id, title, start_msg, success_msg, error_msg)
-	notify(start_msg, "info", id)
-	local success, detail = run_with_pipe_progress(cmd, id, title)
+	notice(start_msg, id)
+	local success, detail, code = run_with_pipe_progress(cmd, id, title)
+	-- yazi holds three notifications; wait for the status lines to expire so the
+	-- result of the run is the one the user actually sees.
+	ya.sleep(NOTICE_TIMEOUT + 0.1)
 	if success then
 		notify(success_msg, "info", id)
+		ya.emit("refresh", {})
+	elseif code == 2 then
+		-- a stopped run cleaned up its own partial output; that is not a failure
+		notify(MESSAGES.CANCELLED, "info", id)
 		ya.emit("refresh", {})
 	else
 		notify(error_msg .. ": " .. (detail or "unknown"), "error", id)
@@ -354,7 +417,14 @@ end
 
 local function run_mount(file_url)
 	local cmd = build_mount_cmd(file_url)
-	run_simple_command(cmd, NOTIFY_IDS.MOUNT, MESSAGES.START_MOUNT, MESSAGES.MOUNT_SUCCESS, MESSAGES.MOUNT_ERROR, true)
+	run_progress_op(
+		cmd,
+		NOTIFY_IDS.MOUNT,
+		"Mounting:",
+		MESSAGES.START_MOUNT,
+		MESSAGES.MOUNT_SUCCESS,
+		MESSAGES.MOUNT_ERROR
+	)
 end
 
 local function run_unmount(file_url)
@@ -415,7 +485,7 @@ end
 -- Action dispatcher (composition pattern)
 -- ─────────────────────────────────────────────────────────────────────────────
 local ACTIONS = {
-	build = function(job)
+	build = function()
 		local items = get_selected()
 		local ok, err = validate_build(items)
 		if not ok then
@@ -438,6 +508,14 @@ local ACTIONS = {
 		end
 		run_extract_pick(h.url)
 	end,
+	verify = function()
+		local h = get_validated_hovered()
+		if not h then
+			return
+		end
+		run_progress_op(build_verify_cmd(h.url), NOTIFY_IDS.VERIFY, "Verifying:",
+			MESSAGES.START_VERIFY, MESSAGES.VERIFY_SUCCESS, MESSAGES.VERIFY_ERROR)
+	end,
 	mount = function()
 		local h = get_validated_hovered()
 		if not h then
@@ -451,6 +529,17 @@ local ACTIONS = {
 			return
 		end
 		run_unmount(h.url)
+	end,
+	-- ponytail: cancellation asks the CLI to stop the run holding this archive;
+	-- yazi's start_kill would only SIGTERM the shell and orphan unsquashfs.
+	cancel = function()
+		local h = get_hovered()
+		-- A .sqsh under the cursor names the archive to stop. Anything else cannot name
+		-- one — a build's dated output may not exist yet, and async plugin contexts are
+		-- isolated, so this job never saw the build it is being asked to stop. Ask the
+		-- CLI who holds a lock: it stops one run and refuses when several are running.
+		run_simple_command(build_cancel_cmd(h and validate_hovered(h) and h.url), NOTIFY_IDS.CANCEL,
+			MESSAGES.START_CANCEL, MESSAGES.CANCEL_SUCCESS, MESSAGES.CANCEL_ERROR, true)
 	end,
 	["unmount-tracked"] = function()
 		run_unmount_tracked()

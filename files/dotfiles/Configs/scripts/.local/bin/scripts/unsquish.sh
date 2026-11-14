@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+# -m gives our tool children their own process group, so a cancel can signal the
+# whole group; without it bash makes background children ignore SIGTERM.
+set -euo pipefail -m
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")" && pwd)"
 # shellcheck source=src/squish-common.sh
@@ -10,7 +12,7 @@ source "${SCRIPT_DIR}/squish-common.sh"
 # CONSTANTS
 #######################################
 
-declare -r VERSION="dev"
+declare -r VERSION="1.6.9"
 SCRIPT_NAME="$(basename "$0")"
 readonly SCRIPT_NAME
 
@@ -134,6 +136,15 @@ parse_arguments() {
         shift
       fi
       ;;
+    --cancel)
+      action="cancel"
+      if is_option_value "${2:-}"; then
+        action_arg="$2"
+        shift 2
+      else
+        shift
+      fi
+      ;;
     --list | --ls)
       if is_option_value "${2:-}"; then
         list_archive "$2"
@@ -149,11 +160,13 @@ parse_arguments() {
       echo "  $SCRIPT_NAME <archive.sqsh> [-o output_dir] [-y]  Extract archive"
       echo "  $SCRIPT_NAME --check <archive_file>              Verify archive integrity"
       echo "  $SCRIPT_NAME --list <archive_file>               List archive contents"
+      echo "  $SCRIPT_NAME --cancel [archive_file]             Stop a run that holds this archive"
       echo ""
       echo "Options:"
       echo "  -o, --output <dir>    Specify extraction directory (default: archive stem)"
       echo "  -y, --yes             Skip checksum verification errors"
-      echo "  --pipe                Machine-readable mode: percentages to stdout, logs to stderr"
+      echo "  --pipe                Machine-readable mode: progress lines to stdout (bare percentages and 'phase <name>' markers), logs to stderr"
+      echo "  --cancel            Stop the run holding an archive; with no archive, stop the single run in flight"
       echo "  -h, --help            Show this help message"
       exit 0
       ;;
@@ -167,6 +180,14 @@ parse_arguments() {
       ;;
     esac
   done
+
+  if [[ $action == cancel ]]; then
+    # No archive named means "stop the run I am holding", not a missing argument.
+    if [[ -z $action_arg && -n $INPUT_FILE ]]; then
+      action_arg="$INPUT_FILE"
+    fi
+    cancel_or_exit "$action_arg"
+  fi
 
   if [[ $action == check ]]; then
     if [[ -z $action_arg && -n $INPUT_FILE ]]; then
@@ -186,6 +207,9 @@ parse_arguments() {
     exit 1
   fi
 
+  # One operation per archive: the lock is shared with squish, so a build or a
+  # mount of this same path cannot overlap the extraction.
+  acquire_archive_lock "$INPUT_FILE" || exit $?
   require_existing_archive "$INPUT_FILE" || exit 1
 }
 
@@ -194,12 +218,15 @@ parse_arguments() {
 #######################################
 
 main() {
+  install_cancel_trap
   parse_arguments "$@"
   check_dependencies
   determine_output_dir
 
   local exit_code=0 check_rc=0
   check_archive "$INPUT_FILE" "SquashFS Extraction" || check_rc=$?
+  # A signal that landed during the hash must not go on to extract.
+  [[ $CANCELLED -eq 1 ]] && exit 2
   if [[ $check_rc -ne 0 ]]; then
     if [[ $IGNORE_CHECKSUM -eq 1 ]]; then
       log info "Checksum verification did not pass but -y was passed; continuing anyway."
@@ -211,6 +238,9 @@ main() {
   extract_backend_args
   if [[ $RENDERER != pipe ]]; then
     log info "Rendering extraction with '$RENDERER'..."
+  fi
+  if [[ $PROGRESS_PIPE -eq 1 ]]; then
+    printf 'phase extract\n'
   fi
   show_progress "SquashFS Extraction" "Extracting to ${OUTPUT_DIR}..." || exit_code=$?
 

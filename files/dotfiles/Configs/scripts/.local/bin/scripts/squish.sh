@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+# -m gives our tool children their own process group, so a cancel can signal the
+# whole group; without it bash makes background children ignore SIGTERM.
+set -euo pipefail -m
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")" && pwd)"
 # shellcheck source=src/squish-common.sh
@@ -10,7 +12,7 @@ source "${SCRIPT_DIR}/squish-common.sh"
 # CONSTANTS
 #######################################
 
-declare -r VERSION="dev"
+declare -r VERSION="1.6.9"
 SCRIPT_NAME="$(basename "$0")"
 readonly SCRIPT_NAME
 
@@ -81,13 +83,39 @@ verify_archive_checksum() {
 }
 
 generate_checksum() {
-  local file="$1"
-  local dir base hash
-  dir="$(dirname "$file")"
+  local file="$1" base
   base="$(basename "$file")"
   log info "Generating SHA-256 checksum for '$base'..."
-  hash="$(cd "$dir" && hash_with_progress "$base" "SquashFS Archival")" || exit 1
-  printf '%s  %s\n' "$hash" "$base" >"${dir}/${base}.sha256"
+  # Return code 2 also means 'cancelled', so the guard below decides, not exit 1.
+  hash_with_progress "$file" "SquashFS Archival" || {
+    [[ $CANCELLED -eq 1 ]] && return 0
+    exit 1
+  }
+  # A cancel that landed during the hash stops here: the archive is complete,
+  # but this run does not finish the pair.
+  [[ $CANCELLED -eq 1 ]] && return 0
+  # The hash file is the half the user waits for after the archive's own hash
+  # ends, so a pipe consumer gets a marker for the write as well as for the hash.
+  [[ $PROGRESS_PIPE -eq 1 ]] && printf 'phase hashfile-write\n'
+  printf '%s  %s\n' "$HASH_RESULT" "$base" >"${file}.sha256"
+}
+
+# Usage: hash_archive <archive>
+# --hash re-runs the build's hash flow on an existing archive: recompute and
+# rewrite its .sha256 pair. It holds the archive lock, so it never races a
+# live build or a second hash writing the same pair.
+hash_archive() {
+  local archive_abs
+  archive_abs="$(realpath "$1")"
+  require_existing_archive "$archive_abs" || exit 1
+  acquire_archive_lock "$archive_abs" || exit $?
+  generate_checksum "$archive_abs"
+  if [[ $CANCELLED -eq 1 ]]; then
+    log warn "Hash cancelled before the checksum was written; '$archive_abs' has no '.sha256' pair."
+    exit 2
+  fi
+  log info "Checksum written to '${archive_abs}.sha256'."
+  exit 0
 }
 
 #######################################
@@ -104,9 +132,7 @@ generate_checksum() {
 # nothing.
 #######################################
 
-get_tracker_dir() {
-  echo "${XDG_RUNTIME_DIR:-/tmp}"
-}
+get_tracker_dir() { runtime_root; }
 
 get_mounts_dir() {
   echo "$(get_tracker_dir)/$MOUNTS_FOLDER"
@@ -120,6 +146,9 @@ is_mounted() {
 }
 
 remove_stale_trackers() {
+  # Without 'mountpoint' we cannot tell a dead mount from a live one, so nothing
+  # is removed. --force is the escape hatch in that case, as before.
+  command -v mountpoint >/dev/null 2>&1 || return 0
   local candidates=("$@")
   local candidate mountpoint
   for candidate in "${candidates[@]}"; do
@@ -194,13 +223,19 @@ alloc_tracker_file() {
 
 list_mounts() {
   local candidate mountpoint archive_abs count=0
+  local -a candidates=()
+  mapfile -t candidates < <(all_trackers)
+  # Listing is where a user asks what is mounted, so a mount that died
+  # underneath us is dropped here rather than reported as live.
+  [[ ${#candidates[@]} -gt 0 ]] && remove_stale_trackers "${candidates[@]}"
 
-  while IFS= read -r candidate; do
+  for candidate in "${candidates[@]}"; do
+    [[ -f $candidate ]] || continue
     mountpoint="$(read_tracker_mountpoint "$candidate")"
     archive_abs="$(read_tracker_archive "$candidate")"
     echo "${archive_abs} -> ${mountpoint}"
     ((count++)) || true
-  done < <(all_trackers)
+  done
 
   if [[ $count -eq 0 ]]; then
     log info "No active mounts found."
@@ -253,6 +288,10 @@ mount_archive() {
   archive_abs="$(realpath "$input")"
 
   require_existing_archive "$archive_abs" || exit 1
+
+  # One operation per archive: the lock is shared with unsquish, so an extraction
+  # or a build of this path cannot overlap the mount.
+  acquire_archive_lock "$archive_abs" || exit $?
 
   local candidates=()
   mapfile -t candidates < <(live_trackers_for_archive "$archive_abs")
@@ -553,6 +592,15 @@ parse_arguments() {
         shift
       fi
       ;;
+    --hash)
+      action="hash"
+      if is_option_value "${2:-}"; then
+        action_arg="$2"
+        shift 2
+      else
+        shift
+      fi
+      ;;
     -y | --yes | --skip-verify)
       SKIP_VERIFY=1
       shift
@@ -586,6 +634,15 @@ parse_arguments() {
         shift
       fi
       ;;
+    --cancel)
+      action="cancel"
+      if is_option_value "${2:-}"; then
+        action_arg="$2"
+        shift 2
+      else
+        shift
+      fi
+      ;;
     --list-mounts)
       action="list-mounts"
       shift
@@ -604,9 +661,11 @@ parse_arguments() {
       echo "Usage:"
       echo " $SCRIPT_NAME <source1> [source2...] [-o output.sqsh] [-c <n>] [--prompt] Create a new archive"
       echo " $SCRIPT_NAME --check <archive_file> Verify archive integrity"
+      echo " $SCRIPT_NAME --hash <archive_file> Re-hash the archive and rewrite its .sha256 pair"
       echo " $SCRIPT_NAME -m <archive_file> [-y] [--force] [--open] Mount archive to managed directory"
       echo " $SCRIPT_NAME -u <archive_file | mountpoint> [--force] Unmount archive and cleanup"
       echo " $SCRIPT_NAME --list-mounts List all active mounts"
+      echo " $SCRIPT_NAME --cancel [archive_file] Stop a run that holds this archive"
       echo ""
       echo "Options:"
       echo " -o, --output <file> Specify output filename (default: <first_source>.sqsh)"
@@ -617,7 +676,8 @@ parse_arguments() {
       echo " -k, --kio       KIO service-menu mode: args are file:// URIs; multi-source output uses 'archive-*' naming"
       echo " --open          With -m: show the mounts folder in the desktop's file manager"
       echo " --print-mountpoint  With -m: print the new mountpoint alone on stdout, logs to stderr"
-      echo " --pipe Machine-readable mode: percentages to stdout, logs to stderr"
+      echo " --cancel          Stop the run holding an archive; with no archive, stop the single run in flight"
+      echo " --pipe Machine-readable mode: progress lines to stdout (bare percentages and 'phase <name>' markers), logs to stderr"
       echo " -h, --help Show this help message"
       exit 0
       ;;
@@ -641,10 +701,12 @@ parse_arguments() {
   done
 
   case $action in
-  check | mount | unmount)
+  check | mount | unmount | cancel | hash)
     if [[ -z $action_arg ]]; then
       if [[ ${#SOURCES[@]} -eq 1 ]]; then
         action_arg="${SOURCES[0]}"
+      elif [[ $action == cancel ]]; then
+        : # a bare --cancel stops the single run in flight, the way unsquish already does
       else
         missing_option_value "$action"
       fi
@@ -653,8 +715,14 @@ parse_arguments() {
   esac
 
   case "$action" in
+  cancel)
+    cancel_or_exit "$action_arg"
+    ;;
   check)
     run_check "$action_arg" "SquashFS Archival"
+    ;;
+  hash)
+    hash_archive "$action_arg"
     ;;
   mount)
     check_squashfuse
@@ -677,6 +745,7 @@ parse_arguments() {
     log error "No source directories specified."
     echo "Usage: $SCRIPT_NAME <source1> [source2 ...] [-o output_file]"
     echo " $SCRIPT_NAME --check <archive_file>"
+    echo " $SCRIPT_NAME --hash <archive_file>"
     echo " $SCRIPT_NAME [-y] -m|--mount <archive_file>"
     echo " $SCRIPT_NAME -u|--unmount <archive_file>"
     exit 1
@@ -688,12 +757,27 @@ parse_arguments() {
 #######################################
 
 main() {
+  install_cancel_trap
   parse_arguments "$@"
   check_dependencies
   if [[ $ASK_BUILD -eq 1 ]]; then
     ask_build_options
   fi
   determine_output_filename
+
+  # One operation per archive: the output path is the archive being written, so a
+  # build contends with an extraction or mount of the same file.
+  acquire_archive_lock "$OUTPUT_FILE" || exit $?
+
+  # The lock is released when the mount command exits, so a mount that is still
+  # live has to be asked about directly: this build would truncate it under the mount.
+  local -a live_mounts=()
+  mapfile -t live_mounts < <(live_trackers_for_archive "$OUTPUT_FILE")
+  if [[ ${#live_mounts[@]} -gt 0 ]]; then
+    log error "'$OUTPUT_FILE' is mounted at '$(read_tracker_mountpoint "${live_mounts[0]}")'."
+    log error "Unmount first with: $SCRIPT_NAME -u '$OUTPUT_FILE'"
+    exit 1
+  fi
 
   local exit_code=0
 
@@ -710,6 +794,12 @@ main() {
   fi
 
   generate_checksum "$OUTPUT_FILE"
+  # A signal that landed during the hash must not report a finished build. The
+  # archive it just wrote is complete, so it is kept; only the pair is missing.
+  if [[ $CANCELLED -eq 1 ]]; then
+    log warn "Build cancelled before the checksum was written; '$OUTPUT_FILE' has no '.sha256' pair."
+    exit 2
+  fi
   log info "Checksum written to '${OUTPUT_FILE}.sha256'."
   log info "Successfully created '$OUTPUT_FILE'."
 }

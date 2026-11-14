@@ -1,0 +1,49 @@
+[[mgr.prepend_keymap]]
+on = ["n", "b"]
+run = "plugin squish -- build"
+desc = "Squash Build"
+
+[[mgr.prepend_keymap]]
+on = ["n", "x"]
+run = "plugin squish -- extract"
+desc = "Squash Extract"
+
+[[mgr.prepend_keymap]]
+on = ["n", "X"]
+run = "plugin squish -- extract-pick"
+desc = "Squash Extract (pick path)"
+
+# Cancel is a shell action, not a plugin action: yazi queues plugin and shell jobs
+# behind a running one, so a cancel bound without --orphan only fires once the build
+# ends. --orphan detaches it from that queue, so it lands mid-run. A bare
+# `unsquish --cancel` asks the CLI's lock root who is running: it stops that run, and
+# refuses (naming every archive) when several are running.
+[[mgr.prepend_keymap]]
+on = ["n", "c"]
+run = 'shell "$HOME/.local/bin/unsquish --cancel" --orphan'
+desc = "Squash Cancel the run in flight"
+
+[[mgr.prepend_keymap]]
+on = ["n", "v"]
+run = "plugin squish -- verify"
+desc = "Squash Verify checksum"
+
+[[mgr.prepend_keymap]]
+on = ["n", "m"]
+run = "plugin squish -- mount"
+desc = "Squash Mount"
+
+[[mgr.prepend_keymap]]
+on = ["n", "u"]
+run = "plugin squish -- unmount"
+desc = "Squash Unmount"
+
+[[mgr.prepend_keymap]]
+on = ["n", "U"]
+run = "plugin squish -- unmount-tracked"
+desc = "Squash Unmount (select from tracked)"
+
+[[mgr.prepend_keymap]]
+on = ["n", "j"]
+run = "plugin squish -- jump"
+desc = "Squash Jump to mount"
