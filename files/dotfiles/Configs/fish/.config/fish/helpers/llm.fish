@@ -50,13 +50,31 @@ function llm_logs
 end
 alias lcoder='llm_start --fg'
 
-# start_with_llm [-f/--fg] [-r] [-p] [-u] [-R runner] [cmd [args...]] — start the
-# server, run cmd, stop the server. No cmd: just serve. -f/--fg blocks the container.
-# -r: ROCm (else $ENABLE_ROCM=1 decides). -p: pull the image first. -u: update
+# start_with_llm [-f/--fg] [-r] [-p] [-u] [-R runner] [-b llm|strata] [cmd [args...]]
+# — start a server, run cmd, stop the server. No cmd: just serve. -f/--fg blocks the
+# container. -r: ROCm (else $ENABLE_ROCM=1 decides). -p: pull the image first. -u: update
 # pi-bolt + extensions first. -R: runner config name (llm.sh workspace/*.sh).
+# -b chooses which dispatcher serves and stops (llm by default). The serve args are built
+# the same way for both, so a word that backend does not own (-p/-r/-R on strata) is
+# refused by that dispatcher — never dropped.
 function start_with_llm
-    argparse -s f/fg r/rocm p/pull u/update R/runner= -- $argv
+    argparse -s f/fg r/rocm p/pull u/update R/runner= b/backend= -- $argv
     or return
+    set -l backend llm
+    set -q _flag_backend; and set backend $_flag_backend
+    # Declared outside the if: a set -l inside a block dies at `end` (fish block scoping).
+    set -l serve_cmd _llm_serve_sh
+    set -l stop_cmd llm_stop
+    if test "$backend" = strata
+        # run.sh defaults to "start", so the action is named here and nowhere else:
+        # strata_start forwards argv untouched, so a caller's own action word cannot
+        # trip run.sh's "only one action" rule.
+        set serve_cmd _strata_sh
+        set stop_cmd strata_stop
+    else if test "$backend" != llm
+        echo "start_with_llm: unknown backend '$backend' (llm, strata)" >&2
+        return 1
+    end
     if set -q _flag_u
         _pi_update
         or return
@@ -68,19 +86,19 @@ function start_with_llm
     set -q _flag_runner; and set serve $serve $_flag_runner
     if set -q argv[1]
         # podman blocks in foreground; background it so cmd runs concurrently
-        _llm_serve_sh $serve &
+        $serve_cmd $serve &
         $argv
         set -l rc $status
-        llm_stop
+        $stop_cmd
         return $rc
     end
-    _llm_serve_sh $serve
+    $serve_cmd $serve
 end
 
 # llm-coder [-s/--serve] [start_with_llm flags] [cmd [args...]] — start_with_llm,
 # but with no cmd it runs pi; --serve restores plain "just serve".
 function llm-coder
-    argparse -s f/fg r/rocm p/pull u/update s/serve R/runner= -- $argv
+    argparse -s f/fg r/rocm p/pull u/update s/serve R/runner= b/backend= -- $argv
     or return
     if not set -q _flag_s; and not set -q argv[1]
         # no pi, no point starting the server (-u may install it first)
@@ -88,6 +106,7 @@ function llm-coder
         set argv pi
     end
     set -q _flag_runner; and set argv -R $_flag_runner $argv
+    set -q _flag_backend; and set argv -b $_flag_backend $argv
     start_with_llm $_flag_f $_flag_r $_flag_p $_flag_u $argv
 end
 
