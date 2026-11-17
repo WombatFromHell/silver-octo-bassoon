@@ -2,6 +2,25 @@ function update_wayland_env_vars -d "Safely sync GUI env vars into this shell an
     # Guard: Ensure runtime dir exists
     set -q XDG_RUNTIME_DIR; or set -gx XDG_RUNTIME_DIR "/run/user/"(id -u)
     test -d "$XDG_RUNTIME_DIR"; or return
+    # A remote pane cannot reach the desktop's display: tmux hands every pane the
+    # login session's DISPLAY/WAYLAND_DISPLAY, so pinentry / ssh-askpass pop a
+    # window on the desktop that the SSH client never sees (git push hangs
+    # waiting for it). X11-forwarding (localhost:N) is the only display SSH can
+    # use; otherwise clear these from the pane and the tmux server so gpg's
+    # updatestartuptty registers this tty instead of the desktop.
+    set -l forwarded (string match -r '^localhost:[0-9]+' -- "$DISPLAY")
+    if test -n "$SSH_CONNECTION"; or test -n "$SSH_CLIENT"
+        for var in DISPLAY WAYLAND_DISPLAY NIRI_SOCKET SSH_ASKPASS SSH_ASKPASS_REQUIRE
+            if test "$var" = DISPLAY; and test -n "$forwarded"
+                continue
+            end
+            set -e $var
+            if test -n "$TMUX"
+                tmux set-environment -gu $var 2>/dev/null; or tmux unset-environment -g $var 2>/dev/null
+            end
+        end
+        return
+    end
 
     # 1. Source of truth: the systemd user session (bulk parse, one subprocess).
     # Anchored ^...= so e.g. ^DISPLAY= doesn't also match inside WAYLAND_DISPLAY=.
@@ -71,7 +90,9 @@ function update_wayland_env_vars -d "Safely sync GUI env vars into this shell an
                 test $tmux_env -eq 1; and tmux set-environment -g $var "$tg" 2>/dev/null
             else if test -n "$cur"
                 set -e $var
-                test $tmux_env -eq 1; and tmux unset-environment -g $var 2>/dev/null
+                if test $tmux_env -eq 1
+                    tmux set-environment -gu $var 2>/dev/null; or tmux unset-environment -g $var 2>/dev/null
+                end
             end
         end
     end

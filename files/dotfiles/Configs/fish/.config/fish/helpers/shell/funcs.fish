@@ -126,15 +126,21 @@ if command -q gpg-connect-agent
         gpg-connect-agent /bye >/dev/null 2>&1
     end
     function update_gpg_env
-        # In SSH sessions, prefer $SSH_TTY over `tty` for reliability
-        if test -n "$SSH_CLIENT"
-            set -l ssh_tty "$SSH_TTY"
-            if test -z "$ssh_tty"; or not test -w "$ssh_tty"
-                set ssh_tty (tty 2>/dev/null); or return
-            end
-            set -l current_tty "$ssh_tty"
-        else
-            set -l current_tty (tty 2>/dev/null); or return
+        # Resolve the tty pinentry must prompt on, in order: tmux's pane pts,
+        # $SSH_TTY, then `tty`. $SSH_TTY is sshd's tty, whose output bypasses
+        # tmux and scribbles over the client's screen, so the pane wins.
+        # Plain `set`, never `set -l`: fish scopes -l to the enclosing block, so
+        # a -l inside a branch dies at `end` and GPG_TTY gets set empty — which
+        # left updatestartuptty with no tty and pinned prompts to the display.
+        set -l current_tty ""
+        if test -n "$TMUX"
+            set current_tty (tmux display-message -p '#{pane_tty}' 2>/dev/null)
+        end
+        if test -z "$current_tty"; and test -n "$SSH_CLIENT"
+            set current_tty "$SSH_TTY"
+        end
+        if test -z "$current_tty"; or not test -w "$current_tty"
+            set current_tty (tty 2>/dev/null); or return
         end
 
         command -q gpg-connect-agent; or return
