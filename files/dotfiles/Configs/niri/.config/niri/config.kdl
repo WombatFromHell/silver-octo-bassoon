@@ -357,6 +357,12 @@ binds {
     Mod+Ctrl+WheelScrollUp cooldown-ms=200 {
         focus-workspace-up
     }
+    Mod+WheelScrollLeft cooldown-ms=200 {
+        focus-workspace-down
+    }
+    Mod+WheelScrollRight cooldown-ms=200 {
+        focus-workspace-up
+    }
     Mod+WheelScrollDown cooldown-ms=200 {
         focus-column-right
     }
