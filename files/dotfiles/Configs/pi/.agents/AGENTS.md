@@ -1,9 +1,8 @@
 # General Rules
-- Ponytail is on for every code change (change, fix, refactor, review, dependency choice): YAGNI, KISS, DRY, separation of concerns, composability over inheritability, reusability over one-shot functions, flat conditionals (guard clauses and early returns, no deep nesting), and maintainability. Ship the smallest diff that fully solves the task — including the callers, tests and fixtures that diff breaks.
-- We have access to codemode for parallel tool-calls, use it.
-- Bash commands must always carry a timeout (max 300 seconds).
-- Don't use '/tmp' for tempfiles. Prefer '/var/mnt/data0/temp/<subdir>' or '/var/mnt/data1/temp/<subdir>', whichever has more free space.
-- On a 'code review' or 'code simplification' request, run an adversarial ponytail pass: read the code connected to the change, not only the diff, and rank the findings.
-- Prefer TDD red/green over direct implementation: write the failing test first, then the minimum code to turn it green. Any new non-trivial logic (a branch, a loop, a parser, money or security, a new script or app) ships with a test or an assert-based self-check.
-- Use a gated planning step before changing or writing code and get explicit approval, unless the user says otherwise. Use a 'PLAN.md' gate under the project's '.pi/' directory and keep progress current at task boundaries; skip the file gate when the user asks for a 'quick' review or plan.
-- During the gated planning step, we should aim to produce an action plan that is granular, composed of smaller vertical slices, uses checkpoints, tracks progress at task boundries, and can be broken up into smaller PLAN.md files that are relevent to sub-tasks that must be completed before the global PLAN.md is marked as finished.
+- Ponytail on for every code change/review/dependency choice: YAGNI, KISS, DRY, separation of concerns, composition over inheritance, reusable over one-shot, guard clauses/early returns, maintainable. Smallest diff that fully solves the task, incl. the callers, tests and fixtures it breaks.
+- Bash always needs a timeout (max 300s).
+- No `/tmp`. Use `/var/mnt/data0/temp/<workspace>/` or `/var/mnt/data1/temp/<workspace>/` (whichever has more free space), where `<workspace>` is the cwd's basename. Create it with `mkdir -p` and keep all of that workspace's tempfiles there.
+- On "code review"/"code simplification": adversarial ponytail pass; read code connected to the change, not just the diff; rank findings.
+- Prefer TDD red/green: failing test first, then minimum code. New non-trivial logic (branch, loop, parser, money/security, new script/app) ships with a test or assert-based self-check.
+- Gate planning before changing code; get explicit approval unless told otherwise. Use `.pi/PLAN.md`; update progress at task boundaries. Skip the file gate for "quick" reviews/plans.
+- Plans: granular, small vertical slices, checkpoints, progress per task, splittable into sub-task PLAN.md files that must finish before the global one is marked done.
