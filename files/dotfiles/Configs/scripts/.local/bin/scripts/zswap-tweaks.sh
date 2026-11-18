@@ -2,17 +2,19 @@
 # zswap-tweaks.sh: memory tuning for a zswap + big-resident-model workstation. Idempotent.
 #
 #   --install          apply the sysctl / sysfs / systemd tweaks (original values snapshotted first)
-#   --uninstall        remove everything this script manages, including swapfiles it created, and
-#                      restore the snapshot
+#   --uninstall        remove everything this script manages, including swapfiles it created
+#                      (never ones it merely adopted), and restore the snapshot
 #   --swapfile FILE    create FILE as swap (btrfs/xfs/ext4 aware) and activate it with a systemd
 #                      .swap unit. --size SIZE (e.g. 8G) overrides min(25% of RAM, 16G).
+#   --yes              answer yes to prompts (masking uresourced)
 #
-# `--selftest` checks the size arithmetic and needs no root. Sourcing this file defines the
-# functions without running anything.
+# `--selftest` checks the size arithmetic and file-ownership helpers and needs no root. Sourcing
+# this file defines the functions without running anything.
 set -euo pipefail
 shopt -s inherit_errexit
 
-readonly TAG='# Managed by zswap-tweaks.sh' # first line of every unit/conf we own; uninstall greps for it
+readonly TAG='# Managed by zswap-tweaks.sh'                # first line of every unit/conf we own
+readonly OWNED_TAG='# Swapfile created by zswap-tweaks.sh' # in a .swap unit iff we created the file
 readonly SWAP_PCT=25 SWAP_MAX=16G MIB=1048576
 
 # zswap pool cap. This box: ~21GB weights + ~3GB runtime leaves ~6GB for the desktop, so the
@@ -22,54 +24,76 @@ readonly POOL_PCT=10
 
 # memory.low for the session slice. strata runs rootless in this UID's tree and maps a large
 # resident arena into the GPU. memory.low only biases reclaim (it never pins a page), and the
-# kernel ignores it when nothing unprotected is reclaimable, so 80% of usable RAM is the
-# ceiling. MemoryMin= would make the pages exclusive and cause constant OOMs, so it stays unset.
-# The arena's real guarantee is mlock/GTT, not a cgroup limit.
-readonly MEMLOW=24G
+# kernel ignores it when nothing unprotected is reclaimable, so keep it well below usable RAM
+# (22G is ~73% of 30GB). MemoryMin= would make the pages exclusive and cause constant OOMs, so
+# it stays unset. The arena's real guarantee is mlock/GTT, not a cgroup limit.
+readonly MEMLOW=22G
 
-# One table drives everything: the generated sysctl.d / tmpfiles.d files, the snapshot, the
-# restore allowlist. Columns: kind, key, value, upstream default.
-#  - value "-" means "snapshot and restore, never change".
-#  - the default column only seeds the snapshot when an older version of this script already
-#    applied the tweaks (live values are then no longer the originals).
-#  - ratios sit before bytes on purpose: restoring a *_ratio zeroes the matching *_bytes, and
-#    writing an unchanged *_bytes is a no-op, so restore round-trips whichever pair was in effect.
-#  - dirty limits are bytes, not ratios: 5%/15% of a large RAM figure is multiple GB of dirty data.
-#  - compressor: set a value to switch (zstd gives the best ratio; also consider zswap.compressor=
-#    on the kernel cmdline so an lzo pool is not built first). lru_gen cuts the cost of each
-#    reclaim scan. THP stays off automatic promotion because khugepaged migrating pages
-#    invalidates the arena's KFD userptr without any swap.
+# Ceiling for the whole user.slice (a cgroup that really has memory.max; the root cgroup does
+# not). No MemoryHigh=: it would throttle the biggest allocator (strata) well before any danger.
+readonly USER_MEMMAX=97%
+
+# uresourced (Fedora/Bazzite) rewrites MemoryLow/MemoryMin/CPUWeight/IOWeight on the active
+# user's slice at every session change; its set-property files outrank our drop-ins.
+readonly URES=uresourced.service
+readonly URES_MARK=/var/lib/zswap-tweaks/uresourced-masked # exists iff we masked it
+
+# Static files this script owns. install_tweaks writes through these names and `managed` (built
+# in init_identity) feeds uninstall and the snapshot check, so each path is spelled once. The
+# slice files are named override.conf on purpose: a same-named /etc drop-in fully replaces the
+# vendor one in /usr/lib. Swapfile units are found by TAG instead.
+readonly SYSCTL_CONF=/etc/sysctl.d/99-memory.conf
+readonly TMPFILES_CONF=/etc/tmpfiles.d/zswap.conf
+readonly ROOT_SLICE_CONF=/etc/systemd/system/-.slice.d/override.conf
+readonly USERS_SLICE_CONF=/etc/systemd/system/user.slice.d/override.conf
+
+# Columns: kind, key, value, upstream default (the default only seeds the snapshot when an
+# older run already applied the tweaks). Compressor belongs on the kernel cmdline:
+# zswap.compressor=zstd.
+#  - min_ttl_ms is MGLRU's thrash guard. If the working set cannot be kept for that long, the
+#    kernel OOM killer may fire, and the victim would be strata. Drop the row if that worries you.
 tweaks=(
-  "sysctl vm.swappiness                 30         60"
-  "sysctl vm.page-cluster               0          3"
-  "sysctl vm.watermark_scale_factor     125        10"
-  "sysctl vm.watermark_boost_factor     0          15000"
-  "sysctl vm.compaction_proactiveness   0          20"
-  "sysctl vm.dirty_background_ratio     -          10"
-  "sysctl vm.dirty_ratio                -          20"
-  "sysctl vm.dirty_background_bytes     268435456  0"
-  "sysctl vm.dirty_bytes                1073741824 0"
-  "sysctl vm.max_map_count              1048576    65530"
-  "sysfs  /sys/module/zswap/parameters/compressor          -        zstd"
-  "sysfs  /sys/module/zswap/parameters/max_pool_percent    $POOL_PCT 20"
-  "sysfs  /sys/kernel/mm/lru_gen/enabled                   y        0"
-  "sysfs  /sys/kernel/mm/transparent_hugepage/enabled      madvise  always"
+  "sysctl vm.swappiness                                     60         60"
+  "sysctl vm.vfs_cache_pressure                             50         100"
+  "sysctl vm.page-cluster                                   0          3"
+  "sysctl vm.watermark_scale_factor                         125        10"
+  "sysctl vm.max_map_count                                  1048576    65530"
+  # "sysfs  /sys/kernel/mm/lru_gen/min_ttl_ms                 300        300"
+  "sysfs  /sys/module/zswap/parameters/max_pool_percent     $POOL_PCT  20"
+  "sysfs  /sys/kernel/mm/transparent_hugepage/enabled       madvise    always"
 )
 
 changed=0 # set by put() whenever it rewrites a file; gates daemon-reload
+assume_yes=0
+# Filled in by init_identity (needs root, so not at source time).
+owner='' uid='' state='' user_slice_conf=''
+managed=()
 
 warn() { echo "$*" >&2; }
 die() {
   warn "$*"
   exit 1
 }
-usage() { die "usage: ${0##*/} --install | --uninstall | --swapfile FILE [--size SIZE]"; }
+usage() { die "usage: ${0##*/} --install | --uninstall | --swapfile FILE [--size SIZE] [--yes]"; }
+
+# ours PATH: a regular file whose first line is our tag. Everything we edit or delete passes this.
+ours() { [[ -f $1 && $(head -n1 -- "$1") == "$TAG" ]]; }
+
+# confirm PROMPT: yes under --yes; no without a terminal (never block a pipe or cron).
+confirm() {
+  local ans
+  if ((assume_yes)); then return 0; fi
+  [[ -t 0 ]] || return 1
+  read -r -p "$1 [y/N] " ans
+  [[ $ans == [yY]* ]]
+}
 
 # put PATH < content: install stdin at PATH iff it differs. Never pipe into it (subshell
-# would lose `changed`); use a heredoc or `< <(...)`.
+# would lose `changed`); use a heredoc or `< <(...)`. Refuses to overwrite files that aren't ours.
 put() {
   local path=$1 content
   content=$(cat)
+  if [[ -e $path ]] && ! ours "$path"; then die "refusing to overwrite $path (not managed by ${0##*/})"; fi
   if [[ -e $path && $(<"$path") == "$content" ]]; then
     echo "unchanged $path"
   else
@@ -77,6 +101,15 @@ put() {
     echo "updated   $path"
     changed=1
   fi
+}
+
+# init_identity: who we are tuning for. The snapshot lives in the invoking user's home, not root's.
+init_identity() {
+  owner=${SUDO_USER:-root}
+  uid=$(id -u "$owner")
+  state=$(getent passwd "$owner" | cut -d: -f6)/.local/share/zswap-tweaks-orig.txt
+  user_slice_conf=/etc/systemd/system/user-$uid.slice.d/override.conf
+  managed=("$SYSCTL_CONF" "$TMPFILES_CONF" "$ROOT_SLICE_CONF" "$USERS_SLICE_CONF" "$user_slice_conf")
 }
 
 # emit KIND: this kind's changing tweaks, rendered as config lines.
@@ -122,7 +155,7 @@ snapshot() {
   [[ -e $state ]] && return 0
   local seeded=0 p kind key default val
   for p in "${managed[@]}"; do
-    if [[ -e $p ]]; then seeded=1; fi
+    if ours "$p"; then seeded=1; fi
   done
   runuser -u "$owner" -- mkdir -p "${state%/*}"
   {
@@ -169,71 +202,121 @@ set_memlow() {
   elif [[ $(<"$f") != "$1" ]]; then echo "$1" >"$f"; fi
 }
 
+# disable_uresourced: mask the daemon that keeps resetting MemoryLow (asks first).
+disable_uresourced() {
+  [[ $(systemctl show -P LoadState "$URES") == loaded ]] || return 0 # absent or already masked
+  warn "$URES resets MemoryLow on user-$uid.slice at every session change, undoing our protection."
+  if ! confirm "Mask $URES (you lose its 500 CPU/IO weights and 250M MemoryMin)?"; then
+    warn "skipped: MemoryLow will be reset to 0 at your next session change (use --yes to force)"
+    return 0
+  fi
+  systemctl mask --now "$URES"
+  install -d -m 755 "${URES_MARK%/*}"
+  : >"$URES_MARK"
+  changed=1
+}
+
+# clear_memlow_override: a set-property file in system.control outranks our /etc drop-in.
+clear_memlow_override() {
+  local f=/etc/systemd/system.control/user-$uid.slice.d/50-MemoryLow.conf
+  if [[ -e $f ]]; then
+    rm -f -- "$f"
+    echo "removed   $f (it outranked our MemoryLow)"
+    changed=1
+  fi
+}
+
 install_tweaks() {
   snapshot
-  put /etc/sysctl.d/99-memory.conf < <(
+  put "$SYSCTL_CONF" < <(
     echo "$TAG"
     emit sysctl
   )
-  put /etc/tmpfiles.d/zswap.conf < <(
+  put "$TMPFILES_CONF" < <(
     echo "$TAG"
     emit sysfs
   )
 
-  # Slice bounds mirrored from /usr/lib/systemd/system/*.slice.d/override.conf so the box is
-  # reproducible from this script alone; /etc drop-ins win for the same keys.
-  # Nothing in oomd bounds RAM (it reacts to PSI and swap fractions), so MemoryMax= on the root
-  # slice is the ceiling that stops a RAM hog filling the machine; MemoryHigh= is the throttle
-  # band where reclaim goes aggressive and pages spill to zswap and then to swap. Percentages
-  # track installed RAM, so one default holds on a 32GB host and on a small VM.
-  put /etc/systemd/system/-.slice.d/99-zswap-tweaks.conf <<EOF
+  # The root cgroup has no memory.high/memory.max, so limits on -.slice do nothing: it only
+  # carries the oomd policy. oomd reacts to PSI and swap fractions, not to RAM size.
+  put "$ROOT_SLICE_CONF" <<EOF
 $TAG
 [Slice]
 ManagedOOMSwap=kill
-MemoryHigh=94%
-MemoryMax=96.5%
 EOF
 
   # oomd picks swap candidates by swap usage across the session tree and only honours
   # ManagedOOMPreference= on them when the cgroup is root-owned, so none is set here.
-  put /etc/systemd/system/user.slice.d/99-zswap-tweaks.conf <<EOF
+  put "$USERS_SLICE_CONF" <<EOF
 $TAG
 [Slice]
 ManagedOOMSwap=kill
+MemoryMax=$USER_MEMMAX
 EOF
 
   # A boundary on the container itself would be capped by its ancestors' memory.low=0
   # (cgroup-v2 "Reclaim Protection"), so the protection sits on the per-user slice.
-  put "/etc/systemd/system/user-$uid.slice.d/99-strata-memprotect.conf" <<EOF
+  put "$user_slice_conf" <<EOF
 $TAG
 [Slice]
 MemoryLow=$MEMLOW
 EOF
 
+  disable_uresourced
+  clear_memlow_override
+
   if ((changed)); then systemctl daemon-reload; fi
-  sysctl -p /etc/sysctl.d/99-memory.conf >/dev/null
-  systemd-tmpfiles --create /etc/tmpfiles.d/zswap.conf
+  sysctl -p "$SYSCTL_CONF" >/dev/null
+  systemd-tmpfiles --create "$TMPFILES_CONF"
   set_memlow "$(numfmt --from=iec "$MEMLOW")"
 
   echo
   grep -r . /sys/module/zswap/parameters/ | sed 's|/sys/module/zswap/parameters/||'
 }
 
+# tagged_units: the .swap/.mount units we wrote. Units are generated per path, so find them by
+# their first-line tag, not by name.
+tagged_units() {
+  local u
+  for u in /etc/systemd/system/*.swap /etc/systemd/system/*.mount; do
+    if ours "$u"; then echo "$u"; fi
+  done
+}
+
+# check_swapoff_fits: swapoff reads every swapped page back into RAM; refuse when that cannot fit
+# (plus a 2GiB margin), since the OOM killer would pick the biggest process.
+check_swapoff_fits() {
+  local used_kb avail_kb
+  read -r used_kb avail_kb < <(awk '/^SwapTotal:/ {t=$2} /^SwapFree:/ {f=$2} /^MemAvailable:/ {a=$2} END {print t-f, a}' /proc/meminfo)
+  ((used_kb * 1024 < avail_kb * 1024 - 2048 * MIB)) ||
+    die "swap in use ($((used_kb / 1024))M) may not fit in available RAM ($((avail_kb / 1024))M); free memory first"
+}
+
 uninstall() {
-  local u f p units
-  # Swapfile .swap/.mount units are generated per path, so find them by their tag, not by name.
-  mapfile -t units < <(grep -lxF -- "$TAG" /etc/systemd/system/*.swap /etc/systemd/system/*.mount 2>/dev/null || true)
+  local u f p units=()
+  mapfile -t units < <(tagged_units)
   for u in "${units[@]}"; do
     [[ $u == *.swap ]] || continue # a .mount only mirrors a mount that predates us: never stop it
     f=$(sed -n 's/^What=//p' "$u")
+    check_swapoff_fits
     systemctl disable --now "${u##*/}" # also runs swapoff; failure aborts before we delete anything
-    if [[ $(blkid -p -o value -s TYPE "$f" 2>/dev/null) == swap ]]; then
-      rm -f "$f"
+    # Delete the file only if we created it; an adopted swapfile keeps its data.
+    if grep -qxF -- "$OWNED_TAG" "$u" && [[ $(blkid -p -o value -s TYPE "$f" 2>/dev/null) == swap ]]; then
+      rm -f -- "$f"
       echo "removed   $f"
+    else
+      echo "kept      $f (not created by this script)"
     fi
   done
-  rm -f -- "${managed[@]}" "${units[@]}"
+  rm -f -- "${units[@]}"
+
   for p in "${managed[@]}"; do
+    if ours "$p"; then
+      rm -f -- "$p"
+      echo "removed   $p"
+    elif [[ -e $p ]]; then
+      warn "leaving   $p (not managed by ${0##*/})"
+    fi
     if [[ ${p%/*} == *.slice.d ]]; then rmdir "${p%/*}" 2>/dev/null || true; fi
   done
   systemctl daemon-reload
@@ -244,6 +327,11 @@ uninstall() {
 
   # Re-apply whichever sysctl files remain (distro ones and anything we never owned).
   sysctl --system >/dev/null 2>&1 || warn "sysctl --system reported errors (not fatal)"
+  if [[ -e $URES_MARK ]]; then
+    systemctl unmask "$URES"
+    rm -f -- "$URES_MARK"
+    echo "unmasked  $URES"
+  fi
   set_memlow 0
   echo "uninstalled"
 }
@@ -283,14 +371,15 @@ mkswapfile() {
 }
 
 # mount_unit DIR FSTYPE: pin DIR's mount in a unit, but only when DIR is its own mount point
-# that nothing else defines (not fstab, not an existing unit, not the root fs). The swapfile
-# then orders after exactly this mount; otherwise RequiresMountsFor= on the swap unit suffices.
+# that nothing else defines (not fstab, not an existing unit of someone else's, not the root fs).
+# The swapfile then orders after exactly this mount; otherwise RequiresMountsFor= on the swap
+# unit suffices.
 mount_unit() {
   local dir=$1 fstype=$2 unit frag uuid fsroot opts=noatime
   if [[ $dir == / ]] || ! mountpoint -q "$dir"; then return 0; fi
   unit=$(systemd-escape -p --suffix=mount "$dir")
   frag=$(systemctl show -P FragmentPath "$unit")
-  if [[ -n $frag && $frag != "/etc/systemd/system/$unit" ]]; then
+  if [[ -n $frag ]] && { [[ $frag != "/etc/systemd/system/$unit" ]] || ! ours "$frag"; }; then
     echo "skip      $unit (already defined by $frag)"
     return 0
   fi
@@ -314,7 +403,7 @@ EOF
 }
 
 swapfile() {
-  local file dir fstype bytes unit
+  local file dir fstype bytes unit unit_path existed=0 owned=0
   file=$(realpath -m -- "$1")
   [[ $file != *[[:space:]]* ]] || die "$file: whitespace in the path is not supported"
   dir=$(dirname -- "$file")
@@ -327,23 +416,36 @@ swapfile() {
   bytes=$(swap_bytes "$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo)" "${2:-}")
   ((bytes >= MIB)) || die "swapfile size must be at least 1M"
 
+  # We own the file iff an earlier run created it (marked in its unit) or we create it below.
+  unit=$(systemd-escape -p --suffix=swap "$file")
+  unit_path=/etc/systemd/system/$unit
+  if grep -qxF -- "$OWNED_TAG" "$unit_path" 2>/dev/null; then owned=1; fi
+
   if [[ -e $file ]]; then
+    existed=1
     # Only ever recreate something that is already a swap area; never clobber a user's file.
     [[ $(blkid -p -o value -s TYPE "$file" 2>/dev/null) == swap ]] || die "$file exists and is not a swapfile; refusing to touch it"
     if (($(stat -c %s "$file") == bytes)); then
       echo "unchanged $file"
     else
       echo "resizing  $file"
-      if swapon --noheadings --show=NAME | grep -qxF -- "$file"; then swapoff "$file"; fi
+      if swapon --noheadings --show=NAME | grep -qxF -- "$file"; then
+        check_swapoff_fits
+        swapoff "$file"
+      fi
       rm -f "$file"
     fi
   fi
-  if [[ ! -e $file ]]; then mkswapfile "$file" "$bytes" "$fstype"; fi
+  if [[ ! -e $file ]]; then
+    mkswapfile "$file" "$bytes" "$fstype"
+    if ((! existed)); then owned=1; fi
+  fi
 
-  unit=$(systemd-escape -p --suffix=swap "$file")
   mount_unit "$dir" "$fstype"
-  put "/etc/systemd/system/$unit" <<EOF
-$TAG
+  put "$unit_path" < <(
+    echo "$TAG"
+    if ((owned)); then echo "$OWNED_TAG"; fi
+    cat <<EOF
 [Unit]
 Description=Swapfile $file
 RequiresMountsFor=$dir
@@ -354,20 +456,29 @@ What=$file
 [Install]
 WantedBy=swap.target
 EOF
+  )
   if ((changed)); then systemctl daemon-reload; fi
   systemctl enable --now "$unit"
   swapon --show
 }
 
-# The one runnable check: the only non-trivial arithmetic in here.
+# The runnable checks: the size arithmetic, the allowlist and the ownership helpers.
 selftest() {
-  local g=$((1 << 30))
+  local g=$((1 << 30)) t
   [[ $(swap_bytes $((8 * g))) == $((2 * g)) ]] || die "selftest: 8G RAM should give 2G"
   [[ $(swap_bytes $((128 * g))) == $((16 * g)) ]] || die "selftest: 128G RAM should cap at 16G"
   [[ $(swap_bytes 0 3G) == $((3 * g)) ]] || die "selftest: explicit --size should win"
   [[ $(swap_bytes $((g + 1))) == $((g / 4 / MIB * MIB)) ]] || die "selftest: result must be MiB-aligned"
   known sysctl vm.swappiness || die "selftest: allowlist should accept a table knob"
   ! known sysctl vm.nope || die "selftest: allowlist should reject an unknown knob"
+  t=$(mktemp)
+  printf '%s\nbody\n' "$TAG" >"$t"
+  ours "$t" || die "selftest: tagged file should be ours"
+  printf 'x\n%s\n' "$TAG" >"$t"
+  ! ours "$t" || die "selftest: tag on a later line must not count"
+  rm -f "$t"
+  ! ours /nonexistent/zswap-tweaks || die "selftest: a missing file is not ours"
+  ! confirm "x" </dev/null || die "selftest: confirm must say no without a terminal"
   echo "selftest ok"
 }
 
@@ -391,6 +502,7 @@ main() {
       size=$2
       shift
       ;;
+    --yes) assume_yes=1 ;;
     --selftest)
       selftest
       return
@@ -402,19 +514,7 @@ main() {
   [[ -n $action ]] || usage
 
   ((EUID == 0)) || exec sudo -- "$0" "${args[@]}"
-
-  # The snapshot lives in the invoking user's home, not root's.
-  owner=${SUDO_USER:-root}
-  uid=$(id -u "$owner")
-  state=$(getent passwd "$owner" | cut -d: -f6)/.local/share/zswap-tweaks-orig.txt
-  # Static files this script owns (swapfile units are found by TAG instead).
-  managed=(
-    /etc/sysctl.d/99-memory.conf
-    /etc/tmpfiles.d/zswap.conf
-    /etc/systemd/system/-.slice.d/99-zswap-tweaks.conf
-    /etc/systemd/system/user.slice.d/99-zswap-tweaks.conf
-    "/etc/systemd/system/user-$uid.slice.d/99-strata-memprotect.conf"
-  )
+  init_identity
 
   case $action in
   install) install_tweaks ;;
