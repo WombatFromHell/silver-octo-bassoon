@@ -3,14 +3,33 @@
 - name: Setup tasks
   tags: [setup, bootstrap]
   hosts: all
+  vars:
+    # sudo sets SUDO_USER to the invoking login name even when env_reset is on (sudoers(5)),
+    # so this survives `sudo ./run.sh`: Ansible's own uid there would be root.
+    # `su`-started runs have no SUDO_USER and fall back to Ansible's own login name.
+    # ansible_effective_user_id is a numeric uid, which sudoers would reject; ansible_user_id is
+    # the login name. Both are the invoking user's name when Ansible runs as root under sudo.
+    ansible_deploy_user: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
   tasks:
+    - name: Resolve the deploy user before granting anything
+      ansible.builtin.assert:
+        that:
+          - ansible_deploy_user != 'root'
+        fail_msg: >-
+          Deploy user resolved to root: a root NOPASSWD rule grants nothing useful. Run
+          ./run.sh as your login user (sudo keeps SUDO_USER), or run the playbooks directly
+          as root and drop this bootstrap play.
+        success_msg: "sudoers drop-in scoped to {{ ansible_deploy_user }}"
+
+    # ponytail: the drop-in's lifetime is bounded by teardown.yml only; an interrupted deploy
+    # leaves it on disk. Upgrade path: ./run.sh --tags teardown after an aborted run.
     - name: Install sudoers config for ansible
       tags: sudoers
       ansible.builtin.copy:
         dest: "/etc/sudoers.d/99-ansible-nopasswd"
         content: |
-          # ONLY FOR USE DURING ANSIBLE DEPLOYMENT
-          %wheel ALL=(ALL) NOPASSWD: ALL
+          # ONLY FOR USE DURING ANSIBLE DEPLOYMENT, scoped to the invoking user.
+          {{ ansible_deploy_user }} ALL=(ALL) NOPASSWD: ALL
         mode: "0400"
         validate: "visudo -cf %s"
       become: true
