@@ -70,7 +70,7 @@ declare -r NC='\033[0m'
 
 # Tag categories for display grouping
 declare -ra CORE_TAGS=(core always setup bootstrap preflight verify teardown facts extra)
-declare -ra ROLE_TAGS=(aur pacman btrfs dotfiles flatpak mounts nix vfio arpc tuckr udev polkit sudoers bootloader fonts zram chaoticaur appimages brew etc globalbin globalunits limitsd shortcuts home_manager)
+declare -ra ROLE_TAGS=(aur pacman btrfs dotfiles flatpak mounts nix vfio udev polkit sudoers bootloader fonts zram appimages brew etc globalbin shortcuts home_manager tmpfiles)
 
 # Mode behaviors (declarative, single source of truth)
 declare -ra MODES_NEED_BECOME=(deploy role preflight verify)
