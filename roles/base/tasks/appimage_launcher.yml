@@ -1,0 +1,32 @@
+---
+# Included once per launcher name (see appimages.yml). `base_launcher` is the AppImage basename.
+- name: Check both launcher file casings
+  ansible.builtin.stat:
+    path: "{{ home_realpath }}/AppImages/{{ base_launcher }}.{{ item }}"
+  loop:
+    - "AppImage"
+    - "appimage"
+  loop_control:
+    label: "{{ base_launcher }}.{{ item }}"
+  register: base_launcher_check
+  changed_when: false
+
+- name: Rename launcher AppImage to lowercase
+  ansible.builtin.command:
+    cmd: mv "{{ home_realpath }}/AppImages/{{ base_launcher }}.AppImage" "{{ home_realpath }}/AppImages/{{ base_launcher }}.appimage"
+  args:
+    creates: "{{ home_realpath }}/AppImages/{{ base_launcher }}.appimage"
+  when:
+    - base_launcher_check.results[0].stat.exists | default(false)
+    - not base_launcher_check.results[1].stat.exists | default(false)
+  register: base_launcher_moved
+
+- name: Symlink launcher into ~/.local/bin
+  ansible.builtin.file:
+    src: "{{ home_realpath }}/AppImages/{{ base_launcher }}.appimage"
+    dest: "{{ home_realpath }}/.local/bin/{{ base_launcher }}"
+    state: link
+    force: true
+  when: >-
+    (base_launcher_check.results[1].stat.exists | default(false)) or
+    (base_launcher_moved is defined and base_launcher_moved.changed | default(false))
