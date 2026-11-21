@@ -18,7 +18,7 @@
 
 - name: Include zram enablement task
   ansible.builtin.import_tasks: zram.yml
-  when: os_release_id == "archlinux"
+  when: enable_zram | default(false) and os_release_id == "archlinux"
   tags: [core, zram]
 
 - name: Include global binaries task
@@ -40,6 +40,10 @@
 - name: Include udev-rules.d task
   ansible.builtin.import_tasks: udev.yml
   tags: [extra, udev]
+
+- name: Include tmpfiles.d task
+  ansible.builtin.import_tasks: tmpfiles.yml
+  tags: [extra, tmpfiles]
 
 - name: Include bootloader task
   ansible.builtin.import_tasks: bootloader.yml

@@ -1,0 +1,74 @@
+#!/usr/bin/env ansible-playbook
+---
+# Sandbox-safe test for the tmpfiles.d slice in the `base` role.
+# Runs with no root and no host mutation: the installer is pointed at a temp dest
+# under /var/mnt/data0 (AGENTS.md: no /tmp). `become` is disabled via the installer's
+# test seam so this needs no sudo.
+#
+# Usage: ansible-playbook tests/test_base_tmpfiles.yml   (no --check: the copy must actually
+# write, but it writes only into the temp dest; nothing on the host is touched)
+
+- name: Test tmpfiles.d support in base
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+
+  vars:
+    role_dir: "{{ playbook_dir | dirname }}/roles/base"   # playbook_dir is tests/
+    work_dir: /var/mnt/data0/temp/.ansible-root
+    tmp_dest: "{{ work_dir }}/tmpfiles.d-out"
+    conf_name: disable-xh00-wakeup.conf
+  tasks:
+    - name: Create temp destination for the installer
+      ansible.builtin.file:
+        path: "{{ tmp_dest }}"
+        state: directory
+        mode: "0755"
+
+    - name: Installer and tmpfiles task files exist
+      ansible.builtin.stat:
+        path: "{{ role_dir }}/tasks/{{ item }}"
+      loop: [install_configs.yml, tmpfiles.yml]
+      register: tmpfiles_task_files
+      failed_when: tmpfiles_task_files.failed or not tmpfiles_task_files.stat.exists
+      # ponytail: assertion-only test; the installer's real behavior is proven below.
+
+    - name: Main.yml wires the tmpfiles task
+      ansible.builtin.assert:
+        that: "'tmpfiles.yml' in lookup('file', role_dir ~ '/tasks/main.yml')"
+        fail_msg: "roles/base/tasks/main.yml does not import tmpfiles.yml"
+
+    - name: Tmpfiles.yml applies only the changed configs
+      ansible.builtin.assert:
+        that:
+          - "'systemd-tmpfiles --create' in lookup('file', role_dir ~ '/tasks/tmpfiles.yml')"
+          - "'selectattr' in lookup('file', role_dir ~ '/tasks/tmpfiles.yml')"
+          - "'changed' in lookup('file', role_dir ~ '/tasks/tmpfiles.yml')"
+        fail_msg: "tmpfiles.yml must run systemd-tmpfiles --create over changed files only"
+
+    - name: Tmpfiles.yml carries the tmpfiles tag
+      ansible.builtin.assert:
+        that: "'tmpfiles' in lookup('file', role_dir ~ '/tasks/tmpfiles.yml')"
+        fail_msg: "tmpfiles.yml must be tagged so run.sh --tags tmpfiles works"
+
+    - name: Install tmpfiles.d configs into the temp dest
+      ansible.builtin.include_tasks: "{{ role_dir }}/tasks/install_configs.yml"
+      vars:
+        src_path: "{{ role_dir }}/files/tmpfiles.d"
+        dest_dir: "{{ tmp_dest }}"
+        mode: "0644"
+        install_configs_become: false
+
+    - name: Stat the installed rule
+      ansible.builtin.stat:
+        path: "{{ tmp_dest }}/{{ conf_name }}"
+      register: installed_rule
+
+    - name: Installed rule matches the role file byte for byte
+      ansible.builtin.assert:
+        that:
+          - installed_rule.stat.exists
+          - installed_rule.stat.mode == '0644'
+          - "lookup('file', tmp_dest ~ '/' ~ conf_name) == lookup('file', role_dir ~ '/files/tmpfiles.d/' ~ conf_name)"
+        fail_msg: "tmpfiles.d rule was not installed correctly into {{ tmp_dest }}"

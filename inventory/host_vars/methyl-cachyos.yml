@@ -75,6 +75,7 @@ skip_flatpaks:
 # Feature Toggles
 enable_appimages: false
 enable_nix: false
+enable_zram: true
 enable_brew: false
 enable_btrfs_snapper: true
 enable_vfio: false

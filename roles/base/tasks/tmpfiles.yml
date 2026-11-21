@@ -1,0 +1,19 @@
+---
+# systemd-tmpfiles drop-ins. udev covers hotplug devices; tmpfiles covers static sysfs paths.
+- name: Install tmpfiles.d configs
+  ansible.builtin.include_tasks: install_configs.yml
+  vars:
+    src_path: "{{ role_path }}/files/tmpfiles.d"
+    dest_dir: /etc/tmpfiles.d
+  tags: [extra, tmpfiles]
+
+# Scoped apply: only the files this role just wrote, so distro tmpfiles rules stay untouched.
+# A malformed rule makes the command fail, which is the validation.
+- name: Apply newly installed tmpfiles rules
+  ansible.builtin.command: systemd-tmpfiles --create "{{ item.dest }}"
+  loop: "{{ install_configs_results.results | selectattr('changed') | map(attribute='dest') | list }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  changed_when: true
+  become: true
+  tags: [extra, tmpfiles]
