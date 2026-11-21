@@ -1,9 +1,9 @@
 ---
-- name: Copy binaries to /usr/local/bin
+# ponytail: legacy-binary purge — files/bin has no sources left, so this file only removes
+# stale binaries. Delete it entirely once no host still has them.
+- name: Purge legacy binaries from /usr/local/bin
   tags: [extra, globalbin]
   become: true
-  vars:
-    base_nvidia_enabled: "{{ nvidia_exists | default(false) }}"
   block:
     - name: Ensure /usr/local/bin directory exists
       ansible.builtin.file:
@@ -11,59 +11,8 @@
         state: directory
         mode: "0755"
 
-    # Copy generic binaries
-    - name: Find all binary files in role's files/bin directory
-      ansible.builtin.find:
-        paths: "{{ role_path }}/files/bin"
-        file_type: file
-        recurse: false
-      register: base_bin_files
-
-    - name: Copy binary files to /usr/local/bin with proper permissions
-      ansible.builtin.copy:
-        src: "{{ file_item.path }}"
-        dest: "/usr/local/bin/{{ file_item.path | basename }}"
-        mode: "0755"
-        remote_src: false
-        backup: true
-      loop: "{{ base_bin_files.files }}"
-      loop_control:
-        loop_var: file_item
-        label: "Copying {{ file_item.path | basename }}"
-      when: base_bin_files.matched > 0
-
-    # Cleanup: remove NVIDIA binaries when NVIDIA is disabled
-    - name: Check if NVIDIA-related binaries exist (for cleanup)
-      ansible.builtin.stat:
+    - name: Remove deprecated binaries
+      ansible.builtin.file:
         path: "/usr/local/bin/{{ item }}"
-      register: base_nvidia_bin_stats
-      loop:
-        - nvidia-pm.py
-        - veridian-controller
-      when: not base_nvidia_enabled
-
-    - name: Remove NVIDIA-related binaries when NVIDIA is not present
-      ansible.builtin.file:
-        path: "/usr/local/bin/{{ item.item }}"
         state: absent
-      loop: "{{ base_nvidia_bin_stats.results }}"
-      when:
-        - item.stat is defined
-        - item.stat.exists
-        - not base_nvidia_enabled
-
-    # Always remove deprecated binaries regardless of NVIDIA state
-    - name: Remove deprecated veridian-controller binary
-      ansible.builtin.file:
-        path: /usr/local/bin/veridian-controller
-        state: absent
-
-    - name: Remove deprecated nvidia-pm.py binary
-      ansible.builtin.file:
-        path: /usr/local/bin/nvidia-pm.py
-        state: absent
-
-    - name: Remove deprecated fix-wakeups.sh binary
-      ansible.builtin.file:
-        path: /usr/local/bin/fix-wakeups.sh
-        state: absent
+      loop: [nvidia-pm.py, veridian-controller, fix-wakeups.sh]

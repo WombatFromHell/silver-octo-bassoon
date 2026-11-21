@@ -14,12 +14,5 @@ enable_zram: false
 enable_brew: false
 enable_appimages: false
 
-# Configuration paths
-etc_config_dir: /etc
-local_bin_dir: /usr/local/bin
-
 # Bootloader
 kernel_args: ""
-
-# VAAPI fix for flatpak apps
-chrome_vaapi_fix: false
