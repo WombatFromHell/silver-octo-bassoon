@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from bootloader_mod import (
@@ -508,6 +510,41 @@ class TestModifyConfig:
                 mock_module, "systemd-boot", text_to_add="quiet", text_to_remove=None
             )
         mock_module.fail_json.assert_called_once()
+
+    def test_modify_config_same_param_twice(self, temp_config_file, mocker):
+        """Adding the same parameter twice must report no second change.
+
+        Characterizes idempotency so the playbook can drop its `check_args` probe tasks.
+        """
+        with open(temp_config_file, "w") as f:
+            f.write("title Arch Linux\noptions ro\n")
+
+        mock_module = mocker.Mock()
+        mock_module.params = {}
+        mock_module.check_mode = False
+        mock_module.fail_json = mocker.Mock(side_effect=SystemExit)
+        mock_module.exit_json = mocker.Mock()
+
+        changed, message = modify_config(
+            mock_module,
+            "systemd-boot",
+            text_to_add="quiet",
+            text_to_remove=None,
+            config_file=temp_config_file,
+        )
+        assert changed is True
+        os.unlink(temp_config_file + ".bak")
+
+        changed, message = modify_config(
+            mock_module,
+            "systemd-boot",
+            text_to_add="quiet",
+            text_to_remove=None,
+            config_file=temp_config_file,
+        )
+        assert changed is False
+        assert "No changes needed" in message
+
 
 
 class TestBootloaderModuleIntegration:
