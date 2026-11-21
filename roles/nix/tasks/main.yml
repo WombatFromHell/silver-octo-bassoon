@@ -1,46 +1,113 @@
 ---
 # Role: nix
-# Description: Install Nix package manager via Determinate Systems installer
+# Description: Install Nix with the upstream NixOS installer (github.com/NixOS/nix-installer)
 # check_mode: Partially supported
-#   - Installation check: Always runs (check_mode: false)
-#   - Installation: Reports but doesn't execute in check mode
-# WARNING: Running without --check will install Nix package manager
-- name: Install Nix from Determinate Systems installer
+#   - state checks always run (they only read)
+#   - download, install, trust, restart are reported under --check, never executed
+# WARNING: running without --check installs Nix system-wide and needs the sudo window
+# that plays/bootstrap.yml opens and plays/teardown.yml closes.
+- name: Install Nix with the upstream installer
   when: enable_nix | default(false)
   tags: [extra, nix]
   block:
-    - name: Check if /nix mountpoint exists
+    # results[0] = installer receipt, results[1] = ostree boot marker
+    - name: Check for an existing install and the planner
       ansible.builtin.stat:
-        path: /nix
-      register: nix_mountpoint_stat
+        path: "{{ item }}"
+      loop:
+        - /nix/receipt.json
+        - /run/ostree-booted
+      loop_control:
+        label: "{{ item | basename }}"
+      register: nix_host_state
       changed_when: false
+      # Tagged for home_manager too: hm.yml's guard reads these stat results, and
+      # `run.sh --tags home_manager` skips everything tagged only `nix`.
+      tags: [nix, home_manager]
 
-    - name: Check if Nix is already installed
+    - name: Check whether nix is already on PATH
       ansible.builtin.command: which nix
-      register: nix_installed
-      failed_when: false
+      environment: "{{ nix_env }}"
+      register: nix_on_path
       changed_when: false
+      failed_when: false
       check_mode: false
 
-    - name: Download Determinate Systems installer script
+    - name: Stage the installer download directory
+      ansible.builtin.file:
+        path: "{{ nix_installer_dir }}"
+        state: directory
+        mode: "0755"
       when:
-        - nix_mountpoint_stat.stat is defined
-        - nix_mountpoint_stat.stat.exists
-        - nix_mountpoint_stat.stat.isdir
-        - nix_installed.rc is defined and nix_installed.rc != 0
+        - not nix_host_state.results[0].stat.exists
+        - nix_on_path.rc != 0
+
+    # Unknown platform → KeyError here, which is the loud failure we want.
+    - name: Download the installer binary for this platform
+      when:
+        - not nix_host_state.results[0].stat.exists
+        - nix_on_path.rc != 0
+      vars:
+        asset: "nix-installer-{{ ansible_facts['architecture'] }}-linux"
       ansible.builtin.get_url:
-        url: https://install.determinate.systems/nix
-        dest: /tmp/nix-install.sh
+        url: "https://github.com/NixOS/nix-installer/releases/download/{{ nix_installer_version }}/{{ asset }}"
+        dest: "{{ nix_installer_dir }}/{{ asset }}"
+        checksum: "{{ nix_installer_sha256[asset] }}"
         mode: "0755"
       register: nix_installer_download
-
-    - name: Install Nix via Determinate Systems installer
-      ansible.builtin.command: /tmp/nix-install.sh install --no-confirm
+    - name: Run the upstream installer
       when:
-        - nix_installer_download is changed
-        - nix_installed.rc is defined and nix_installed.rc != 0
+        - not nix_host_state.results[0].stat.exists
+        - nix_on_path.rc != 0
+      become: true
+      ansible.builtin.command:
+        cmd: >-
+          {{ nix_installer_dir }}/nix-installer-{{ ansible_facts['architecture'] }}-linux
+          install {{ 'ostree' if nix_host_state.results[1].stat.exists else nix_installer_plan }}
+          --enable-flakes --no-confirm
+          {{ nix_host_state.results[1].stat.exists | ternary('--persistence ' ~ nix_persistence_dir, '') }}
       register: nix_installation
-      changed_when: nix_installation.rc is defined and nix_installation.rc == 0
+      changed_when: nix_installation.rc == 0
+
+    - name: Check whether the ansible user is trusted by nix
+      ansible.builtin.command: nix store info
+      environment: "{{ nix_env }}"
+      register: nix_store_info
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    # The installer writes /etc/nix/nix.conf but leaves nix.custom.conf empty, so client-side
+    # substituters are refused until this user is trusted (same step as bootstrap.sh).
+    # ponytail: exact-line match only. On methyl-bazzite the file already holds
+    # `extra-trusted-users = josh` (idempotent); a host with a different list would get a second
+    # line and nix keeps the last one. Upgrade path: regex replace of the existing key.
+    - name: Add the ansible user to nix.custom.conf
+      when: "'Trusted: 1' not in nix_store_info.stdout | default('') ~ nix_store_info.stderr | default('')"
+      become: true
+      ansible.builtin.lineinfile:
+        path: /etc/nix/nix.custom.conf
+        line: "extra-trusted-users = {{ ansible_user }}"
+        create: true
+        mode: "0644"
+      register: nix_trust_line
+
+    - name: Restart nix-daemon so the trust line takes effect
+      when: nix_trust_line is changed
+      become: true
+      # noqa: no-handler - inline so the trust verify below runs before the play ends
+      ansible.builtin.systemd:
+        name: nix-daemon.service
+        state: restarted
+
+    # nix store info prints some lines to stderr, so both streams are checked.
+    - name: Verify the ansible user is trusted
+      when: nix_trust_line is changed
+      ansible.builtin.command: nix store info  # noqa: no-handler - verifies the inline restart above
+      environment: "{{ nix_env }}"
+      register: nix_trust_verify
+      changed_when: false
+      failed_when: "'Trusted: 1' not in nix_trust_verify.stdout ~ nix_trust_verify.stderr"
 
     - name: Include 'home-manager' tasks
       ansible.builtin.import_tasks: hm.yml

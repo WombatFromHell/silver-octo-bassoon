@@ -1,8 +1,26 @@
 ---
 # Default values for nix role
+# Override in host_vars or group_vars
 
 # Feature toggle
 enable_nix: false
 
-# Home manager
-enable_home_manager: false
+# Upstream installer: github.com/NixOS/nix-installer (not Determinate Systems).
+# Release pinned; digests from the release's SHA256SUMS.
+nix_installer_version: "2.35.4"
+nix_installer_sha256:
+  x86_64-linux: "sha256:60f39200fc2690bcf4da7ba3f8b2e4dee0118f487bc9f41cd4e153d1a02dce77"
+  aarch64-linux: "sha256:4f02039533e0912cb5e6f819a2abcac87d78e19b76e377c2ee98e5ec10402341"
+
+# Staging dir for the installer binary (AGENTS.md: no /tmp; this mount is rw and exec-capable).
+nix_installer_dir: "/var/mnt/data0/temp/{{ playbook_dir | basename }}"
+
+# Planner fallback; the role switches to `ostree` when /run/ostree-booted exists.
+nix_installer_plan: root
+
+# Store location for the ostree planner (matches /nix/receipt.json on methyl-bazzite).
+nix_persistence_dir: /var/mnt/data1/nix
+
+# Ansible sessions do not source /etc/profile.d/nix.sh, so nix paths are named explicitly.
+nix_env:
+  PATH: "/nix/var/nix/profiles/default/bin:{{ home_realpath }}/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin"

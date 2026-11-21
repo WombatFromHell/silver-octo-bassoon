@@ -1,81 +1,81 @@
 ---
-- name: Install Home-Manager for Nix
+# Home-Manager is deployed from the user's flakeroot working tree; ~/.config/flakeroot/bootstrap.sh
+# owns that repo, so this role never clones it (a clone would clobber a dirty working tree).
+- name: Deploy Home-Manager from flakeroot
   tags: [extra, home_manager]
   when:
     - enable_nix | default(false)
-    - (nix_installed.rc is defined and nix_installed.rc == 0) or
+    - nix_host_state.results[0].stat.exists or
       (nix_installation is defined and nix_installation.rc is defined and nix_installation.rc == 0)
-  vars:
-    hm_binary: "{{ home_realpath }}/.nix-profile/bin/home-manager"
-    git_repo: "git@github.com:WombatFromHell/automatic-palm-tree.git"
-
   block:
-    - name: Check for existing home-manager binary
+    - name: Check the flakeroot repo for a flake
       ansible.builtin.stat:
-        path: "{{ hm_binary }}"
-      register: nix_hm_binary_stat
-
-    - name: Check if nix-channel exists
-      ansible.builtin.command: which nix-channel
-      register: nix_channel_check
-      ignore_errors: true
+        path: "{{ nix_flake_root }}/flake.nix"
+      register: nix_flake_stat
       changed_when: false
 
-    - name: Add home-manager channel
-      when:
-        - not nix_hm_binary_stat.stat.exists
-        - nix_channel_check.rc is defined and nix_channel_check.rc == 0
+    # hm_release below reads that file; failing here gives a readable message instead.
+    - name: Require a flakeroot flake
+      ansible.builtin.assert:
+        that: nix_flake_stat.stat.exists
+        fail_msg: "{{ nix_flake_root }}/flake.nix is missing; ~/.config/flakeroot/bootstrap.sh sets up that repo"
+
+    # ~/.nix-profile can be a stale symlink; PATH covers both profile locations.
+    - name: Check for the home-manager binary
+      ansible.builtin.command: which home-manager
+      environment: "{{ nix_env }}"
+      register: nix_hm_check
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Add the home-manager channel pinned by the flake
+      when: nix_hm_check.rc != 0
+      # flake.nix pins the release; bootstrap.sh reads the same line (line 95).
+      # Evaluated per-task so the "flake missing" assert below can speak first.
+      vars:
+        hm_release: "{{ lookup('file', nix_flake_root ~ '/flake.nix') | regex_search('home-manager/release-[0-9.]+') | regex_replace('^home-manager/', '') }}"
       ansible.builtin.command:
-        cmd: nix-channel --add https://github.com/nix-community/home-manager/archive/master.tar.gz home-manager
+        cmd: "nix-channel --add https://github.com/nix-community/home-manager/archive/{{ hm_release }}.tar.gz home-manager"
+      environment: "{{ nix_env }}"
       changed_when: true
 
     - name: Update nix channels
-      when:
-        - not nix_hm_binary_stat.stat.exists
-        - nix_channel_check.rc is defined and nix_channel_check.rc == 0
+      when: nix_hm_check.rc != 0
       ansible.builtin.command:
         cmd: nix-channel --update
+      environment: "{{ nix_env }}"
       changed_when: true
 
-    - name: Install home-manager standalone binary
-      when:
-        - not nix_hm_binary_stat.stat.exists
-        - nix_channel_check.rc is defined and nix_channel_check.rc == 0
+    - name: Install the home-manager standalone binary
+      when: nix_hm_check.rc != 0
       ansible.builtin.command:
         cmd: nix-shell '<home-manager>' -A install
-      register: nix_hm_install_result
-      changed_when: nix_hm_install_result.rc is defined and nix_hm_install_result.rc == 0
+      environment: "{{ nix_env }}"
+      register: nix_hm_install
+      changed_when: nix_hm_install.rc == 0
 
-    - name: Check if '~/.config/home-manager' exists
-      ansible.builtin.stat:
-        path: "{{ home_realpath }}/.config/home-manager"
-      register: nix_stat_hm_config
-
-    - name: Initialize home-manager config
+    - name: Evaluate the flakeroot cache registry
       ansible.builtin.command:
-        cmd: "{{ hm_binary }} init --switch"
-      when:
-        - nix_hm_binary_stat.stat.exists
-        - nix_stat_hm_config.stat is defined
-        - not nix_stat_hm_config.stat.exists
-      register: nix_hm_init_result
-      changed_when: nix_hm_init_result.rc is defined and nix_hm_init_result.rc == 0
+        cmd: "nix eval --impure --raw --file {{ nix_flake_root }}/modules/cache-registry.nix {{ item }}"
+      loop:
+        - substituters
+        - trustedPublicKeys
+      environment: "{{ nix_env }}"
+      register: nix_cache_eval
+      changed_when: false
 
-    - name: Clone personal config
-      ansible.builtin.git:
-        repo: "{{ git_repo }}"
-        version: main
-        dest: "{{ nix_flake_root }}"
-      when:
-        - nix_hm_binary_stat.stat.exists
-      register: nix_clone_result
-      changed_when: nix_clone_result is changed
-
+    # Results: [0] = substituters, [1] = trustedPublicKeys (same order as bootstrap.sh).
+    # bootstrap.sh also wraps this in a systemd-run memory scope; Ansible cannot scope a local
+    # play run cheaply, so the client-side build runs unscoped here. ponytail: memory ceiling
+    # lives in bootstrap.sh, upgrade path = systemd_user_scope module if the eval ever OOMs.
     - name: Run home-manager switch
       ansible.builtin.command:
-        cmd: "{{ hm_binary }} switch --flake {{ nix_flake_root }}#{{ ansible_hostname }}"
+        cmd: >-
+          home-manager switch --flake {{ nix_flake_root }}#{{ ansible_user }}@{{ ansible_hostname }} -L -v
+          --option extra-substituters "{{ nix_cache_eval.results[0].stdout }}"
+          --option extra-trusted-public-keys "{{ nix_cache_eval.results[1].stdout }}"
+      environment: "{{ nix_env }}"
       tags: [hm_deploy]
-      when:
-        - nix_hm_binary_stat.stat.exists
-      register: nix_hm_switch_result
-      changed_when: nix_hm_switch_result.rc is defined and nix_hm_switch_result.rc == 0
+      register: nix_hm_switch
+      changed_when: nix_hm_switch.rc == 0

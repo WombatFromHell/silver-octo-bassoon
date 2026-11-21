@@ -59,6 +59,9 @@ btrfs)
 dotfiles)
   ansible-playbook tests/test_dotfiles_role.yml $CHECK_MODE $VERBOSE
   ;;
+nix)
+  ansible-playbook tests/test_nix_role.yml $CHECK_MODE $VERBOSE
+  ;;
 all)
   ansible-playbook tests/test_all_roles.yml $CHECK_MODE $VERBOSE
   ;;

@@ -1,0 +1,101 @@
+#!/usr/bin/env ansible-playbook
+---
+# Sandbox-safe test for the `nix` role: asserts the role's text only, mutates nothing.
+# The role is being migrated from Determinate Systems' installer to the upstream
+# NixOS installer (see .pi/tasks/p7-nix-installer.md).
+#
+# Usage: ansible-playbook tests/test_nix_role.yml
+# Substring checks avoid literal '{{ ... }}' in the assertions: an outer template would
+# expand the braces and compare the wrong text, so the fragments below are brace-free.
+
+- name: Test nix role (upstream installer)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+
+  vars:
+    role_dir: "{{ playbook_dir | dirname }}/roles/nix"
+    main_yml: "{{ lookup('file', role_dir ~ '/tasks/main.yml') }}"
+    hm_yml: "{{ lookup('file', role_dir ~ '/tasks/hm.yml') }}"
+    defaults_yml: "{{ lookup('file', role_dir ~ '/defaults/main.yml') }}"
+
+  tasks:
+    - name: Upstream installer URL, no Determinate Systems
+      ansible.builtin.assert:
+        that:
+          - "'github.com/NixOS/nix-installer/releases/download/' in main_yml"
+          - "'install.determinate.systems' not in main_yml"
+        fail_msg: "roles/nix must fetch the upstream NixOS installer release asset"
+
+    - name: Installer integrity is pinned by checksum
+      ansible.builtin.assert:
+        that: "'checksum:' in main_yml"
+        fail_msg: "the installer download must pin a checksum"
+
+    - name: No /tmp (AGENTS.md)
+      ansible.builtin.assert:
+        that:
+          - "'/tmp/' not in main_yml"
+          - "'/tmp/' not in hm_yml"
+        fail_msg: "nix role must not write into /tmp"
+
+    - name: Install is gated on the installer receipt and runs privileged
+      ansible.builtin.assert:
+        that:
+          - "'/nix/receipt.json' in main_yml"
+          - "'become: true' in main_yml"
+        fail_msg: "install must skip when /nix/receipt.json exists and need become: true"
+
+    - name: Ostree plan and persistence mirror the host receipt
+      ansible.builtin.assert:
+        that:
+          - "'ostree' in main_yml"
+          - "'--enable-flakes' in main_yml"
+          - "'--persistence' in main_yml"
+        fail_msg: "install must use the ostree planner with --enable-flakes and --persistence"
+
+    - name: Ansible user is made a trusted nix user
+      ansible.builtin.assert:
+        that:
+          - "'nix.custom.conf' in main_yml"
+          - "'extra-trusted-users' in main_yml"
+          - "'nix-daemon' in main_yml"
+          - "'Trusted: 1' in main_yml"
+        fail_msg: "role must append extra-trusted-users, restart nix-daemon, verify Trusted: 1"
+
+    - name: Switch target is user@host
+      ansible.builtin.assert:
+        that: "'ansible_user }}@' in hm_yml"
+        fail_msg: "home-manager switch must target '<user>@<host>', not bare hostname"
+
+    - name: Home-manager release comes from the flake
+      ansible.builtin.assert:
+        that:
+          - "'regex_search' in hm_yml"
+          - "'release-' in hm_yml"
+          - "'master.tar.gz' not in hm_yml"
+        fail_msg: "hm channel must be pinned from flake.nix, not master.tar.gz"
+
+    - name: No git clone of the live flake repo
+      ansible.builtin.assert:
+        that: "'ansible.builtin.git' not in hm_yml"
+        fail_msg: "hm.yml must not clone into ~/.config/flakeroot (bootstrap.sh uses the working tree)"
+
+    - name: Cache registry is injected into the switch
+      ansible.builtin.assert:
+        that:
+          - "'cache-registry.nix' in hm_yml"
+          - "'extra-substituters' in hm_yml"
+          - "'extra-trusted-public-keys' in hm_yml"
+        fail_msg: "switch must pass the flakeroot cache registry options"
+
+    - name: Dead default removed
+      ansible.builtin.assert:
+        that: "'enable_home_manager' not in defaults_yml"
+        fail_msg: "enable_home_manager is never read; drop it"
+
+    - name: Nix role has no leftover DetSys temp installer
+      ansible.builtin.assert:
+        that: "'nix-install.sh' not in main_yml"
+        fail_msg: "the Determinate Systems installer script path must be gone"

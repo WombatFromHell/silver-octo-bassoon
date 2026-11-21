@@ -62,7 +62,9 @@
       when: enable_nix | default(false)
       block:
         - name: Check nix command exists
-          ansible.builtin.command: which nix
+          # Absolute path: Ansible sessions never source /etc/profile.d/nix.sh, so `which nix`
+          # reports "not installed" on a host that has it (same reason roles/nix sets nix_env).
+          ansible.builtin.command: /nix/var/nix/profiles/default/bin/nix --version
           register: nix_bin
           changed_when: false
           failed_when: false
