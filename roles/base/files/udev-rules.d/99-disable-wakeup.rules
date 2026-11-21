@@ -1,11 +1,17 @@
+# Ensure ASMedia ASM1074 HUB has wakeups enabled
+ACTION=="add|change", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="174c", ATTR{idProduct}=="2074", ATTR{power/wakeup}="enabled"
+
 # Disable Mouse wakeup
 ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="1d57", ATTR{idProduct}=="fa60", ATTR{power/wakeup}="disabled"
 ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="1d57", ATTR{idProduct}=="fa61", ATTR{power/wakeup}="disabled"
+
 # Keychron M6 8K (wireless)
 ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="3434", ATTR{idProduct}=="d028", ATTR{power/wakeup}="disabled"
 # Keychron M6 8K (wired)
 ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="3434", ATTR{idProduct}=="d049", ATTR{power/wakeup}="disabled"
+
 # Disable Keyboard wakeup
 ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="0c45", ATTR{idProduct}=="8006", ATTR{power/wakeup}="disabled"
+
 # Aula F75 (wired)
 ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="258a", ATTR{idProduct}=="010c", ATTR{power/wakeup}="disabled"
