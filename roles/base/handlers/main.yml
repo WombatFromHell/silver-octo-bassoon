@@ -1,17 +1,4 @@
 ---
-- name: Reload global systemd
-  ansible.builtin.systemd:
-    daemon_reload: true
-  become: true
-  listen: reload_global_systemd
-
-- name: Refresh font cache (global)
-  ansible.builtin.command:
-    cmd: fc-cache -fv
-  become: true
-  changed_when: true
-  listen: refresh_global_font_cache
-
 - name: Refresh font cache (user)
   ansible.builtin.command:
     cmd: fc-cache -fv
@@ -20,20 +7,12 @@
 
 - name: Reload udev rules
   ansible.builtin.command:
-    cmd: udevadm control --reload-rules
-  become: true
-  changed_when: true
-  listen: reload_udev
-
-- name: Trigger udev rules
-  ansible.builtin.command:
-    cmd: udevadm trigger
+    cmd: udevadm control --reload-rules && udevadm trigger
   become: true
   changed_when: true
   listen: reload_udev
 
 - name: Generate mimeinfo.cache (user)
-  when: base_desktop_db_check.rc is defined and base_desktop_db_check.rc == 0
   ansible.builtin.command: update-desktop-database "{{ home_realpath }}/.local/share/applications"
   args:
     creates: "{{ home_realpath }}/.local/share/applications/mimeinfo.cache"
@@ -44,10 +23,10 @@
       'command not found' in base_desktop_db_update.stderr or
       'No such file or directory' in base_desktop_db_update.stderr
     )
-  listen: update_desktop_database
+  listen: update_mimeinfo_cache
 
 - name: Update Limine bootloader
-  when: is_limine_boot is defined
+  when: is_limine_boot | default(false)
   ansible.builtin.command:
     cmd: limine-update
   become: true
@@ -55,21 +34,12 @@
   listen: reload_limine
 
 - name: Update Grub bootloader
-  when: is_grub_boot is defined
+  when: is_grub_boot | default(false)
   ansible.builtin.command:
     cmd: grub-mkconfig -o /boot/grub/grub.cfg
   become: true
   changed_when: true
   listen: reload_grub
-
-- name: Enable scx_loader service
-  become: true
-  ansible.builtin.systemd:
-    name: scx_loader.service
-    enabled: true
-    daemon_reload: true
-  when: base_scx_service_exists | default(false)
-  listen: enable_scx_loader
 
 - name: Restart polkit service
   become: true

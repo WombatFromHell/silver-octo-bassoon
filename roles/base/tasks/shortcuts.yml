@@ -8,27 +8,26 @@
     - name: Find '.desktop' files in 'exported/'
       ansible.builtin.find:
         paths: "{{ role_path }}/files/exported"
-        patterns: "*.desktop"
+        patterns: ["*.desktop", "*.desktop.j2"]
       register: base_shortcut_files
 
     - name: Ensure '~/.local/share/applications/' exists
-      ansible.builtin.stat:
+      ansible.builtin.file:
         path: "{{ home_realpath }}/.local/share/applications"
-      register: base_apps_exists
+        state: directory
+        mode: "0755"
 
+    # Templates (.desktop.j2) are installed with the '.j2' suffix stripped.
     - name: Install '.desktop' shortcut files
       ansible.builtin.template:
         src: "{{ item.path }}"
-        dest: "{{ home_realpath }}/.local/share/applications/{{ item.path | basename }}"
+        dest: "{{ home_realpath }}/.local/share/applications/{{ item.path | basename | regex_replace('\\.j2$', '') }}"
         mode: "0644"
         force: true
       loop: "{{ base_shortcut_files.files }}"
       loop_control:
         label: "{{ item.path | basename }}"
-      when: >
-        (base_apps_exists.stat.exists and base_apps_exists.stat.isdir) and
-        (
-          (item.path | basename) not in bazzite_deck_includes or
-          os_variant_id == 'bazzite-deck' and (item.path | basename) in bazzite_deck_includes
-        )
-      notify: update_desktop_database
+      when: >-
+        (item.path | basename | regex_replace('\\.j2$', '')) not in bazzite_deck_includes or
+        os_variant_id == 'bazzite-deck'
+      notify: update_mimeinfo_cache
