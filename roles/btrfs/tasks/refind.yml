@@ -9,3 +9,4 @@
         bootloader: "refind"
         text_to_remove: "rootflags=subvol"
       register: btrfs_refind_result
+      notify: Update rEFInd configuration

@@ -120,24 +120,3 @@
         name: "{{ item }}"
         enabled: true
       loop: "{{ snapper_timers }}"
-
-    - name: Trigger GRUB configuration regeneration when using GRUB
-      ansible.builtin.debug:
-        msg: "Triggering GRUB configuration regeneration"
-      when: is_grub_boot | default(false)
-      changed_when: false
-      notify: Regenerate GRUB configuration
-
-    - name: Trigger systemd-boot configuration regeneration when using systemd-boot
-      ansible.builtin.debug:
-        msg: "Triggering systemd-boot configuration regeneration"
-      when: is_systemd_boot | default(false)
-      changed_when: false
-      notify: Regenerate systemd-boot configuration
-
-    - name: Trigger rEFInd configuration update when using rEFInd
-      ansible.builtin.debug:
-        msg: "Triggering rEFInd configuration update"
-      when: is_refind_boot | default(false)
-      changed_when: false
-      notify: Update rEFInd configuration

@@ -9,3 +9,4 @@
         bootloader: "systemd-boot"
         text_to_remove: "rootflags=subvol"
       register: btrfs_systemd_boot_result
+      notify: Regenerate systemd-boot configuration
