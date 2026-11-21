@@ -1,24 +1,9 @@
 ---
 - name: Copy sudoers.d configs to /etc/sudoers.d
   tags: [extra, sudoers]
-  block:
-    - name: Find all files in role's files/sudoers.d directory
-      ansible.builtin.find:
-        paths: "{{ role_path }}/files/sudoers.d"
-        file_type: file
-        recurse: false
-      register: base_sudoers_files
-
-    - name: Copy files to /etc/sudoers.d with proper permissions
-      ansible.builtin.copy:
-        src: "{{ sudoers_item.path }}"
-        dest: "/etc/sudoers.d/{{ sudoers_item.path | basename }}"
-        mode: "0644"
-        remote_src: false
-        backup: true
-      loop: "{{ base_sudoers_files.files }}"
-      loop_control:
-        loop_var: sudoers_item
-        label: "Copying {{ sudoers_item.path | basename }}"
-      when: base_sudoers_files.matched > 0
-      become: true
+  ansible.builtin.include_tasks: install_configs.yml
+  vars:
+    src_path: "{{ role_path }}/files/sudoers.d"
+    dest_dir: /etc/sudoers.d
+    # Safety: a broken drop-in would lock everyone out of sudo, so validate before install.
+    validate: visudo -cf %s

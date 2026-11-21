@@ -2,26 +2,11 @@
 - name: Copy global configs and environment to /etc
   tags: [extra, etc]
   block:
-    - name: Find all files in role's files/etc directory
-      ansible.builtin.find:
-        paths: "{{ role_path }}/files/etc"
-        file_type: file
-        recurse: false
-      register: base_etc_files
-
-    - name: Copy files to /etc with proper permissions
-      ansible.builtin.copy:
-        src: "{{ etc_item.path }}"
-        dest: "/etc/{{ etc_item.path | basename }}"
-        mode: "0644"
-        remote_src: false
-        backup: true
-      loop: "{{ base_etc_files.files }}"
-      loop_control:
-        loop_var: etc_item
-        label: "Copying {{ etc_item.path | basename }}"
-      when: base_etc_files.matched > 0
-      become: true
+    - name: Install etc configs
+      ansible.builtin.include_tasks: install_configs.yml
+      vars:
+        src_path: "{{ role_path }}/files/etc"
+        dest_dir: /etc
 
     - name: Uncomment Nvidia-specific environment variables if graphics card is nvidia
       ansible.builtin.replace:

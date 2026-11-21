@@ -1,0 +1,26 @@
+---
+# One flat find+copy installer for every config drop-in dir in this role.
+# Callers pass src_path (a directory under the role's files/) plus dest_dir, and
+# optionally mode / notify_handler. `install_configs_become` is a test seam only: tests run root-free.
+- name: Find config files in {{ src_path | basename }}
+  ansible.builtin.find:
+    paths: "{{ src_path }}"
+    file_type: file
+    recurse: false
+  register: install_configs_found
+
+- name: Install configs into {{ dest_dir }}
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ dest_dir }}/{{ item.path | basename }}"
+    mode: "{{ mode | default('0644') }}"
+    remote_src: false
+    backup: true
+    validate: "{{ validate | default(omit) }}"
+    notify: "{{ notify_handler | default(omit) }}"
+  loop: "{{ install_configs_found.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: install_configs_found.matched > 0
+  become: "{{ install_configs_become | default(true) }}"
+  register: install_configs_results
