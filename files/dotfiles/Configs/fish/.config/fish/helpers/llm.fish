@@ -1,14 +1,3 @@
-# Path of the first installed command in $argv, else complain on stderr and
-# print nothing. command -s ignores functions, so a wrapper never resolves itself.
-function _first_cmd
-    command -s $argv | read -l p
-    or begin
-        echo "none of ($argv) is installed" >&2
-        return 1
-    end
-    echo $p
-end
-
 # Run $argv under gamemode with VRR off and the LACT "LLM" profile; restore "UV".
 function _gamemode_run
     _lact profile set LLM
@@ -52,8 +41,8 @@ alias lcoder='llm_start --fg'
 
 # start_with_llm [-f/--fg] [-r] [-p] [-u] [-R runner] [-b llm|strata] [cmd [args...]]
 # — start a server, run cmd, stop the server. No cmd: just serve. -f/--fg blocks the
-# container. -r: ROCm (else $ENABLE_ROCM=1 decides). -p: pull the image first. -u: update
-# pi-bolt + extensions first. -R: runner config name (llm.sh workspace/*.sh).
+# container. -r: ROCm (else $ENABLE_ROCM=1 decides). -p: pull the image first. -u:
+# refresh pi's extensions first. -R: runner config name (llm.sh workspace/*.sh).
 # -b chooses which dispatcher serves and stops (llm by default). The serve args are built
 # the same way for both, so a word that backend does not own (-p/-r/-R on strata) is
 # refused by that dispatcher — never dropped.
@@ -76,7 +65,7 @@ function start_with_llm
         return 1
     end
     if set -q _flag_u
-        _pi_update
+        wpi --update
         or return
     end
     set -l serve start
@@ -101,9 +90,9 @@ function llm-coder
     argparse -s f/fg r/rocm p/pull u/update s/serve R/runner= b/backend= -- $argv
     or return
     if not set -q _flag_s; and not set -q argv[1]
-        # no pi, no point starting the server (-u may install it first)
-        set -q _flag_u; or _pi_cmd >/dev/null; or return
-        set argv pi
+        # no pi, no point starting the server
+        set -q _flag_u; or command -q pi; or return 1
+        set argv wpi
     end
     set -q _flag_runner; and set argv -R $_flag_runner $argv
     set -q _flag_backend; and set argv -b $_flag_backend $argv
@@ -127,52 +116,27 @@ function strata_logs
 end
 alias scoder='strata_start --fg'
 
-# The pi binary to run: pi-bolt when installed, else pi.
-function _pi_cmd
-    _first_cmd pi-bolt pi
-end
-
-# Upgrade pi-bolt (pnpm preferred, else npm), then refresh its extensions on
-# whatever binary ended up installed (resolved after, so a first install counts).
-function _pi_update
-    set -l pm (_first_cmd pnpm npm)
-    or return
-    $pm i -g pi-bolt@latest
-    or return
-    set -l cmd (_pi_cmd)
-    or return
-    $cmd update --extensions
-end
-
-# pi [--update] [args...] — run pi-bolt, else pi. --update installs pi-bolt@latest
-# and refreshes extensions, without launching pi.
-function pi
+# wpi [--update] [args...] — run pi (the binary in PATH) under gamemode (VRR off,
+# LACT LLM). --update runs `pi update --extensions`: extensions only, since the
+# binary is nix-managed and cannot self-update.
+function wpi
     if contains -- --update $argv
-        _pi_update
-        return
+        command pi update --extensions
+    else
+        _gamemode_run pi $argv
     end
-    set -l cmd (_pi_cmd)
-    or return
-    _gamemode_run $cmd $argv
 end
 
-# Separate from dsh so a wrapper (ts_serve) can put it behind a route.
-function _dsh_run
-    _gamemode_run dsh $argv
-end
-
-# dsh [--update] [args...] — run dsh with the web profile. --update installs dsh
-# and refreshes that plugin, without launching it. $argv is not passed to the
-# plugin update: the extra words belong to dsh, not to the plugin.
-function dsh
-    contains -- --update $argv
-    or begin
-        _dsh_run --profile web $argv
-        return
+# wdsh [args...] — run dsh with the web profile.
+# No args (or the serve_dsh --public-url shape): through gamemode (VRR off, LACT
+# LLM). Other args: the dsh binary in PATH directly, no gamemode, so plugins
+# and profiles can still be installed/removed.
+function wdsh
+    if set -q argv[1]; and not contains -- --public-url $argv
+        # plugin/profile management: the binary in PATH, no gamemode.
+        command dsh $argv
+    else
+        # A direct run and the serve_dsh --public-url shape: gamemode, web profile.
+        _gamemode_run dsh --profile web $argv
     end
-    set -l pm (_first_cmd pnpm npm)
-    or return
-    $pm i -g @deepseek-ai/dsh
-    or return
-    command dsh plugin --profile web update
 end

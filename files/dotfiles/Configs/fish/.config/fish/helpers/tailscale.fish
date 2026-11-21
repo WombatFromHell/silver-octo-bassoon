@@ -31,22 +31,26 @@ function ts_serve --description "Run a command behind a tailscale serve mapping 
     tailscale serve --bg $serve_args $_flag_url; or return 1
 
     # Janitor: own session (setsid -f), no signal traps. Waits for the target to
-    # come up, then for it to go away, then unmaps.
+    # come up, then for it to go away, then unmaps. The grace loop also gives up
+    # when the launching shell dies, so an aborted or fast-failing run loses its
+    # route within one poll instead of holding it for the whole grace.
     # ponytail: 60s startup grace, 1s poll, and the janitor keys on host:port rather
     # than on this run, so it cannot tell our old mapping from a newer one on the
     # same path: a second run whose target boots later than the grace would get its
     # route torn down by the first run's janitor. Exact ownership needs a per-run
     # token (a state file per path plus an owner check in both teardown paths).
+    # kill -0 on the shell pid also misreads a recycled pid; that falls back to
+    # waiting out the grace, i.e. the old behaviour.
     if not command -q setsid bash
         echo "ts_serve: no setsid/bash, so an aborted run leaks $mapped_path" >&2
     else
         setsid -f bash -c '
-            host=$1 port=$2; shift 2
+            host=$1 port=$2 parent=$3; shift 3
             alive() { (exec 3<>/dev/tcp/$host/$port) 2>/dev/null; }
-            for _ in $(seq 60); do alive && break; sleep 1; done
-            while alive; do sleep 1; done
+            for _ in $(seq 60); do alive && break; kill -0 "$parent" 2>/dev/null || break; sleep 1; done
+            if alive; then while alive; do sleep 1; done; fi
             tailscale serve "$@" off
-        ' ts_serve $host $tport $serve_args >/dev/null 2>&1 </dev/null
+        ' ts_serve $host $tport $fish_pid $serve_args >/dev/null 2>&1 </dev/null
     end
 
     # Unmapped => Serve's own "404 page not found" (19 bytes); a dead target is 502.
@@ -86,23 +90,17 @@ function ts_serve --description "Run a command behind a tailscale serve mapping 
             # vs. a ~100ms window); only a handler still present is a real leak.
             set -l still (tailscale serve status --json | jq -r --arg p $mapped_path \
                 '.Web // {} | to_entries[] | .value.Handlers // {} | .[$p] // empty')
-            test -n "$still"; and \
-                echo "ts_serve: teardown failed; $mapped_path may still proxy $_flag_url" >&2
+            test -n "$still"; and echo "ts_serve: teardown failed; $mapped_path may still proxy $_flag_url" >&2
         end
     end
     return $exit_code
 end
 
 function serve_dsh
-    # dsh intercepts --update; behind a live route that would install packages.
-    contains -- --update $argv
-    and begin
-        echo "serve_dsh: --update updates the local install; run plain dsh for that" >&2
-        return 2
-    end
     set -l PUBLIC_HOST (ts_host)
-    # dsh is the target command itself: fish resolves the function before the
-    # binary, so gamemode/VRR/LACT stay in one place. --profile web is dsh's.
+    # wdsh is the target command itself: fish resolves the function before the
+    # binary, and wdsh routes --public-url runs through gamemode (VRR off, LACT
+    # LLM) like a direct run, so VRR/LACT stay in one place.
     ts_serve -u http://127.0.0.1:3080 -s /dsh \
-        dsh --public-url "https://$PUBLIC_HOST/dsh" --trusted-host $PUBLIC_HOST $argv
+        wdsh --public-url "https://$PUBLIC_HOST/dsh" --trusted-host $PUBLIC_HOST $argv
 end
