@@ -8,6 +8,9 @@ M.CONFIG = {
 	-- Pinned by tests/config.spec.lua — keep in sync with the live node name.
 	fallback_sink = "alsa_output.usb-SteelSeries_SteelSeries_Arctis_7-00.stereo-game",
 	-- Gate-open preference chain (Lua patterns over node.name).
+	-- The null-sink the sentinel script loads; its presence is the gate signal.
+	gate_sink = "gate_sentinel",
+
 	bluez_pattern = "^bluez_output%.",
 	hdmi_pattern = "^alsa_output%.pci-.*hdmi",
 	-- Browser streams are pinned to the game sink (same as fallback_sink).
@@ -114,34 +117,40 @@ if Log then
 	-- exists. The gamescope session is itself the "gate open" signal; the
 	-- sentinel is the escape-hatch for non-gamescope environments.
 	local is_gamescope = os.getenv("XDG_CURRENT_DESKTOP") == "gamescope"
-	local gate_open = M.compute_gate_open(is_gamescope, false)
-	local om_gate = ObjectManager({
+	local om_sinks = ObjectManager({
 		Interest({
 			type = "node",
 			Constraint({ "media.class", "=", "Audio/Sink" }),
-			Constraint({ "node.name", "=", "gate_sentinel" }),
 		}),
 	})
-	local function on_gate_changed()
-		gate_open = M.compute_gate_open(is_gamescope, om_gate:get_n_objects() >= 1)
-		log:info("gate " .. (gate_open and "OPEN" or "CLOSED"))
+	-- Gate state is read at event time, not from an object-added callback: a
+	-- callback can land after default-nodes' rescan, so that rescan would still
+	-- see the old gate state and never re-select the default.
+	local last_gate = nil
+	local function gate_is_open()
+		local sentinel_present = false
+		for obj in om_sinks:iterate() do
+			if obj.properties["node.name"] == M.CONFIG.gate_sink then
+				sentinel_present = true
+			end
+		end
+		return M.compute_gate_open(is_gamescope, sentinel_present)
 	end
-	om_gate:connect("object-added", on_gate_changed)
-	om_gate:connect("object-removed", on_gate_changed)
 
 	-- The user's stored selection (default.configured.audio.sink), read fresh
 	-- per event — no cache, so a stale reference can never go stale.
-	local om_metadata = ObjectManager({
-		Interest({
-			type = "metadata",
-			Constraint({ "metadata.name", "=", "default" }),
-		}),
-	})
-	local function read_configured()
-		for md in om_metadata:iterate() do
-			return md:get_properties()["default.configured.audio.sink"]
+	local function read_configured(event)
+		local om = event:get_source():call("get-object-manager", "metadata")
+		local md = om and om:lookup({ Constraint({ "metadata.name", "=", "default" }) })
+		if md == nil then
+			return nil
 		end
-		return nil
+		local raw = md:find(0, "default.configured.audio.sink")
+		if raw == nil then
+			return nil
+		end
+		local parsed = Json.Raw(raw):parse()
+		return parsed and parsed.name or nil
 	end
 
 	local state = {}
@@ -150,6 +159,7 @@ if Log then
 	SimpleEventHook({
 		name = "gate-route/select-default-sink",
 		after = { "default-nodes/find-best-default-node" },
+		before = { "default-nodes/apply-default-node" },
 		interests = {
 			EventInterest({
 				Constraint({ "event.type", "=", "select-default-node" }),
@@ -162,7 +172,12 @@ if Log then
 			end
 			local available = event:get_data("available-nodes")
 			local nodes = available and (available.parse and available:parse() or available) or {}
-			local sel = M.decide(gate_open, nodes, read_configured(), state)
+			local gate = gate_is_open()
+			if gate ~= last_gate then
+				last_gate = gate
+				log:info("gate " .. (gate and "OPEN" or "CLOSED"))
+			end
+			local sel = M.decide(gate, nodes, read_configured(event), state)
 			if sel then
 				event:set_data("selected-node", sel)
 				event:set_data("selected-node-priority", 100000)
@@ -172,12 +187,6 @@ if Log then
 	}):register()
 
 	-- select-target: pin browser streams to the game sink (stateless).
-	local om_sinks = ObjectManager({
-		Interest({
-			type = "node",
-			Constraint({ "media.class", "=", "Audio/Sink" }),
-		}),
-	})
 	SimpleEventHook({
 		name = "gate-route/select-browser-target",
 		before = { "linking/find-default-target" },
@@ -194,7 +203,7 @@ if Log then
 			if props["media.direction"] ~= "Output" then
 				return -- only pin output streams to the sink
 			end
-			local sel = M.select_browser_target(gate_open, props)
+			local sel = M.select_browser_target(gate_is_open(), props)
 			if sel then
 				for obj in om_sinks:iterate() do
 					if obj.properties["node.name"] == sel then
@@ -207,8 +216,6 @@ if Log then
 		end,
 	}):register()
 
-	om_gate:activate()
-	om_metadata:activate()
 	om_sinks:activate()
 end
 

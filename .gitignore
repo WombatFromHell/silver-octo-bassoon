@@ -7,6 +7,11 @@
 support
 __pycache__
 
+**/.config/wireplumber/**
+**/.local/share/wireplumber/**
+!**/dotfiles/**/.config/wireplumber/**
+!**/dotfiles/**/.local/share/wireplumber/**
+
 **/config/OpenRGB/**
 **/.config/OpenRGB/**
 !**/config/OpenRGB/OpenRGB.json
